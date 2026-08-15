@@ -9,6 +9,9 @@ extension NSAttributedString.Key {
     /// Marks inline image ranges ("![alt](url)"); the layout manager draws a cached image
     /// in place of the range once loaded (keeps the source string verbatim).
     static let markdownImage = NSAttributedString.Key("MarkdownImage")
+    /// Marks fenced-code content ranges; the layout manager draws the continuous
+    /// full-width background block (per-line backgrounds would show seams).
+    static let markdownCodeBlock = NSAttributedString.Key("MarkdownCodeBlock")
 }
 
 struct MarkdownStyle {

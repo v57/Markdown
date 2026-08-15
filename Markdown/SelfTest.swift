@@ -94,6 +94,19 @@ enum SelfTest {
               ["[x](https://a.b) t", "![alt](u) and [l](v)", "not a [link", "[a] (b)", "![broken](x"]
                 .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
 
+        // --- Task 8: fenced code blocks ---
+        let f = MarkdownParser.parse("```swift\nlet x = 1\n```")
+        check("fence block", f.blocks == [.codeFence(language: "swift", code: "let x = 1")])
+        check("fence markers syntax", f.syntaxRanges.count == 2)
+        check("fence code attr", f.attributed.attribute(.markdownCodeBlock, at: 11, effectiveRange: nil) != nil)
+        let fu = MarkdownParser.parse("~~~\ncode\n~~~")
+        check("tilde fence", fu.blocks == [.codeFence(language: "", code: "code")])
+        let unclosed = MarkdownParser.parse("```\nno close")
+        check("unclosed fence runs to end", unclosed.blocks == [.codeFence(language: "", code: "no close")])
+        check("verbatim fence invariant",
+              ["```swift\nlet x = 1\n```", "```\nno close", "~~~\n**not bold**\n~~~", "a\n```\nb\n```"]
+                .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

@@ -214,6 +214,54 @@ enum MarkdownParser {
                 continue
             }
 
+            // Fenced code block: ^[ \t]{0,3}(`{3,}|~{3,})(.*)$
+            if let m = match(raw, pattern: "^[ \\t]{0,3}(`{3,}|~{3,})(.*)$") {
+                let fence = m[1]
+                let lang = m[2].trimmingCharacters(in: .whitespaces)
+                let closePrefix = String(fence.prefix(3))
+                var closingFenceLine: Int? = nil
+                var j = i + 1
+                while j < count {
+                    if lines[j].trimmingCharacters(in: .whitespaces).hasPrefix(closePrefix) {
+                        closingFenceLine = j
+                        break
+                    }
+                    j += 1
+                }
+                let codePara = NSMutableParagraphStyle()
+                codePara.lineSpacing = 0
+                codePara.paragraphSpacing = 0
+                let codeAttrs: [NSAttributedString.Key: Any] = [
+                    .font: style.codeFont,
+                    .foregroundColor: style.codeTextColor,
+                    .markdownCodeBlock: true,
+                    .paragraphStyle: codePara,
+                ]
+                // Opening fence line (marker + language): syntax-marked
+                let start = out.length
+                emit(lines[i], attrs: codeAttrs)
+                markSyntax(NSRange(location: start, length: lineLen(i)))
+                emitNewline(i, para: codePara)
+                // Code content — verbatim, no inline interpretation
+                var codeLines: [String] = []
+                let contentEnd = closingFenceLine ?? count
+                for lineIdx2 in (i + 1)..<contentEnd {
+                    codeLines.append(lines[lineIdx2])
+                    emit(lines[lineIdx2], attrs: codeAttrs)
+                    emitNewline(lineIdx2, para: codePara)
+                }
+                // Closing fence: syntax-marked
+                if let cf = closingFenceLine {
+                    let s = out.length
+                    emit(lines[cf], attrs: codeAttrs)
+                    markSyntax(NSRange(location: s, length: lineLen(cf)))
+                    emitNewline(cf, para: codePara)
+                }
+                blocks.append(.codeFence(language: lang, code: codeLines.joined(separator: "\n")))
+                i = (closingFenceLine ?? count) + (closingFenceLine == nil ? 0 : 1)
+                continue
+            }
+
             // Paragraph / setext heading — consume until blank line or a line starting a new block.
             // (Fence/list/task/table handlers are added by later tasks and intercept first.)
             var j = i
