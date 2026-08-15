@@ -21,6 +21,23 @@ enum SelfTest {
         check("empty doc parses", MarkdownParser.parse("", style: .standard).blocks.isEmpty)
         let sample = MarkdownParser.parse(SampleDocument.text, style: .standard)
         check("sample doc parses without crash", sample.attributed.length >= 0)
+
+        // --- Task 4: block pass ---
+        check("atx heading level", MarkdownParser.parse("## Hi").blocks == [.heading(level: 2, text: "Hi")])
+        let h = MarkdownParser.parse("# Hi").attributed
+        check("heading syntax range marked", h.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil)
+        check("heading font is big", (h.attribute(.font, at: 3, effectiveRange: nil) as? NSFont)?.pointSize == 28)
+        check("setext h1", MarkdownParser.parse("Title\n===").blocks == [.heading(level: 1, text: "Title")])
+        check("setext h2", MarkdownParser.parse("Title\n---").blocks == [.heading(level: 2, text: "Title")])
+        check("hr block", MarkdownParser.parse("---").blocks == [.rule])
+        check("hr syntax", MarkdownParser.parse("***").syntaxRanges.first?.length == 3)
+        check("blockquote", MarkdownParser.parse("> quote").blocks == [.blockquote("quote")])
+        check("blockquote marker syntax", MarkdownParser.parse("> quote").syntaxRanges.count == 1)
+        check("paragraph", MarkdownParser.parse("a\nb").blocks == [.paragraph("a\nb")])
+        check("verbatim invariant",
+              ["# Hi\n", "a\nb\n\n> q\n\n---\n", "Title\n===\n", "## A\nplain\n> quote\nx", ""]
+                .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }
