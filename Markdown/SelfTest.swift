@@ -121,6 +121,9 @@ enum SelfTest {
               ["| a | b |\n|---|---|\n| 1 | 2 |", "a | b\n---|---\n1 | 2", "|x|y|\n|:-|-:|\n|1|2|", "no | pipe here"]
                 .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
 
+        // --- Task 11: feature attributes ---
+        check("rule attr", MarkdownParser.parse("---").attributed.attribute(.markdownRule, at: 0, effectiveRange: nil) != nil)
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

@@ -374,12 +374,15 @@ extern "C" {
 @class NSCoder;
 SWIFT_CLASS("_TtC8Markdown19EditorLayoutManager")
 @interface EditorLayoutManager : NSLayoutManager
+- (void)drawBackgroundForGlyphRange:(NSRange)glyphsToShow atPoint:(NSPoint)origin;
+- (void)drawGlyphsForGlyphRange:(NSRange)glyphsToShow atPoint:(NSPoint)origin;
 - (nonnull instancetype)init OBJC_DESIGNATED_INITIALIZER;
 - (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
 @end
 
 @class NSTextStorage;
 @class NSNotification;
+@class NSEvent;
 @class NSTextContainer;
 SWIFT_CLASS("_TtC8Markdown14EditorTextView")
 @interface EditorTextView : NSTextView <NSTextStorageDelegate, NSTextViewDelegate>
@@ -389,6 +392,7 @@ SWIFT_CLASS("_TtC8Markdown14EditorTextView")
 - (void)textViewDidChangeSelection:(NSNotification * _Nonnull)notification;
 - (void)textDidChange:(NSNotification * _Nonnull)notification;
 - (BOOL)textView:(NSTextView * _Nonnull)textView clickedOnLink:(id _Nonnull)link atIndex:(NSUInteger)charIndex SWIFT_WARN_UNUSED_RESULT;
+- (void)mouseDown:(NSEvent * _Nonnull)event;
 - (void)viewDidMoveToWindow;
 - (nonnull instancetype)initWithFrame:(NSRect)frameRect textContainer:(NSTextContainer * _Nullable)container SWIFT_UNAVAILABLE;
 - (nonnull instancetype)initWithFrame:(NSRect)frameRect SWIFT_UNAVAILABLE;

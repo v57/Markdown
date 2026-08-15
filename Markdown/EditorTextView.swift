@@ -4,6 +4,7 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
+    private var lastSyntaxRangeCount = 0
 
     init() {
         markdownStorage = NSTextStorage()
@@ -49,6 +50,7 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
 
     private func reapplyMarkdown() {
         let parsed = MarkdownParser.parse(string, style: .standard)
+        lastSyntaxRangeCount = parsed.syntaxRanges.count
         // Apply attributes only (characters are identical — verbatim invariant), so the
         // storage reports .editedAttributes and the guard above stops the loop.
         markdownStorage.beginEditing()
@@ -103,10 +105,33 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
         return true
     }
 
+    // MARK: - Checkbox click-to-toggle (Obsidian-style)
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = characterIndexForInsertion(at: point)
+        let ns = string as NSString
+        guard index < ns.length, let storage = textStorage,
+              storage.attribute(.markdownCheckbox, at: index, effectiveRange: nil) != nil else {
+            super.mouseDown(with: event)
+            return
+        }
+        var eff = NSRange(location: 0, length: 0)
+        _ = storage.attribute(.markdownCheckbox, at: index, effectiveRange: &eff)
+        guard eff.length >= 3 else { super.mouseDown(with: event); return }
+        let inner = NSRange(location: eff.location + 1, length: eff.length - 2)
+        let current = ns.substring(with: inner)
+        let replacement = (current == "x" || current == "X") ? " " : "x"
+        if shouldChangeText(in: eff, replacementString: ns.substring(with: eff)) {
+            textStorage?.replaceCharacters(in: inner, with: replacement)
+            didChangeText()
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            print("EDITOR READY textKit1=\(textLayoutManager == nil)")
+            print("EDITOR READY textKit1=\(textLayoutManager == nil) syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)")
             window?.makeFirstResponder(self)
         }
     }

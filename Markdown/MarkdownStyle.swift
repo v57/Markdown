@@ -12,6 +12,9 @@ extension NSAttributedString.Key {
     /// Marks fenced-code content ranges; the layout manager draws the continuous
     /// full-width background block (per-line backgrounds would show seams).
     static let markdownCodeBlock = NSAttributedString.Key("MarkdownCodeBlock")
+    /// Marks horizontal-rule ranges; the layout manager draws a full-width line
+    /// instead of the literal dashes.
+    static let markdownRule = NSAttributedString.Key("MarkdownRule")
 }
 
 struct MarkdownStyle {

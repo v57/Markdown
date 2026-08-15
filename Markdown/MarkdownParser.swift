@@ -105,6 +105,7 @@ enum MarkdownParser {
                 let start = out.length
                 emit(raw, attrs: [.paragraphStyle: para, .foregroundColor: style.textColor, .font: style.bodyFont])
                 markSyntax(NSRange(location: start, length: rawLen))
+                out.addAttribute(.markdownRule, value: true, range: NSRange(location: start, length: rawLen))
                 emitNewline(i, para: para)
                 blocks.append(.rule)
                 i += 1
