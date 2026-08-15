@@ -174,6 +174,11 @@ enum SelfTest {
         tv.deleteBackward(nil)
         let lenMid2 = (tv.string as NSString).length
         report("middle delete", lenMid2 == lenMid1 - 1, "len \(lenMid1) -> \(lenMid2)")
+        // Select all → delete (regression: crashed in setTypingAttributes/font panel)
+        tv.setSelectedRange(NSRange(location: 0, length: (tv.string as NSString).length))
+        tv.deleteBackward(nil)
+        let lenAfterSelectAll = (tv.string as NSString).length
+        report("select-all delete", lenAfterSelectAll == 0, "len -> \(lenAfterSelectAll)")
         print("EDITPROBE final selection=\(tv.selectedRange) len=\((tv.string as NSString).length)")
     }
 }

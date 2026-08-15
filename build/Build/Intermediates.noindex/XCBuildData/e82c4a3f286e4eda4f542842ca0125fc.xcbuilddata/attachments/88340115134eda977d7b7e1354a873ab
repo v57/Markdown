@@ -56,6 +56,16 @@
     "swift-dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/EditorView.swiftdeps",
     "swiftmodule" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/EditorView~partial.swiftmodule"
   },
+  "/Users/v57/Projects/Markdown/Markdown/InlineImageCache.swift" : {
+    "const-values" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.swiftconstvalues",
+    "dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.d",
+    "diagnostics" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.dia",
+    "index-unit-output-path" : "/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.o",
+    "llvm-bc" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.bc",
+    "object" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.o",
+    "swift-dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.swiftdeps",
+    "swiftmodule" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache~partial.swiftmodule"
+  },
   "/Users/v57/Projects/Markdown/Markdown/MarkdownParser.swift" : {
     "const-values" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/MarkdownParser.swiftconstvalues",
     "dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/MarkdownParser.d",

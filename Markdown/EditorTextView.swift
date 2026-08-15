@@ -43,11 +43,29 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
 
     // MARK: - Derived styling (re-parse on every character edit)
 
+    /// Re-styling is DEFERRED to the next runloop tick. Inside the storage delegate
+    /// callback the text view's selection is still stale (it can point past the new
+    /// string length), so any selection-sensitive AppKit call there — invalidateDisplay,
+    /// setTypingAttributes → updateFontPanel — crashes with "Range or index out of bounds"
+    /// (e.g. Select-All → Delete). Deferring also coalesces rapid keystrokes into one reparse.
+    private var reapplyScheduled = false
+    private var lastLoggedSyntaxCount = -1
+
     func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
                      range editedRange: NSRange, changeInLength delta: Int) {
         // Attribute-only edits (our own styling pass) must not re-trigger styling — no recursion.
         guard editedMask.contains(.editedCharacters) else { return }
-        reapplyMarkdown()
+        scheduleReapply()
+    }
+
+    private func scheduleReapply() {
+        guard !reapplyScheduled else { return }
+        reapplyScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reapplyScheduled = false
+            self.reapplyMarkdown()
+        }
     }
 
     private func reapplyMarkdown() {
@@ -66,6 +84,10 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
         typingAttributes = MarkdownStyle.standard.typingAttributes
         if let lm = layoutManager as? EditorLayoutManager {
             lm.activeCharacterRange = currentActiveLineRange()
+        }
+        if lastSyntaxRangeCount != lastLoggedSyntaxCount {
+            print("STYLE APPLIED syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)")
+            lastLoggedSyntaxCount = lastSyntaxRangeCount
         }
         loadImages(from: parsed.attributed)
     }
