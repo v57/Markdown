@@ -38,6 +38,31 @@ enum SelfTest {
               ["# Hi\n", "a\nb\n\n> q\n\n---\n", "Title\n===\n", "## A\nplain\n> quote\nx", ""]
                 .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
 
+        // --- Task 5: inline pass ---
+        let b = MarkdownParser.parse("**x**").attributed
+        check("bold font", (b.attribute(.font, at: 2, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+        check("bold delimiters syntax", b.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil
+            && b.attribute(.markdownSyntax, at: 4, effectiveRange: nil) != nil)
+        let ital = MarkdownParser.parse("*x*").attributed
+        check("italic font", (ital.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.italic) == true)
+        let both = MarkdownParser.parse("***x***").attributed
+        check("bolditalic both",
+              (both.attribute(.font, at: 3, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true
+              && (both.attribute(.font, at: 3, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.italic) == true)
+        let strike = MarkdownParser.parse("~~x~~").attributed
+        check("strike attr", strike.attribute(.strikethroughStyle, at: 2, effectiveRange: nil) as? Int == NSUnderlineStyle.single.rawValue)
+        let code = MarkdownParser.parse("`x`").attributed
+        check("code font", (code.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)?.fontName.contains("Mono") == true)
+        check("code bg", code.attribute(.backgroundColor, at: 1, effectiveRange: nil) != nil)
+        check("code markers syntax", code.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil)
+        let esc = MarkdownParser.parse("\\*x\\*").attributed
+        check("escape literal", esc.string == "\\*x\\*")
+        check("escape asterisk plain", esc.attribute(.markdownSyntax, at: 1, effectiveRange: nil) == nil)
+        check("escape backslash syntax", esc.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil)
+        check("verbatim inline invariant",
+              ["**b** and *i* and `c` and ~~s~~ and \\*x\\*", "a ** b ** c", "emoji 🎉 *ok*", "# **bold heading**"]
+                .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

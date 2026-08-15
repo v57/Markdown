@@ -228,10 +228,166 @@ enum MarkdownParser {
         return (0..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0)) }
     }
 
-    // MARK: - Inline pass (Task 5 replaces this stub)
+    // MARK: - Inline pass
 
+    /// Styles inline markdown: **bold**, *italic*, ***both***, __…__, _…_ (word-boundary
+    /// guarded), ~~strikethrough~~, `code` spans (equal-length backtick runs), \escapes.
+    /// Returns the styled text (character-identical to `text`) plus syntax ranges
+    /// (relative to the returned string) for the delimiter characters.
     static func inline(_ text: String, style: MarkdownStyle, base: [NSAttributedString.Key: Any])
         -> (attributed: NSAttributedString, syntax: [NSRange]) {
-        (NSAttributedString(string: text, attributes: base), [])
+        let ns = text as NSString
+        let len = ns.length
+        let out = NSMutableAttributedString()
+        var syntax: [NSRange] = []
+
+        let bodyFont = base[.font] as? NSFont ?? style.bodyFont
+        let bodyColor = base[.foregroundColor] as? NSColor ?? style.textColor
+
+        func appendSyntax(_ s: String) {
+            let r = NSRange(location: out.length, length: (s as NSString).length)
+            out.append(NSAttributedString(string: s, attributes: style.syntaxAttributes()))
+            syntax.append(r)
+        }
+        func appendPlain(_ s: String) {
+            out.append(NSAttributedString(string: s, attributes: base))
+        }
+
+        var i = 0
+        while i < len {
+            let c = ns.character(at: i)
+
+            // Escape: \X → '\' (syntax) + literal X
+            if c == 0x5C, i + 1 < len, isPunctuation(ns.character(at: i + 1)) {
+                appendSyntax("\\")
+                appendPlain(String(UnicodeScalar(ns.character(at: i + 1))!))
+                i += 2
+                continue
+            }
+
+            // Code span: backtick run of length n, closed by an equal-length run
+            if c == 0x60 {
+                var run = 1
+                while i + run < len && ns.character(at: i + run) == 0x60 { run += 1 }
+                if let close = findRun(ns, char: 0x60, len: run, from: i + run) {
+                    var codeRange = NSRange(location: i + run, length: close - (i + run))
+                    // CommonMark: if code starts AND ends with a space, drop one on each side
+                    if codeRange.length >= 2,
+                       ns.character(at: codeRange.location) == 0x20,
+                       ns.character(at: NSMaxRange(codeRange) - 1) == 0x20 {
+                        codeRange = NSRange(location: codeRange.location + 1, length: codeRange.length - 2)
+                    }
+                    appendSyntax(String(repeating: "`", count: run))
+                    out.append(NSAttributedString(string: ns.substring(with: codeRange), attributes: style.codeAttributes()))
+                    appendSyntax(String(repeating: "`", count: run))
+                    i = close + run
+                    continue
+                }
+                appendPlain(String(repeating: "`", count: run))
+                i += run
+                continue
+            }
+
+            // Link / image: handled in a later task; '[' stays plain here.
+
+            // Strikethrough: ~~…~~
+            if c == 0x7E, i + 1 < len, ns.character(at: i + 1) == 0x7E {
+                if let close = findRun(ns, char: 0x7E, len: 2, from: i + 2) {
+                    appendSyntax("~~")
+                    let inner = NSMutableAttributedString(string: ns.substring(with: NSRange(location: i + 2, length: close - (i + 2))), attributes: base)
+                    inner.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: inner.length))
+                    inner.addAttribute(.strikethroughColor, value: bodyColor, range: NSRange(location: 0, length: inner.length))
+                    out.append(inner)
+                    appendSyntax("~~")
+                    i = close + 2
+                    continue
+                }
+                appendPlain("~")
+                i += 1
+                continue
+            }
+
+            // Emphasis delimiters: * and _
+            if c == 0x2A || c == 0x5F {
+                var run = 1
+                while i + run < len && ns.character(at: i + run) == c { run += 1 }
+                // '_' does not open intraword (between two alphanumerics)
+                let prevAlnum = i > 0 && isAlnum(ns.character(at: i - 1))
+                let nextAlnum = i + run < len && isAlnum(ns.character(at: i + run))
+                if c == 0x5F, prevAlnum, nextAlnum {
+                    appendPlain(ns.substring(with: NSRange(location: i, length: run)))
+                    i += run
+                    continue
+                }
+                if let close = findEmphasisClose(ns, char: c, from: i + run) {
+                    let closerLen = closeRunLen(ns, close, char: c)
+                    let bold = run >= 2 || closerLen >= 2
+                    let italic = run % 2 == 1 || closerLen % 2 == 1
+                    appendSyntax(ns.substring(with: NSRange(location: i, length: run)))
+                    let inner = ns.substring(with: NSRange(location: i + run, length: close - (i + run)))
+                    out.append(NSAttributedString(string: inner, attributes: [
+                        .font: style.emphasisFont(base: bodyFont, bold: bold, italic: italic),
+                        .foregroundColor: bodyColor,
+                    ]))
+                    appendSyntax(ns.substring(with: NSRange(location: close, length: closerLen)))
+                    i = close + closerLen
+                    continue
+                }
+                appendPlain(ns.substring(with: NSRange(location: i, length: run)))
+                i += run
+                continue
+            }
+
+            // Plain character — use composed sequences so emoji (surrogate pairs) survive intact.
+            let chRange = ns.rangeOfComposedCharacterSequence(at: i)
+            appendPlain(ns.substring(with: chRange))
+            i = NSMaxRange(chRange)
+        }
+        return (out, syntax)
+    }
+
+    private static func isPunctuation(_ c: unichar) -> Bool {
+        guard let s = UnicodeScalar(c) else { return false }
+        return "\\`*_{}[]()#+-.!>~|".unicodeScalars.contains(s)
+    }
+    private static func isAlnum(_ c: unichar) -> Bool {
+        guard let s = UnicodeScalar(c) else { return false }
+        return CharacterSet.alphanumerics.contains(s)
+    }
+    /// Finds a run of exactly `len` copies of `char`, starting the search at `start`.
+    private static func findRun(_ ns: NSString, char: unichar, len: Int, from start: Int) -> Int? {
+        var j = start
+        while j < ns.length {
+            if ns.character(at: j) == char {
+                var k = 0
+                while j + k < ns.length && ns.character(at: j + k) == char { k += 1 }
+                if k == len { return j }
+                j += k
+            } else {
+                j += 1
+            }
+        }
+        return nil
+    }
+    private static func closeRunLen(_ ns: NSString, _ pos: Int, char: unichar) -> Int {
+        var k = 0
+        while pos + k < ns.length && ns.character(at: pos + k) == char { k += 1 }
+        return k
+    }
+    /// Finds the first same-char run that can close emphasis (skipping intraword '_').
+    private static func findEmphasisClose(_ ns: NSString, char: unichar, from start: Int) -> Int? {
+        var j = start
+        while j < ns.length {
+            if ns.character(at: j) == char {
+                if char == 0x5F, j > 0, j + 1 < ns.length,
+                   isAlnum(ns.character(at: j - 1)), isAlnum(ns.character(at: j + 1)) {
+                    j += 1
+                    continue
+                }
+                return j
+            }
+            j += 1
+        }
+        return nil
     }
 }
