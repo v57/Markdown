@@ -1,0 +1,24 @@
+{
+  "source": "/Users/v57/Projects/Markdown/Markdown/ContentView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Markdown",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 5
+        }
+      },
+      {
+        "comment": "",
+        "key": "Markdown",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 6
+        }
+      }
+    ]
+  },
+  "version": 1
+}

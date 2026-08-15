@@ -1,25 +1,12 @@
 import SwiftUI
-import Playgrounds
 
-@main struct MyApp: App {
+struct MarkdownApp: App {
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        WindowGroup("Markdown") {
+            Text("Markdown")   // placeholder — replaced by EditorView in Task 2
+                .frame(minWidth: 480, minHeight: 360)
         }
+        .defaultSize(width: 900, height: 700)
+        .commands { TextEditingCommands() }   // standard Edit menu so ⌘C/V/X/Z work
     }
-}
-
-struct ContentView: View {
-    var body: some View {
-        Text("Hello, world!")
-            .padding()
-    }
-}
-
-#Preview {
-    ContentView()
-}
-
-#Playground {
-    _ = 1 + 2
 }
