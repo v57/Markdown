@@ -2,8 +2,58 @@ import AppKit
 
 final class EditorLayoutManager: NSLayoutManager {
     /// Union of lines containing the current selection/caret. Syntax glyphs outside
-    /// this range are skipped during drawing (Obsidian-style live preview).
+    /// this range are replaced with NSNullGlyph + .null property at layout time, which
+    /// takes up NO space (Obsidian-style live preview: hidden commands collapse to zero
+    /// width, so text shifts when the caret lands on the line).
     var activeCharacterRange: NSRange = NSRange(location: 0, length: 0)
+
+    private func isHiddenCharacter(_ charIndex: Int, in storage: NSTextStorage) -> Bool {
+        guard charIndex >= 0, charIndex < storage.length else { return false }
+        var eff = NSRange(location: 0, length: 0)
+        let attrs = storage.attributes(at: charIndex, effectiveRange: &eff)
+        guard attrs[.markdownSyntax] != nil else { return false }
+        if attrs[.markdownCheckbox] != nil { return false }   // keep the checkbox slot
+        if attrs[.markdownImage] != nil { return false }      // keep the image slot
+        return NSIntersectionRange(NSRange(location: charIndex, length: 1), activeCharacterRange).length == 0
+    }
+
+    // MARK: - Zero-width glyph substitution for hidden command symbols
+
+    override func setGlyphs(_ glyphs: UnsafePointer<CGGlyph>, properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+                            characterIndexes charIndexes: UnsafePointer<Int>, font: NSFont, forGlyphRange glyphRange: NSRange) {
+        guard glyphRange.length > 0, let storage = textStorage else {
+            super.setGlyphs(glyphs, properties: props, characterIndexes: charIndexes, font: font, forGlyphRange: glyphRange)
+            return
+        }
+        var zeroed = [Bool](repeating: false, count: glyphRange.length)
+        var anyZeroed = false
+        for i in 0..<glyphRange.length {
+            if isHiddenCharacter(charIndexes[i], in: storage) {
+                zeroed[i] = true
+                anyZeroed = true
+            }
+        }
+        guard anyZeroed else {
+            super.setGlyphs(glyphs, properties: props, characterIndexes: charIndexes, font: font, forGlyphRange: glyphRange)
+            return
+        }
+        var newGlyphs = [CGGlyph](repeating: 0, count: glyphRange.length)
+        var newProps = [NSLayoutManager.GlyphProperty](repeating: [], count: glyphRange.length)
+        for i in 0..<glyphRange.length {
+            if zeroed[i] {
+                newGlyphs[i] = 0 // NSNullGlyph
+                newProps[i] = [.null]
+            } else {
+                newGlyphs[i] = glyphs[i]
+                newProps[i] = props[i]
+            }
+        }
+        newGlyphs.withUnsafeBufferPointer { gp in
+            newProps.withUnsafeBufferPointer { pp in
+                super.setGlyphs(gp.baseAddress!, properties: pp.baseAddress!, characterIndexes: charIndexes, font: font, forGlyphRange: glyphRange)
+            }
+        }
+    }
 
     // MARK: - Backgrounds (continuous code-block fills)
 

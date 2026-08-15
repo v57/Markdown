@@ -133,6 +133,27 @@ enum SelfTest {
         check("sample has table", sd.blocks.contains { if case .table = $0 { return true } else { return false } })
         check("sample syntax ranges", sd.syntaxRanges.count > 10)
 
+        // --- Task 13: zero-width hidden commands (layout-level) ---
+        // Real path: syntax attributes + activeCharacterRange drive the substitution.
+        let zwDoc = MarkdownParser.parse("# Hi\nplain").attributed.mutableCopy() as! NSMutableAttributedString
+        let zwStorage = NSTextStorage(attributedString: zwDoc)
+        let zwLM = EditorLayoutManager()
+        zwStorage.addLayoutManager(zwLM)
+        let zwContainer = NSTextContainer(size: NSSize(width: 600, height: 2000))
+        zwLM.addTextContainer(zwContainer)
+        // Caret on line 2 ("plain") → line 1's "# " is hidden (zero width)
+        zwLM.activeCharacterRange = NSRange(location: 5, length: 5)
+        zwLM.ensureLayout(for: zwContainer)
+        let wHidden = zwLM.usedRect(for: zwContainer).width
+        // Caret on line 1 → nothing hidden
+        zwLM.activeCharacterRange = NSRange(location: 0, length: 4)
+        zwLM.invalidateGlyphs(forCharacterRange: NSRange(location: 0, length: 10), changeInLength: 0, actualCharacterRange: nil)
+        zwLM.invalidateLayout(forCharacterRange: NSRange(location: 0, length: 10), actualCharacterRange: nil)
+        zwLM.ensureLayout(for: zwContainer)
+        let wShown = zwLM.usedRect(for: zwContainer).width
+        print("ZEROWIDTH real: hidden=\(wHidden) shown=\(wShown)")
+        check("zerowidth: inactive line narrower", wHidden < wShown - 5, "hidden=\(wHidden) shown=\(wShown)")
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

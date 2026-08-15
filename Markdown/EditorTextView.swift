@@ -111,6 +111,10 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
         let newRange = currentActiveLineRange()
         let union = NSUnionRange(lm.activeCharacterRange, newRange)
         lm.activeCharacterRange = newRange
+        // Re-layout the affected lines so hidden commands collapse to zero width
+        // (and appear again when the caret lands on their line).
+        lm.invalidateGlyphs(forCharacterRange: union, changeInLength: 0, actualCharacterRange: nil)
+        lm.invalidateLayout(forCharacterRange: union, actualCharacterRange: nil)
         lm.invalidateDisplay(forCharacterRange: union)
     }
 
