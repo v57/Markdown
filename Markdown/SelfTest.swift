@@ -107,6 +107,20 @@ enum SelfTest {
               ["```swift\nlet x = 1\n```", "```\nno close", "~~~\n**not bold**\n~~~", "a\n```\nb\n```"]
                 .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
 
+        // --- Task 9: tables ---
+        let t = MarkdownParser.parse("| a | b |\n|---|---|\n| 1 | 2 |")
+        check("table block", t.blocks == [.table(header: ["a", "b"], rows: [["1", "2"]], alignments: [.left, .left])])
+        check("table syntax pipes", t.syntaxRanges.count >= 4)
+        let ta = MarkdownParser.parse("| a | b |\n|:---|---:|\n| 1 | 2 |")
+        var aligns: [MarkdownParser.Alignment] = []
+        if case .table(_, _, let a)? = ta.blocks.first { aligns = a }
+        check("table alignments", aligns == [.left, .right])
+        check("table header bold", (t.attributed.attribute(.font, at: 2, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits.contains(.bold) == true)
+        check("table cell monospace", (t.attributed.attribute(.font, at: 13, effectiveRange: nil) as? NSFont)?.fontName.contains("Mono") == true)
+        check("verbatim table invariant",
+              ["| a | b |\n|---|---|\n| 1 | 2 |", "a | b\n---|---\n1 | 2", "|x|y|\n|:-|-:|\n|1|2|", "no | pipe here"]
+                .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

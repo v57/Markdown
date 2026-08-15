@@ -262,6 +262,70 @@ enum MarkdownParser {
                 continue
             }
 
+            // Table: current line has '|' and the next line is a GFM separator row.
+            // Rendering note: NSTextTable would replace the structural '|' characters with
+            // layout, breaking the verbatim-source invariant — so tables render as monospace
+            // blocks with pipes as syntax (hidden when inactive, tertiary when active).
+            if trimmed.contains("|"), i + 1 < count,
+               match(lines[i + 1], pattern: "^\\s*\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)*\\|?\\s*$") != nil,
+               lines[i + 1].contains("-") {
+                let headerCells = splitCells(trimmed)
+                let alignments = splitCells(lines[i + 1]).map { cell -> Alignment in
+                    let c = cell.trimmingCharacters(in: .whitespaces)
+                    if c.hasPrefix(":") && c.hasSuffix(":") { return .center }
+                    if c.hasSuffix(":") { return .right }
+                    return .left
+                }
+                var rows: [[String]] = []
+                var j = i + 2
+                while j < count {
+                    let t = lines[j].trimmingCharacters(in: .whitespaces)
+                    guard t.contains("|"), !t.isEmpty else { break }
+                    rows.append(splitCells(t))
+                    j += 1
+                }
+                let tablePara = NSMutableParagraphStyle()
+                tablePara.lineSpacing = 0
+                tablePara.paragraphSpacing = 0
+                let cellAttrs: [NSAttributedString.Key: Any] = [
+                    .font: style.codeFont, .foregroundColor: style.textColor, .paragraphStyle: tablePara,
+                ]
+                let headerAttrs: [NSAttributedString.Key: Any] = [
+                    .font: style.emphasisFont(base: style.codeFont, bold: true, italic: false),
+                    .foregroundColor: style.textColor, .paragraphStyle: tablePara,
+                ]
+                func markPipes(_ line: String, at start: Int) {
+                    let ns = line as NSString
+                    var idx = 0
+                    while idx < ns.length {
+                        if ns.character(at: idx) == 0x7C { // |
+                            markSyntax(NSRange(location: start + idx, length: 1))
+                        }
+                        idx += 1
+                    }
+                }
+                // Header row: bold, pipes syntax
+                let hs = out.length
+                emit(raw, attrs: headerAttrs)
+                markPipes(raw, at: hs)
+                emitNewline(i, para: tablePara)
+                // Separator row: entirely syntax
+                let ss = out.length
+                emit(lines[i + 1], attrs: cellAttrs)
+                markSyntax(NSRange(location: ss, length: lineLen(i + 1)))
+                emitNewline(i + 1, para: tablePara)
+                // Body rows: pipes syntax
+                for (k, rowLine) in lines[(i + 2)..<j].enumerated() {
+                    let rs = out.length
+                    emit(rowLine, attrs: cellAttrs)
+                    markPipes(rowLine, at: rs)
+                    emitNewline(i + 2 + k, para: tablePara)
+                }
+                blocks.append(.table(header: headerCells, rows: rows, alignments: alignments))
+                i = j
+                continue
+            }
+
             // Paragraph / setext heading — consume until blank line or a line starting a new block.
             // (Fence/list/task/table handlers are added by later tasks and intercept first.)
             var j = i
@@ -333,6 +397,14 @@ enum MarkdownParser {
 
     static func isUnderline(_ line: String) -> Bool {
         match(line, pattern: "^\\s*(=+|-+)\\s*$") != nil
+    }
+
+    /// Splits a GFM table row into cells ("| a | b |" -> ["a", "b"]).
+    static func splitCells(_ line: String) -> [String] {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        let inner = t.hasPrefix("|") ? String(t.dropFirst()) : t
+        let trimmedEnd = inner.hasSuffix("|") ? String(inner.dropLast()) : inner
+        return trimmedEnd.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     static func match(_ s: String, pattern: String) -> [String]? {
