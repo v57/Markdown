@@ -346,6 +346,8 @@ extern "C" {
 #if __has_warning("-Watimport-in-framework-header")
 #pragma clang diagnostic ignored "-Watimport-in-framework-header"
 #endif
+@import AppKit;
+@import Foundation;
 #endif
 
 #endif // defined(__OBJC__)
@@ -368,6 +370,23 @@ extern "C" {
 #endif
 
 #if defined(__OBJC__)
+
+@class NSCoder;
+SWIFT_CLASS("_TtC8Markdown19EditorLayoutManager")
+@interface EditorLayoutManager : NSLayoutManager
+- (nonnull instancetype)init OBJC_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
+@end
+
+@class NSTextContainer;
+SWIFT_CLASS("_TtC8Markdown14EditorTextView")
+@interface EditorTextView : NSTextView <NSTextStorageDelegate, NSTextViewDelegate>
+- (nonnull instancetype)init OBJC_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
+- (void)viewDidMoveToWindow;
+- (nonnull instancetype)initWithFrame:(NSRect)frameRect textContainer:(NSTextContainer * _Nullable)container SWIFT_UNAVAILABLE;
+- (nonnull instancetype)initWithFrame:(NSRect)frameRect SWIFT_UNAVAILABLE;
+@end
 
 #endif // defined(__OBJC__)
 #if __has_attribute(external_source_symbol)

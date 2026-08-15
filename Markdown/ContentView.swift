@@ -3,7 +3,7 @@ import SwiftUI
 struct MarkdownApp: App {
     var body: some Scene {
         WindowGroup("Markdown") {
-            Text("Markdown")   // placeholder — replaced by EditorView in Task 2
+            EditorView()
                 .frame(minWidth: 480, minHeight: 360)
         }
         .defaultSize(width: 900, height: 700)
