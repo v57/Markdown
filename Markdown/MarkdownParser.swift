@@ -169,6 +169,7 @@ enum MarkdownParser {
                     let start = out.length
                     emit(lines[i], attrs: baseAttrs)
                     markSyntax(NSRange(location: start, length: marker.count))
+                    out.addAttribute(.markdownListMarker, value: true, range: NSRange(location: start, length: marker.count))
                     let cbRange = NSRange(location: start + marker.count, length: checkbox.count)
                     out.addAttribute(.markdownCheckbox, value: checked, range: cbRange)
                     out.addAttribute(.markdownSyntax, value: true, range: cbRange)
@@ -203,6 +204,7 @@ enum MarkdownParser {
                     let start = out.length
                     emit(lines[i], attrs: baseAttrs)
                     markSyntax(NSRange(location: start, length: marker.count))
+                    out.addAttribute(.markdownListMarker, value: true, range: NSRange(location: start, length: marker.count))
                     applyInline(NSRange(location: start + marker.count, length: lineLen(i) - marker.count), base: baseAttrs)
                     emitNewline(i, para: para)
                     items.append(ListItem(text: text, level: level))

@@ -154,6 +154,64 @@ enum SelfTest {
         print("ZEROWIDTH real: hidden=\(wHidden) shown=\(wShown)")
         check("zerowidth: inactive line narrower", wHidden < wShown - 5, "hidden=\(wHidden) shown=\(wShown)")
 
+        // --- Task 13b: heading line-height probe (active vs inactive) ---
+        // Font zero-advance glyph availability (for the ZWSP substitution fix)
+        var sfHasZeroWidth = false
+        for font in [NSFont.systemFont(ofSize: 15),
+                     NSFont.systemFont(ofSize: 20, weight: .semibold),
+                     NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)] {
+            var found: [String] = []
+            for char in [0x200B, 0x2060, 0xFEFF] {
+                var ch: [UniChar] = [UniChar(char)]
+                var gl = [CGGlyph](repeating: 0, count: 1)
+                CTFontGetGlyphsForCharacters(font as CTFont, &ch, &gl, 1)
+                var adv = [CGSize](repeating: .zero, count: 1)
+                CTFontGetAdvancesForGlyphs(font as CTFont, .horizontal, gl, &adv, 1)
+                if gl[0] != 0 { found.append("U+\(String(format: "%04X", char)) g=\(gl[0]) adv=\(adv[0].width)") }
+            }
+            print("FONTCHECK \(font.fontName): \(found.isEmpty ? "none" : found.joined(separator: " "))")
+            if found.contains(where: { $0.hasSuffix("adv=0.0") }) { sfHasZeroWidth = true }
+        }
+        check("system font has zero-width glyph", sfHasZeroWidth)
+        let hdDoc = MarkdownParser.parse("### Task list\nplain").attributed.mutableCopy() as! NSMutableAttributedString
+        let hdStorage = NSTextStorage(attributedString: hdDoc)
+        let hdLM = EditorLayoutManager()
+        hdStorage.addLayoutManager(hdLM)
+        let hdContainer = NSTextContainer(size: NSSize(width: 600, height: 2000))
+        hdLM.addTextContainer(hdContainer)
+        func headingHeight(activeRange: NSRange, invalidateRange: NSRange) -> CGFloat {
+            hdLM.activeCharacterRange = activeRange
+            hdLM.invalidateGlyphs(forCharacterRange: invalidateRange, changeInLength: 0, actualCharacterRange: nil)
+            hdLM.invalidateLayout(forCharacterRange: invalidateRange, actualCharacterRange: nil)
+            hdLM.ensureLayout(for: hdContainer)
+            let glyphRange = hdLM.glyphRange(forCharacterRange: NSRange(location: 0, length: 11), actualCharacterRange: nil)
+            return hdLM.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil).height
+        }
+        let wholeDoc = NSRange(location: 0, length: hdStorage.length)
+        let headingLine = NSRange(location: 0, length: 11)
+        let hInactive = headingHeight(activeRange: NSRange(location: 12, length: 5), invalidateRange: wholeDoc) // caret on "plain"
+        let hActiveWhole = headingHeight(activeRange: NSRange(location: 0, length: 11), invalidateRange: wholeDoc)
+        let hActiveLineOnly = headingHeight(activeRange: NSRange(location: 0, length: 11), invalidateRange: headingLine)
+        print("HEADING HEIGHT inactive=\(hInactive) active-whole=\(hActiveWhole) active-line-only=\(hActiveLineOnly)")
+        check("heading height stable", abs(hInactive - hActiveLineOnly) < 0.5, "inactive=\(hInactive) active=\(hActiveLineOnly)")
+
+        // --- Task 14: list markers always visible ---
+        let lmDoc = MarkdownParser.parse("- a\n1. b\n- [x] c")
+        check("ul marker attr", lmDoc.attributed.attribute(.markdownListMarker, at: 0, effectiveRange: nil) != nil)
+        check("ol marker attr", lmDoc.attributed.attribute(.markdownListMarker, at: 4, effectiveRange: nil) != nil)
+        check("task marker attr", lmDoc.attributed.attribute(.markdownListMarker, at: 9, effectiveRange: nil) != nil)
+        let lmDoc2 = MarkdownParser.parse("- a").attributed
+        let lmStorage2 = NSTextStorage(attributedString: lmDoc2)
+        let lmLM2 = EditorLayoutManager()
+        lmStorage2.addLayoutManager(lmLM2)
+        let lmC2 = NSTextContainer(size: NSSize(width: 600, height: 2000))
+        lmLM2.addTextContainer(lmC2)
+        lmLM2.activeCharacterRange = NSRange(location: 999, length: 0) // no active line — marker must stay
+        lmLM2.ensureLayout(for: lmC2)
+        let wMarker = lmLM2.usedRect(for: lmC2).width
+        print("LISTMARKER kept-width=\(wMarker)")
+        check("list marker keeps width when inactive", wMarker > 14, "w=\(wMarker)")
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }
@@ -171,6 +229,27 @@ enum SelfTest {
         let ns = tv.string as NSString
         let startLen = ns.length
         print("EDITPROBE launch selection=\(tv.selectedRange) len=\(startLen)")
+
+        // Heading line-height probe in the real text view (regression: selecting a heading
+        // was reported to grow its line height and push everything below down).
+        let headingRange = ns.range(of: "### Task list")
+        if headingRange.location != NSNotFound {
+            func headingFrags() -> String {
+                tv.layoutManager?.ensureLayout(for: tv.textContainer!)
+                let g = tv.layoutManager!.glyphRange(forCharacterRange: headingRange, actualCharacterRange: nil)
+                var frags: [String] = []
+                tv.layoutManager!.enumerateLineFragments(forGlyphRange: g) { rect, used, _, _, _ in
+                    frags.append("h=\(rect.height)/y=\(rect.minY)")
+                }
+                return frags.joined(separator: " ")
+            }
+            tv.setSelectedRange(NSRange(location: 0, length: 0))
+            let dInactive = headingFrags()
+            tv.setSelectedRange(NSRange(location: headingRange.location + headingRange.length, length: 0))
+            let dActive = headingFrags()
+            let stable = dInactive == dActive
+            print("EDITPROBE \(stable ? "PASS" : "FAIL") heading line stable: inactive=[\(dInactive)] active=[\(dActive)]")
+        }
         tv.setSelectedRange(NSRange(location: startLen, length: 0))
         tv.insertText("Z")
         let afterInsert = (tv.string as NSString).length

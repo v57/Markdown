@@ -15,6 +15,9 @@ extension NSAttributedString.Key {
     /// Marks horizontal-rule ranges; the layout manager draws a full-width line
     /// instead of the literal dashes.
     static let markdownRule = NSAttributedString.Key("MarkdownRule")
+    /// Marks list markers ("- ", "* ", "1. ") that are ALWAYS shown (never hidden or
+    /// collapsed), even on inactive lines — Obsidian-style persistent bullets.
+    static let markdownListMarker = NSAttributedString.Key("MarkdownListMarker")
 }
 
 struct MarkdownStyle {

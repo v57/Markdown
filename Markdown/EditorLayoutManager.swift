@@ -14,11 +14,45 @@ final class EditorLayoutManager: NSLayoutManager {
         guard attrs[.markdownSyntax] != nil else { return false }
         if attrs[.markdownCheckbox] != nil { return false }   // keep the checkbox slot
         if attrs[.markdownImage] != nil { return false }      // keep the image slot
+        if attrs[.markdownListMarker] != nil { return false } // list markers are always shown
         return NSIntersectionRange(NSRange(location: charIndex, length: 1), activeCharacterRange).length == 0
     }
 
     // MARK: - Zero-width glyph substitution for hidden command symbols
 
+    private static var zeroGlyphCache: [String: CGGlyph] = [:]
+
+    /// A real glyph with zero advancement for the given font. NSNullGlyph + .null property
+    /// is NOT used: a run of null-property glyphs at the start of a line gets split into
+    /// its own line fragment by the layout manager, corrupting line heights (a selected
+    /// heading visibly grew and pushed the document down). A real zero-width glyph keeps
+    /// the run intact. Fonts without a zero-width glyph (SF Mono) fall back to space.
+    private static func zeroGlyph(for font: NSFont) -> CGGlyph {
+        let key = font.fontName
+        if let cached = zeroGlyphCache[key] { return cached }
+        var glyph = CGGlyph(0)
+        for char: UniChar in [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF] {
+            var ch: [UniChar] = [char]
+            var gl = [CGGlyph](repeating: 0, count: 1)
+            CTFontGetGlyphsForCharacters(font as CTFont, &ch, &gl, 1)
+            if gl[0] != 0 {
+                var adv = [CGSize](repeating: .zero, count: 1)
+                CTFontGetAdvancesForGlyphs(font as CTFont, .horizontal, gl, &adv, 1)
+                if adv[0].width == 0 {
+                    glyph = gl[0]
+                    break
+                }
+            }
+        }
+        if glyph == 0 {
+            var sp: [UniChar] = [0x20]
+            var spg = [CGGlyph](repeating: 0, count: 1)
+            CTFontGetGlyphsForCharacters(font as CTFont, &sp, &spg, 1)
+            glyph = spg[0]
+        }
+        zeroGlyphCache[key] = glyph
+        return glyph
+    }
     override func setGlyphs(_ glyphs: UnsafePointer<CGGlyph>, properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
                             characterIndexes charIndexes: UnsafePointer<Int>, font: NSFont, forGlyphRange glyphRange: NSRange) {
         guard glyphRange.length > 0, let storage = textStorage else {
@@ -41,8 +75,8 @@ final class EditorLayoutManager: NSLayoutManager {
         var newProps = [NSLayoutManager.GlyphProperty](repeating: [], count: glyphRange.length)
         for i in 0..<glyphRange.length {
             if zeroed[i] {
-                newGlyphs[i] = 0 // NSNullGlyph
-                newProps[i] = [.null]
+                newGlyphs[i] = Self.zeroGlyph(for: font)
+                newProps[i] = [] // real glyph, normal property — keeps the line fragment intact
             } else {
                 newGlyphs[i] = glyphs[i]
                 newProps[i] = props[i]
@@ -130,8 +164,9 @@ final class EditorLayoutManager: NSLayoutManager {
                     imageRanges.append(clamped)                          // drawn as an image
                 } else {
                     let isSyntax = attrs[.markdownSyntax] != nil
+                    let alwaysShow = attrs[.markdownListMarker] != nil
                     let active = NSIntersectionRange(clamped, activeCharacterRange).length > 0
-                    if !isSyntax || active {
+                    if !isSyntax || active || alwaysShow {
                         drawRanges.append(clamped)                       // visible glyphs
                     }
                 }
