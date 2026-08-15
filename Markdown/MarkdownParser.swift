@@ -148,6 +148,72 @@ enum MarkdownParser {
                 continue
             }
 
+            // Task list: ^(\s*)[-*+][ \t]+\[[ xX]\][ \t]+content
+            if match(raw, pattern: "^[ \\t]*[-*+][ \\t]+\\[[ xX]\\]") != nil {
+                var items: [TaskItem] = []
+                while i < count,
+                      let mm = match(lines[i], pattern: "^([ \\t]*)([-*+])([ \\t]+)(\\[[ xX]\\])([ \\t]+)(.*)$") {
+                    let level = mm[1].count / 2
+                    let marker = mm[1] + mm[2] + mm[3]          // indent + bullet + spaces
+                    let checkbox = mm[4]
+                    let spacing = mm[5]
+                    let text = mm[6]
+                    let checked = checkbox.contains("x") || checkbox.contains("X")
+                    let para = style.bodyParagraph()
+                    let baseAttrs: [NSAttributedString.Key: Any] = [
+                        .font: style.bodyFont,
+                        .foregroundColor: checked ? style.checkedTextColor : style.textColor,
+                        .paragraphStyle: style.listParagraph(level: level, markerWidth: 24),
+                    ]
+                    let start = out.length
+                    emit(lines[i], attrs: baseAttrs)
+                    markSyntax(NSRange(location: start, length: marker.count))
+                    let cbRange = NSRange(location: start + marker.count, length: checkbox.count)
+                    out.addAttribute(.markdownCheckbox, value: checked, range: cbRange)
+                    out.addAttribute(.markdownSyntax, value: true, range: cbRange)
+                    let contentStart = start + marker.count + checkbox.count + spacing.count
+                    let contentLen = lineLen(i) - (marker.count + checkbox.count + spacing.count)
+                    applyInline(NSRange(location: contentStart, length: contentLen), base: baseAttrs)
+                    emitNewline(i, para: para)
+                    items.append(TaskItem(text: text, checked: checked, level: level))
+                    i += 1
+                }
+                blocks.append(.taskList(items: items))
+                continue
+            }
+
+            // Unordered / ordered list: ^(\s*)([-*+]|\d+[.)])[ \t]+content
+            if let m = match(raw, pattern: "^([ \\t]*)([-*+]|\\d+[.)])([ \\t]+)(.*)$") {
+                let isOrdered = m[2].first?.isNumber == true
+                var items: [ListItem] = []
+                var listLevel = 0
+                while i < count,
+                      let mm = match(lines[i], pattern: "^([ \\t]*)([-*+]|\\d+[.)])([ \\t]+)(.*)$") {
+                    let level = mm[1].count / 2
+                    let marker = mm[1] + mm[2] + mm[3]
+                    let text = mm[4]
+                    let width: CGFloat = isOrdered ? 30 : 18
+                    let para = style.bodyParagraph()
+                    let baseAttrs: [NSAttributedString.Key: Any] = [
+                        .font: style.bodyFont,
+                        .foregroundColor: style.textColor,
+                        .paragraphStyle: style.listParagraph(level: level, markerWidth: width),
+                    ]
+                    let start = out.length
+                    emit(lines[i], attrs: baseAttrs)
+                    markSyntax(NSRange(location: start, length: marker.count))
+                    applyInline(NSRange(location: start + marker.count, length: lineLen(i) - marker.count), base: baseAttrs)
+                    emitNewline(i, para: para)
+                    items.append(ListItem(text: text, level: level))
+                    listLevel = level
+                    i += 1
+                }
+                blocks.append(isOrdered
+                    ? .orderedList(items: items, level: listLevel)
+                    : .unorderedList(items: items, level: listLevel))
+                continue
+            }
+
             // Paragraph / setext heading — consume until blank line or a line starting a new block.
             // (Fence/list/task/table handlers are added by later tasks and intercept first.)
             var j = i

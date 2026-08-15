@@ -10,7 +10,7 @@
 		<dict>
 			<key>cdhash</key>
 			<data>
-			vM2boe5vxeFkn9GC5bjRLWRQFuU=
+			JL33xJqf0D/1H7XpCc9fQC7Pvfg=
 			</data>
 			<key>requirement</key>
 			<string>identifier "Markdown.debug" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: Dmitry Kozlov (N97KT34BX7)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */</string>

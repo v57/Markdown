@@ -63,6 +63,24 @@ enum SelfTest {
               ["**b** and *i* and `c` and ~~s~~ and \\*x\\*", "a ** b ** c", "emoji 🎉 *ok*", "# **bold heading**"]
                 .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
 
+        // --- Task 6: lists and task lists ---
+        let ul = MarkdownParser.parse("- a\n- b")
+        check("ul blocks", ul.blocks == [.unorderedList(items: [.init(text: "a", level: 0), .init(text: "b", level: 0)], level: 0)])
+        check("ul marker syntax", ul.syntaxRanges.count == 2)
+        let nested = MarkdownParser.parse("- a\n  - b")
+        check("nested list levels",
+              nested.blocks.first.map { if case .unorderedList(let items, _) = $0 { return items[1].level } else { return -1 } } == 1)
+        let ol = MarkdownParser.parse("1. a\n2. b")
+        check("ol blocks", ol.blocks == [.orderedList(items: [.init(text: "a", level: 0), .init(text: "b", level: 0)], level: 0)])
+        let task = MarkdownParser.parse("- [x] done\n- [ ] todo")
+        check("task blocks",
+              task.blocks == [.taskList(items: [.init(text: "done", checked: true, level: 0), .init(text: "todo", checked: false, level: 0)])])
+        check("task checkbox attr", task.attributed.attribute(.markdownCheckbox, at: 3, effectiveRange: nil) as? Bool == true)
+        check("task checkbox unchecked attr", task.attributed.attribute(.markdownCheckbox, at: 14, effectiveRange: nil) as? Bool == false)
+        check("verbatim list invariant",
+              ["- a\n- b", "- [x] done\n- [ ] todo", "1. a\n  2. b", "* i1\n* i2\n  * i2a"]
+                .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

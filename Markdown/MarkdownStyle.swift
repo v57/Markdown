@@ -3,6 +3,9 @@ import AppKit
 extension NSAttributedString.Key {
     /// Marks markdown "command symbol" ranges (hidden on inactive lines, tertiary when active).
     static let markdownSyntax = NSAttributedString.Key("MarkdownSyntax")
+    /// Marks task-list checkbox ranges ("[x]"/"[ ]"); the layout manager draws a checkbox
+    /// image instead of the literal characters (keeps the source string verbatim).
+    static let markdownCheckbox = NSAttributedString.Key("MarkdownCheckbox")
 }
 
 struct MarkdownStyle {
