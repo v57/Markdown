@@ -14,6 +14,7 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
         markdownLayout.addTextContainer(markdownContainer)
         super.init(frame: .zero, textContainer: markdownContainer)
         configure()
+        markdownStorage.setAttributedString(NSAttributedString(string: SampleDocument.text)) // launch sample
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -35,6 +36,71 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
         insertionPointColor = .labelColor
         delegate = self
         markdownStorage.delegate = self
+    }
+
+    // MARK: - Derived styling (re-parse on every character edit)
+
+    func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
+                     range editedRange: NSRange, changeInLength delta: Int) {
+        // Attribute-only edits (our own styling pass) must not re-trigger styling — no recursion.
+        guard editedMask.contains(.editedCharacters) else { return }
+        reapplyMarkdown()
+    }
+
+    private func reapplyMarkdown() {
+        let parsed = MarkdownParser.parse(string, style: .standard)
+        // Apply attributes only (characters are identical — verbatim invariant), so the
+        // storage reports .editedAttributes and the guard above stops the loop.
+        markdownStorage.beginEditing()
+        parsed.attributed.enumerateAttributes(in: NSRange(location: 0, length: parsed.attributed.length), options: []) { attrs, range, _ in
+            markdownStorage.setAttributes(attrs, range: range)
+        }
+        markdownStorage.endEditing()
+        typingAttributes = MarkdownStyle.standard.typingAttributes
+        if let lm = layoutManager as? EditorLayoutManager {
+            lm.activeCharacterRange = currentActiveLineRange()
+            lm.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: markdownStorage.length))
+        }
+        loadImages(from: parsed.attributed)
+    }
+
+    private func loadImages(from attributed: NSAttributedString) {
+        attributed.enumerateAttribute(.markdownImage, in: NSRange(location: 0, length: attributed.length), options: []) { value, _, _ in
+            guard let url = value as? URL else { return }
+            InlineImageCache.shared.load(url: url) { [weak self] in
+                guard let self else { return }
+                self.layoutManager?.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: self.markdownStorage.length))
+                self.needsDisplay = true
+            }
+        }
+    }
+
+    // MARK: - Selection / active line (drives syntax show/hide)
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        guard let lm = layoutManager as? EditorLayoutManager else { return }
+        let newRange = currentActiveLineRange()
+        let union = NSUnionRange(lm.activeCharacterRange, newRange)
+        lm.activeCharacterRange = newRange
+        lm.invalidateDisplay(forCharacterRange: union)
+    }
+
+    func textDidChange(_ notification: Notification) {
+        typingAttributes = MarkdownStyle.standard.typingAttributes
+    }
+
+    private func currentActiveLineRange() -> NSRange {
+        let sel = selectedRange()
+        let ns = string as NSString
+        let loc = max(0, min(sel.location, ns.length))
+        return ns.lineRange(for: NSRange(location: loc, length: 0))
+    }
+
+    // MARK: - Links
+
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        if let url = link as? URL { NSWorkspace.shared.open(url) }
+        return true
     }
 
     override func viewDidMoveToWindow() {

@@ -378,11 +378,17 @@ SWIFT_CLASS("_TtC8Markdown19EditorLayoutManager")
 - (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
 @end
 
+@class NSTextStorage;
+@class NSNotification;
 @class NSTextContainer;
 SWIFT_CLASS("_TtC8Markdown14EditorTextView")
 @interface EditorTextView : NSTextView <NSTextStorageDelegate, NSTextViewDelegate>
 - (nonnull instancetype)init OBJC_DESIGNATED_INITIALIZER;
 - (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
+- (void)textStorage:(NSTextStorage * _Nonnull)textStorage didProcessEditing:(NSTextStorageEditActions)editedMask range:(NSRange)editedRange changeInLength:(NSInteger)delta;
+- (void)textViewDidChangeSelection:(NSNotification * _Nonnull)notification;
+- (void)textDidChange:(NSNotification * _Nonnull)notification;
+- (BOOL)textView:(NSTextView * _Nonnull)textView clickedOnLink:(id _Nonnull)link atIndex:(NSUInteger)charIndex SWIFT_WARN_UNUSED_RESULT;
 - (void)viewDidMoveToWindow;
 - (nonnull instancetype)initWithFrame:(NSRect)frameRect textContainer:(NSTextContainer * _Nullable)container SWIFT_UNAVAILABLE;
 - (nonnull instancetype)initWithFrame:(NSRect)frameRect SWIFT_UNAVAILABLE;
