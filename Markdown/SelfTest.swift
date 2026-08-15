@@ -81,6 +81,19 @@ enum SelfTest {
               ["- a\n- b", "- [x] done\n- [ ] todo", "1. a\n  2. b", "* i1\n* i2\n  * i2a"]
                 .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
 
+        // --- Task 7: links and images ---
+        let l = MarkdownParser.parse("[x](https://a.b)").attributed
+        check("link color", l.attribute(.foregroundColor, at: 1, effectiveRange: nil) as? NSColor == .linkColor)
+        check("link url attr", (l.attribute(.link, at: 1, effectiveRange: nil) as? URL)?.absoluteString == "https://a.b")
+        check("link delimiters syntax", l.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil
+            && l.attribute(.markdownSyntax, at: 6, effectiveRange: nil) != nil)
+        let img = MarkdownParser.parse("![alt](https://a.b/c.png)").attributed
+        check("image range attr", (img.attribute(.markdownImage, at: 2, effectiveRange: nil) as? URL)?.absoluteString == "https://a.b/c.png")
+        check("image marker syntax", img.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil)
+        check("verbatim link invariant",
+              ["[x](https://a.b) t", "![alt](u) and [l](v)", "not a [link", "[a] (b)", "![broken](x"]
+                .allSatisfy { MarkdownParser.parse($0).attributed.string == $0 })
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

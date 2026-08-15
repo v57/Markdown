@@ -6,6 +6,9 @@ extension NSAttributedString.Key {
     /// Marks task-list checkbox ranges ("[x]"/"[ ]"); the layout manager draws a checkbox
     /// image instead of the literal characters (keeps the source string verbatim).
     static let markdownCheckbox = NSAttributedString.Key("MarkdownCheckbox")
+    /// Marks inline image ranges ("![alt](url)"); the layout manager draws a cached image
+    /// in place of the range once loaded (keeps the source string verbatim).
+    static let markdownImage = NSAttributedString.Key("MarkdownImage")
 }
 
 struct MarkdownStyle {

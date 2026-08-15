@@ -354,7 +354,44 @@ enum MarkdownParser {
                 continue
             }
 
-            // Link / image: handled in a later task; '[' stays plain here.
+            // Image: ![alt](url) — handled at the '!' so the whole construct is consumed
+            if c == 0x21, i + 1 < len, ns.character(at: i + 1) == 0x5B,
+               let (textRange, urlRange, _) = tryLink(ns, at: i + 1) {
+                let urlString = ns.substring(with: urlRange)
+                appendSyntax("![")
+                out.append(NSAttributedString(string: ns.substring(with: textRange), attributes: style.codeAttributes())) // alt placeholder
+                let wholeStart = out.length - (2 + textRange.length)
+                appendSyntax("](" + urlString + ")")
+                if let url = URL(string: urlString) {
+                    out.addAttribute(.markdownImage, value: url,
+                                     range: NSRange(location: wholeStart, length: out.length - wholeStart))
+                }
+                i = NSMaxRange(urlRange) + 1   // past ')'
+                continue
+            }
+
+            // Link: [text](url)
+            if c == 0x5B {
+                if let (textRange, urlRange, _) = tryLink(ns, at: i) {
+                    let urlString = ns.substring(with: urlRange)
+                    appendSyntax("[")
+                    let styledText = NSMutableAttributedString(string: ns.substring(with: textRange), attributes: base)
+                    styledText.addAttribute(.foregroundColor, value: style.linkColor, range: NSRange(location: 0, length: styledText.length))
+                    styledText.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: styledText.length))
+                    if let url = URL(string: urlString) {
+                        styledText.addAttribute(.link, value: url, range: NSRange(location: 0, length: styledText.length))
+                    }
+                    out.append(styledText)
+                    appendSyntax("](" + urlString + ")")
+                    i = NSMaxRange(urlRange) + 1   // past ')'
+                    continue
+                }
+                // Not a link — '[' stays plain
+                let chRange = ns.rangeOfComposedCharacterSequence(at: i)
+                appendPlain(ns.substring(with: chRange))
+                i = NSMaxRange(chRange)
+                continue
+            }
 
             // Strikethrough: ~~…~~
             if c == 0x7E, i + 1 < len, ns.character(at: i + 1) == 0x7E {
@@ -412,6 +449,26 @@ enum MarkdownParser {
         return (out, syntax)
     }
 
+    /// At a '[' position, returns (textRange, urlRange, isImage) for [t](u) / ![t](u), or nil.
+    /// textRange is the link text / alt text; urlRange is the URL between '(' and ')'.
+    private static func tryLink(_ ns: NSString, at i: Int) -> (NSRange, NSRange, Bool)? {
+        let isImage = i > 0 && ns.character(at: i - 1) == 0x21 // '!'
+        let textStart = i + 1                                 // always past the '['
+        var j = textStart
+        while j < ns.length && ns.character(at: j) != 0x5D {   // ]
+            if ns.character(at: j) == 0x0A { return nil }
+            j += 1
+        }
+        guard j < ns.length, j + 1 < ns.length, ns.character(at: j + 1) == 0x28 else { return nil } // (
+        var k = j + 2
+        while k < ns.length && ns.character(at: k) != 0x29 {    // )
+            if ns.character(at: k) == 0x0A { return nil }
+            k += 1
+        }
+        guard k < ns.length else { return nil }
+        return (NSRange(location: textStart, length: j - textStart),
+                NSRange(location: j + 2, length: k - (j + 2)), isImage)
+    }
     private static func isPunctuation(_ c: unichar) -> Bool {
         guard let s = UnicodeScalar(c) else { return false }
         return "\\`*_{}[]()#+-.!>~|".unicodeScalars.contains(s)
