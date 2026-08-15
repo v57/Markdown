@@ -136,12 +136,56 @@ enum SelfTest {
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }
+
+    /// Drives the live editor through insertText / deleteBackward / insertNewline to
+    /// diagnose "backspace does nothing" / "second Enter does nothing" reports.
+    static func editPathProbe() {
+        guard let tv = EditorTextView.live else {
+            print("EDITPROBE FAIL no live text view")
+            return
+        }
+        func report(_ name: String, _ cond: Bool, _ extra: String = "") {
+            print("EDITPROBE \(cond ? "PASS" : "FAIL") \(name) \(extra)")
+        }
+        let ns = tv.string as NSString
+        let startLen = ns.length
+        print("EDITPROBE launch selection=\(tv.selectedRange) len=\(startLen)")
+        tv.setSelectedRange(NSRange(location: startLen, length: 0))
+        tv.insertText("Z")
+        let afterInsert = (tv.string as NSString).length
+        report("insertText", tv.string.hasSuffix("Z"), "len \(startLen) -> \(afterInsert)")
+        tv.deleteBackward(nil)
+        let afterDelete = (tv.string as NSString).length
+        report("deleteBackward", !tv.string.hasSuffix("Z") && afterDelete == startLen, "len \(afterInsert) -> \(afterDelete)")
+        let nl0 = tv.string.filter { $0 == "\n" }.count
+        tv.insertNewline(nil)
+        let nl1 = tv.string.filter { $0 == "\n" }.count
+        report("first newline", nl1 == nl0 + 1, "nl \(nl0) -> \(nl1)")
+        tv.insertNewline(nil)
+        let nl2 = tv.string.filter { $0 == "\n" }.count
+        report("second newline", nl2 == nl0 + 2, "nl \(nl1) -> \(nl2)")
+        // Middle-of-text edits (common backspace case)
+        let mid = (tv.string as NSString).length / 2
+        tv.setSelectedRange(NSRange(location: mid, length: 0))
+        tv.insertText("Q")
+        let c = (tv.string as NSString).character(at: mid)
+        report("middle insert", c == 0x51, "char at \(mid) = \(c)")
+        let lenMid1 = (tv.string as NSString).length
+        tv.deleteBackward(nil)
+        let lenMid2 = (tv.string as NSString).length
+        report("middle delete", lenMid2 == lenMid1 - 1, "len \(lenMid1) -> \(lenMid2)")
+        print("EDITPROBE final selection=\(tv.selectedRange) len=\((tv.string as NSString).length)")
+    }
 }
 
 // MARK: - Smoke mode (launch, log, self-quit)
 
 enum SmokeTest {
     static func schedule() {
+        // Drive the live editor through the real edit path after the window is up.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            SelfTest.editPathProbe()
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             print("SMOKE OK")
             NSApp.terminate(nil)

@@ -6,6 +6,16 @@
     "pch" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/Markdown-primary-Bridging-header.pch",
     "swift-dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/Markdown-primary.swiftdeps"
   },
+  "/Users/v57/Projects/Markdown/Markdown/CheckboxAttachment.swift" : {
+    "const-values" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment.swiftconstvalues",
+    "dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment.d",
+    "diagnostics" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment.dia",
+    "index-unit-output-path" : "/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment.o",
+    "llvm-bc" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment.bc",
+    "object" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment.o",
+    "swift-dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment.swiftdeps",
+    "swiftmodule" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/CheckboxAttachment~partial.swiftmodule"
+  },
   "/Users/v57/Projects/Markdown/Markdown/ContentView.swift" : {
     "const-values" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/ContentView.swiftconstvalues",
     "dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/ContentView.d",
@@ -45,6 +55,16 @@
     "object" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/EditorView.o",
     "swift-dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/EditorView.swiftdeps",
     "swiftmodule" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/EditorView~partial.swiftmodule"
+  },
+  "/Users/v57/Projects/Markdown/Markdown/InlineImageCache.swift" : {
+    "const-values" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.swiftconstvalues",
+    "dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.d",
+    "diagnostics" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.dia",
+    "index-unit-output-path" : "/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.o",
+    "llvm-bc" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.bc",
+    "object" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.o",
+    "swift-dependencies" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache.swiftdeps",
+    "swiftmodule" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/InlineImageCache~partial.swiftmodule"
   },
   "/Users/v57/Projects/Markdown/Markdown/MarkdownParser.swift" : {
     "const-values" : "/Users/v57/Projects/Markdown/build/Build/Intermediates.noindex/Markdown.build/Debug/Markdown.build/Objects-normal/arm64/MarkdownParser.swiftconstvalues",

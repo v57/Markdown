@@ -1,6 +1,8 @@
 import AppKit
 
 final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegate {
+    /// Weak handle for the smoke/probe harness to drive the live editor.
+    static weak var live: EditorTextView?
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
@@ -53,6 +55,9 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
         lastSyntaxRangeCount = parsed.syntaxRanges.count
         // Apply attributes only (characters are identical — verbatim invariant), so the
         // storage reports .editedAttributes and the guard above stops the loop.
+        // NOTE: no explicit invalidateDisplay here — the attribute edits fire their own
+        // (safe) layout invalidation. A manual [0, length) invalidation during the edit
+        // callback crashes the layout manager (stale selection / end-of-string boundary).
         markdownStorage.beginEditing()
         parsed.attributed.enumerateAttributes(in: NSRange(location: 0, length: parsed.attributed.length), options: []) { attrs, range, _ in
             markdownStorage.setAttributes(attrs, range: range)
@@ -61,7 +66,6 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
         typingAttributes = MarkdownStyle.standard.typingAttributes
         if let lm = layoutManager as? EditorLayoutManager {
             lm.activeCharacterRange = currentActiveLineRange()
-            lm.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: markdownStorage.length))
         }
         loadImages(from: parsed.attributed)
     }
@@ -71,7 +75,8 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
             guard let url = value as? URL else { return }
             InlineImageCache.shared.load(url: url) { [weak self] in
                 guard let self else { return }
-                self.layoutManager?.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: self.markdownStorage.length))
+                // Images are drawn at line height from the cache on every draw — a plain
+                // redraw suffices; layout does not change.
                 self.needsDisplay = true
             }
         }
@@ -131,6 +136,7 @@ final class EditorTextView: NSTextView, NSTextStorageDelegate, NSTextViewDelegat
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
+            EditorTextView.live = self
             print("EDITOR READY textKit1=\(textLayoutManager == nil) syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)")
             window?.makeFirstResponder(self)
         }
