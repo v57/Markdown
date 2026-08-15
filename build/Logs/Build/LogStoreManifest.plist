@@ -90,48 +90,6 @@
 			<key>uniqueIdentifier</key>
 			<string>1DC4D0FF-007C-4ADE-90D4-D104A5F7DEF1</string>
 		</dict>
-		<key>40102ACB-6556-440D-81FA-679A16878770</key>
-		<dict>
-			<key>className</key>
-			<string>IDECommandLineBuildLog</string>
-			<key>documentTypeString</key>
-			<string>&lt;nil&gt;</string>
-			<key>domainType</key>
-			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
-			<key>fileName</key>
-			<string>40102ACB-6556-440D-81FA-679A16878770.xcactivitylog</string>
-			<key>hasPrimaryLog</key>
-			<true/>
-			<key>primaryObservable</key>
-			<dict>
-				<key>highLevelStatus</key>
-				<string>E</string>
-				<key>totalNumberOfAnalyzerIssues</key>
-				<integer>0</integer>
-				<key>totalNumberOfErrors</key>
-				<integer>3</integer>
-				<key>totalNumberOfTestFailures</key>
-				<integer>0</integer>
-				<key>totalNumberOfWarnings</key>
-				<integer>0</integer>
-			</dict>
-			<key>schemeIdentifier-containerName</key>
-			<string>Markdown project</string>
-			<key>schemeIdentifier-schemeName</key>
-			<string>Markdown</string>
-			<key>schemeIdentifier-sharedScheme</key>
-			<integer>1</integer>
-			<key>signature</key>
-			<string>Building project Markdown with scheme Markdown and configuration Debug</string>
-			<key>timeStartedRecording</key>
-			<real>808487560.53487396</real>
-			<key>timeStoppedRecording</key>
-			<real>808487562.47129905</real>
-			<key>title</key>
-			<string>Building project Markdown with scheme Markdown and configuration Debug</string>
-			<key>uniqueIdentifier</key>
-			<string>40102ACB-6556-440D-81FA-679A16878770</string>
-		</dict>
 		<key>7BE5AA19-D53E-4FD0-BA09-6B58157C99FC</key>
 		<dict>
 			<key>className</key>
@@ -257,6 +215,48 @@
 			<string>Building project Markdown with scheme Markdown and configuration Debug</string>
 			<key>uniqueIdentifier</key>
 			<string>B2FD261B-BFF0-4B56-A2F5-1D62FEF3888B</string>
+		</dict>
+		<key>B9745E7A-1C95-4189-8562-2FE952033487</key>
+		<dict>
+			<key>className</key>
+			<string>IDECommandLineBuildLog</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>B9745E7A-1C95-4189-8562-2FE952033487.xcactivitylog</string>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Markdown project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Markdown</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Building project Markdown with scheme Markdown and configuration Debug</string>
+			<key>timeStartedRecording</key>
+			<real>808487606.48566306</real>
+			<key>timeStoppedRecording</key>
+			<real>808487608.709463</real>
+			<key>title</key>
+			<string>Building project Markdown with scheme Markdown and configuration Debug</string>
+			<key>uniqueIdentifier</key>
+			<string>B9745E7A-1C95-4189-8562-2FE952033487</string>
 		</dict>
 	</dict>
 </dict>

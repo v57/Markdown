@@ -124,6 +124,15 @@ enum SelfTest {
         // --- Task 11: feature attributes ---
         check("rule attr", MarkdownParser.parse("---").attributed.attribute(.markdownRule, at: 0, effectiveRange: nil) != nil)
 
+        // --- Task 12: sample document ---
+        let sd = MarkdownParser.parse(SampleDocument.text)
+        check("sample verbatim", sd.attributed.string == SampleDocument.text)
+        check("sample has headings", sd.blocks.filter { if case .heading = $0 { return true } else { return false } }.count == 3)
+        check("sample has tasks", sd.blocks.contains { if case .taskList = $0 { return true } else { return false } })
+        check("sample has code fence", sd.blocks.contains { if case .codeFence = $0 { return true } else { return false } })
+        check("sample has table", sd.blocks.contains { if case .table = $0 { return true } else { return false } })
+        check("sample syntax ranges", sd.syntaxRanges.count > 10)
+
         print("SELFTEST \(passed) passed, \(failed) failed")
         exit(failed == 0 ? 0 : 1)
     }

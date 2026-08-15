@@ -12,3 +12,4 @@
 /Users/v57/Projects/Markdown/build/Build/Products/Debug/Markdown.app
 /Users/v57/Projects/Markdown/build/Build/Products/Debug/Markdown.app
 /Users/v57/Projects/Markdown/build/Build/Products/Debug/Markdown.app
+/Users/v57/Projects/Markdown/build/Build/Products/Debug/Markdown.app
