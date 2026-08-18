@@ -1,2 +1,5 @@
 # Xcode build products (DerivedData path used by CLI builds)
 build/
+
+# Command Code session files
+.commandcode/

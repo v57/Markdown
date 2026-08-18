@@ -265,7 +265,7 @@ final class EditorLayoutManager: NSLayoutManager {
             guard let union = drawCodeBackground(forCharacterRange: r, at: origin) else { continue }
             // super draws selection highlights and any background attributes over the code
             super.drawBackground(forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil), at: origin)
-            drawCodeChrome(forCharacterRange: r, union: union)
+            drawCodeChrome(forCharacterRange: r, union: union, at: origin)
         }
         for r in quoteRuns {
             // super first so the bar stays visible on top of the selection highlight
@@ -293,53 +293,67 @@ final class EditorLayoutManager: NSLayoutManager {
         return union
     }
 
-    /// Draws the copy button (top-right) and language label (beside it) on a code
-    /// block's first line, and records the copy button's frame + block range for
-    /// the editor's click-to-copy hit test. Only drawn when the block's actual top
-    /// line is on screen (a scrolled tall fence doesn't float the chrome mid-block).
-    private func drawCodeChrome(forCharacterRange r: NSRange, union: NSRect) {
+    /// Draws the copy button (top-right) and language label (top-left) on the
+    /// opening ``` fence line — one line ABOVE the first code-content line — and
+    /// records the copy button's frame + block range for the editor's click-to-copy
+    /// hit test. Only drawn when the block's actual top line is on screen (a scrolled
+    /// tall fence doesn't float the chrome mid-block).
+    private func drawCodeChrome(forCharacterRange r: NSRange, union: NSRect, at origin: NSPoint) {
         guard let storage = textStorage else { return }
         // True top of this block: the char just before it is not code content.
         let isBlockTop = r.location == 0
             || storage.attribute(.markdownCodeBlock, at: r.location - 1, effectiveRange: nil) == nil
         guard isBlockTop else { return }
         let language = storage.attribute(.markdownCodeLanguage, at: r.location, effectiveRange: nil) as? String
-        let startY = union.maxY - 13 - 10   // first line's text band
+        // The ``` opening fence is the line immediately above the block's first
+        // content line (code-fence lines aren't part of the .markdownCodeBlock
+        // span). Anchor the chrome to THAT line fragment so it floats above the
+        // block instead of overlapping the first code line. `union.minY` is a
+        // fallback if the fence line has no glyphs (e.g. the block starts at EOF).
+        var fenceTop = union.minY
+        if r.location > 0 {
+            let beforeGlyph = glyphRange(forCharacterRange: NSRange(location: r.location - 1, length: 1),
+                                         actualCharacterRange: nil)
+            if beforeGlyph.length > 0 {
+                enumerateLineFragments(forGlyphRange: beforeGlyph) { rect, _, _, _, _ in
+                    if fenceTop == union.minY { fenceTop = origin.y + rect.minY }
+                }
+            }
+        }
+        let topBand = fenceTop + 2
         let inset: CGFloat = 10
 
-        // Copy pill at the top-right.
-        let copyLabel = (copiedBlockRange == r) ? "Copied" : "Copy"
-        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        let copyAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
-        let copyTextSize = (copyLabel as NSString).size(withAttributes: copyAttrs)
-        let pillH: CGFloat = 20
-        let pillW = copyTextSize.width + 18
-        let pillRect = NSRect(x: union.maxX - inset - pillW, y: startY, width: pillW, height: pillH)
-        let pill = NSBezierPath(roundedRect: pillRect, xRadius: pillH / 2, yRadius: pillH / 2)
-        (NSColor.quaternarySystemFill).setFill()
-        pill.fill()
-        pill.lineWidth = 1
-        NSColor.separatorColor.setStroke()
-        pill.stroke()
-        let textRect = NSRect(x: pillRect.midX - copyTextSize.width / 2,
-                              y: pillRect.minY + (pillH - copyTextSize.height) / 2,
-                              width: copyTextSize.width, height: copyTextSize.height)
-        (copyLabel as NSString).draw(in: textRect, withAttributes: copyAttrs)
+        // Hide the chrome while the caret is on the ``` fence line (editing the
+        // fence marker itself) — language and Copy both disappear.
+        if r.location > 0, lineContainsCaret(r.location - 1) { return }
 
-        copyButtons.append(CodeBlockChrome(copyFrame: pillRect, blockRange: r,
-                                           language: language, copied: copiedBlockRange == r))
+        // Shared style: the chrome is plain text, one weight for the language
+        // name and the Copy affordance alike.
+        let langFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let langAttrs: [NSAttributedString.Key: Any] = [
+            .font: langFont, .foregroundColor: MarkdownStyle.standard.codeTextColor,
+        ]
 
-        // Language label just left of the copy pill, only when known.
+        // Language label at the top-LEFT of the block — on the ``` fence line.
         if let language, !language.isEmpty {
-            let langFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            let langAttrs: [NSAttributedString.Key: Any] = [
-                .font: langFont, .foregroundColor: MarkdownStyle.standard.codeTextColor,
-            ]
             let langSize = (language as NSString).size(withAttributes: langAttrs)
-            let langRect = NSRect(x: pillRect.minX - 8 - langSize.width, y: startY,
+            let langRect = NSRect(x: union.minX + inset, y: topBand,
                                   width: langSize.width, height: langSize.height)
             (language as NSString).draw(in: langRect, withAttributes: langAttrs)
         }
+
+        // Copy at the top-right, the same plain-text style as the language label.
+        // The hit-test frame is padded for an easy click target while the drawn
+        // glyph stays flush text.
+        let copyLabel = (copiedBlockRange == r) ? "Copied" : "Copy"
+        let copyTextSize = (copyLabel as NSString).size(withAttributes: langAttrs)
+        let copyRect = NSRect(x: union.maxX - inset - copyTextSize.width, y: topBand,
+                              width: copyTextSize.width, height: copyTextSize.height)
+        (copyLabel as NSString).draw(in: copyRect, withAttributes: langAttrs)
+
+        let hitFrame = copyRect.insetBy(dx: -6, dy: -4)
+        copyButtons.append(CodeBlockChrome(copyFrame: hitFrame, blockRange: r,
+                                           language: language, copied: copiedBlockRange == r))
     }
 
     /// Collapses input character ranges into blocks by merging runs that tile
