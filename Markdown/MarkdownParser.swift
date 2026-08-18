@@ -1,4 +1,5 @@
 import AppKit
+import Markdown
 
 struct ParsedMarkdown {
     let attributed: NSAttributedString
@@ -6,6 +7,18 @@ struct ParsedMarkdown {
     let blocks: [MarkdownParser.Block]
 }
 
+/// Markdown → styled attributed string, built on swift-markdown (CommonMark + GFM:
+/// tables, task lists, strikethrough). Replaces the hand-rolled line dispatcher,
+/// which could loop forever on inputs like a bare "- [ ]" (the old task-list guard
+/// matched while the full pattern did not, so `i` never advanced).
+///
+/// Architecture: `Document(parsing:)` produces the AST; a styler walks it and emits
+/// the SOURCE TEXT VERBATIM (never synthesized characters), so the invariant
+/// `parsed.attributed.string == markdown` holds structurally. Each source line gets
+/// a role from the AST (heading/quote/list/fence/table/rule/code/html/paragraph);
+/// per-line marker ranges come from the same total regexes as before (every line
+/// classifies — no loops); inline styling ranges come from the AST's source ranges
+/// (cmark byte columns converted to UTF-16 offsets).
 enum MarkdownParser {
 
     enum Block: Equatable {
@@ -26,614 +39,789 @@ enum MarkdownParser {
     // MARK: - Entry
 
     /// Parses markdown into a styled attributed string.
-    /// INVARIANT: `attributed.string == markdown` — the output is the source text verbatim,
-    /// with attributes and syntax ranges layered on. (The live editor re-applies this to the
+    /// INVARIANT: `attributed.string == markdown` — the output is the source text
+    /// verbatim, with attributes layered on. (The live editor re-applies this to the
     /// text storage, so the characters must never change.)
     static func parse(_ markdown: String, style: MarkdownStyle = .standard) -> ParsedMarkdown {
         let out = NSMutableAttributedString()
         var syntaxRanges: [NSRange] = []
-        var blocks: [Block] = []
 
-        let lines = (markdown as NSString).components(separatedBy: "\n")
-        let count = lines.count
+        // --- Line table: UTF-16 offsets of every line in the source ---
+        let ns = markdown as NSString
+        let rawLines = ns.components(separatedBy: "\n")
         let endsWithNewline = markdown.hasSuffix("\n")
-
-        func endOfLine(_ idx: Int) -> Bool { idx < count - 1 || endsWithNewline }
-        func lineLen(_ idx: Int) -> Int { (lines[idx] as NSString).length }
-
-        func emit(_ text: String, attrs: [NSAttributedString.Key: Any]) {
-            out.append(NSAttributedString(string: text, attributes: attrs))
+        var lines: [LineInfo] = []
+        var offset = 0
+        for (idx, l) in rawLines.enumerated() {
+            // Every line except the last carries its newline; the phantom "" after a
+            // trailing "\n" carries none (its newline belongs to the previous line).
+            let hasNL: Bool
+            if idx < rawLines.count - 1 {
+                hasNL = true
+            } else {
+                hasNL = endsWithNewline && !l.isEmpty
+            }
+            lines.append(LineInfo(start: offset, text: l, hasNewline: hasNL))
+            offset += (l as NSString).length + (hasNL ? 1 : 0)
         }
-        func emitNewline(_ idx: Int, para: NSParagraphStyle) {
-            if endOfLine(idx) { emit("\n", attrs: [.paragraphStyle: para]) }
+
+        // --- AST (disable smart typography so source ranges stay byte-accurate) ---
+        let doc = Document(parsing: markdown, options: .disableSmartOpts)
+        let blocks = blocks(from: doc, source: markdown)
+        let planner = LinePlanner(doc: doc, lines: lines, style: style)
+        let plans = (0..<lines.count).map { planner.plan(for: $0) }
+
+        // --- Attribute helpers (all ranges are UTF-16) ---
+        func blockMarkSyntax(_ range: NSRange) {
+            syntaxRanges.append(range)
+            out.addAttribute(.markdownSyntax, value: true, range: range)
+            out.addAttribute(.markdownLineCommand, value: true, range: range)
+            out.addAttribute(.foregroundColor, value: style.syntaxColor, range: range)
         }
-        func markSyntax(_ range: NSRange) {
+        func inlineSyntaxMark(_ range: NSRange) {
             syntaxRanges.append(range)
             out.addAttribute(.markdownSyntax, value: true, range: range)
             out.addAttribute(.foregroundColor, value: style.syntaxColor, range: range)
         }
-        /// Runs the inline pass over an already-emitted character range (same characters, richer attrs).
-        func applyInline(_ range: NSRange, base: [NSAttributedString.Key: Any]) {
-            guard range.length > 0 else { return }
-            let text = out.attributedSubstring(from: range).string
-            let styled = inline(text, style: style, base: base)
-            out.replaceCharacters(in: range, with: styled.attributed)
-            for r in styled.syntax {
-                syntaxRanges.append(NSRange(location: range.location + r.location, length: r.length))
+        /// cmark source range (1-based line + byte column) → UTF-16 NSRange.
+        func nsRange(_ r: SourceRange?) -> NSRange? {
+            guard let r = r else { return nil }
+            let l1 = r.lowerBound.line, c1 = r.lowerBound.column
+            let l2 = r.upperBound.line, c2 = r.upperBound.column
+            guard l1 >= 1, l2 >= 1, l1 <= lines.count, l2 <= lines.count else { return nil }
+            let line1 = lines[l1 - 1], line2 = lines[l2 - 1]
+            let start = line1.start + byteToUTF16(c1 - 1, in: line1.text)
+            let end = line2.start + byteToUTF16(c2 - 1, in: line2.text)
+            guard end >= start else { return nil }
+            return NSRange(location: start, length: end - start)
+        }
+        /// Marks the delimiters of an inline container: its range minus its children's ranges.
+        func markGaps(_ node: Markup, in range: NSRange) {
+            var cursor = range.location
+            for child in node.children {
+                guard let cr = child.range, let ncr = nsRange(cr) else { continue }
+                if ncr.location > cursor {
+                    inlineSyntaxMark(NSRange(location: cursor, length: ncr.location - cursor))
+                }
+                cursor = max(cursor, NSMaxRange(ncr))
+            }
+            if cursor < NSMaxRange(range) {
+                inlineSyntaxMark(NSRange(location: cursor, length: NSMaxRange(range) - cursor))
+            }
+        }
+        func unionChildrenRanges(_ node: Markup) -> NSRange? {
+            var result: NSRange? = nil
+            for child in node.children {
+                guard let cr = child.range, let ncr = nsRange(cr) else { continue }
+                result = result.map { NSUnionRange($0, ncr) } ?? ncr
+            }
+            return result
+        }
+        /// Inline styling pass over one paragraph/heading subtree.
+        func applyInline(_ container: Markup, base: [NSAttributedString.Key: Any]) {
+            let bodyFont = base[.font] as? NSFont ?? style.bodyFont
+            let bodyColor = base[.foregroundColor] as? NSColor ?? style.textColor
+            /// Font already applied at the range's start (nested containers combine
+            /// traits with the outer container instead of replacing them).
+            func currentFont(_ r: NSRange) -> NSFont {
+                (out.attribute(.font, at: r.location, effectiveRange: nil) as? NSFont) ?? bodyFont
+            }
+            /// Builds a font with the requested traits UNIONED onto the current font.
+            /// Only ever ADDS traits — a nested strong must keep the outer emphasis's
+            /// italic (`***x***` stays bold-italic), so "false" never removes.
+            func traitFont(bold: Bool, italic: Bool, at r: NSRange) -> NSFont {
+                let base = currentFont(r)
+                var traits = base.fontDescriptor.symbolicTraits
+                if bold { traits.insert(.bold) }
+                if italic { traits.insert(.italic) }
+                let desc = base.fontDescriptor.withSymbolicTraits(traits)
+                return NSFont(descriptor: desc, size: base.pointSize) ?? base
+            }
+            func walk(_ node: Markup) {
+                switch node {
+                case let s as Strong:
+                    if let r = nsRange(s.range) {
+                        out.addAttribute(.font, value: traitFont(bold: true, italic: false, at: r), range: r)
+                        out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+                        markGaps(s, in: r)
+                    }
+                case let e as Emphasis:
+                    if let r = nsRange(e.range) {
+                        out.addAttribute(.font, value: traitFont(bold: false, italic: true, at: r), range: r)
+                        out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+                        markGaps(e, in: r)
+                    }
+                case let t as Text:
+                    // Escaped characters: cmark resolves "\X" to literal X in one Text
+                    // node whose source slice differs from its plain text. Mark the
+                    // backslash as syntax (command symbol), like any other delimiter.
+                    if let r = nsRange(t.range) {
+                        let sourceSlice = (markdown as NSString).substring(with: r)
+                        if sourceSlice != t.plainText {
+                            let srcNs = sourceSlice as NSString
+                            let plainNs = t.plainText as NSString
+                            var si = 0, pi = 0
+                            while si < srcNs.length && pi < plainNs.length {
+                                if srcNs.character(at: si) == 0x5C,   // backslash
+                                   si + 1 < srcNs.length,
+                                   srcNs.character(at: si + 1) == plainNs.character(at: pi) {
+                                    let esc = NSRange(location: r.location + si, length: 2)
+                                    inlineSyntaxMark(NSRange(location: r.location + si, length: 1))
+                                    out.addAttribute(.markdownCommandSpan, value: NSValue(range: esc), range: esc)
+                                    si += 2
+                                    pi += 1
+                                } else {
+                                    si += 1
+                                    pi += 1
+                                }
+                            }
+                        }
+                    }
+                case let c as InlineCode:
+                    if let r = nsRange(c.range) {
+                        // InlineCode is a cmark LEAF: RawMarkup.inlineCode is created
+                        // with children: [], so unionChildrenRanges returns nil and
+                        // markGaps would mark the WHOLE span (backticks + content) as
+                        // syntax — hiding the code text until the caret entered the
+                        // span. Derive the content range from the source instead:
+                        // strip the leading/trailing backtick runs, whatever their
+                        // length (`` `x` ``, `` ``x`` ``, `` ``a`b`` ``).
+                        let srcNs = (markdown as NSString).substring(with: r) as NSString
+                        var open = 0
+                        while open < srcNs.length && srcNs.character(at: open) == 0x60 { open += 1 }
+                        var close = 0
+                        while close < srcNs.length - open && srcNs.character(at: srcNs.length - 1 - close) == 0x60 { close += 1 }
+                        let content = NSRange(location: r.location + open, length: srcNs.length - open - close)
+                        for (k, v) in style.codeAttributes() { out.addAttribute(k, value: v, range: content) }
+                        out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+                        if open > 0 { inlineSyntaxMark(NSRange(location: r.location, length: open)) }
+                        if close > 0 { inlineSyntaxMark(NSRange(location: NSMaxRange(content), length: close)) }
+                    }
+                case let st as Strikethrough:
+                    if let r = nsRange(st.range) {
+                        out.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: r)
+                        out.addAttribute(.strikethroughColor, value: bodyColor, range: r)
+                        out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+                        markGaps(st, in: r)
+                    }
+                case let l as Link:
+                    if let r = nsRange(l.range) {
+                        if let content = unionChildrenRanges(l) {
+                            out.addAttribute(.foregroundColor, value: style.linkColor, range: content)
+                            out.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: content)
+                            if let dest = l.destination, let url = URL(string: dest) {
+                                out.addAttribute(.link, value: url, range: content)
+                            }
+                        }
+                        out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+                        markGaps(l, in: r)
+                    }
+                case let img as Image:
+                    if let r = nsRange(img.range) {
+                        if let content = unionChildrenRanges(img) {
+                            for (k, v) in style.codeAttributes() { out.addAttribute(k, value: v, range: content) }
+                        }
+                        if let src = img.source, let url = URL(string: src) {
+                            out.addAttribute(.markdownImage, value: url, range: r)
+                        }
+                        out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+                        markGaps(img, in: r)
+                    }
+                case let html as InlineHTML:
+                    if let r = nsRange(html.range) {
+                        inlineSyntaxMark(r)
+                        out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+                    }
+                default:
+                    break
+                }
+                for c in node.children { walk(c) }
+            }
+            walk(container)
+        }
+
+        // --- Line-by-line emission (every character emitted exactly once) ---
+        // Contiguous .code lines (fence content, including blank lines inside the
+        // fence) form one highlighted span with the fence's language.
+        var codeSpans: [(language: String, range: NSRange)] = []
+        var currentCodeSpan: (language: String, range: NSRange)? = nil
+        for i in 0..<lines.count {
+            let li = lines[i]
+            let plan = plans[i]
+
+            if plan.role == .code {
+                if currentCodeSpan == nil {
+                    let language: String
+                    if let top = planner.topBlocks.first(where: { $0.startLine <= i + 1 && i + 1 <= $0.endLine }),
+                       let cb = top.node as? CodeBlock {
+                        language = cb.language ?? ""
+                    } else {
+                        language = ""
+                    }
+                    currentCodeSpan = (language: language, range: NSRange(location: li.start, length: 0))
+                }
+                let len = (li.text as NSString).length + (li.hasNewline ? 1 : 0)
+                currentCodeSpan!.range.length += len
+            } else if currentCodeSpan != nil {
+                codeSpans.append(currentCodeSpan!)
+                currentCodeSpan = nil
+            }
+
+            switch plan.role {
+            case .blank:
+                if li.hasNewline {
+                    out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: style.bodyParagraph()]))
+                }
+                continue
+            default:
+                break
+            }
+
+            out.append(NSAttributedString(string: li.text, attributes: plan.base))
+            if let mr = plan.markerRange { blockMarkSyntax(mr) }
+            if let lmr = plan.listMarkerRange { out.addAttribute(.markdownListMarker, value: true, range: lmr) }
+            if let cr = plan.checkboxRange, let checked = plan.checked {
+                out.addAttribute(.markdownCheckbox, value: checked, range: cr)
+                out.addAttribute(.markdownSyntax, value: true, range: cr)
+            }
+
+            switch plan.role {
+            case .rule:
+                let r = NSRange(location: li.start, length: (li.text as NSString).length)
+                out.addAttribute(.markdownRule, value: true, range: r)
+            case .tableHeader, .tableBody:
+                // Mark every pipe as block syntax (header + body rows).
+                let lineNs = li.text as NSString
+                var idx = 0
+                while idx < lineNs.length {
+                    if lineNs.character(at: idx) == 0x7C {   // |
+                        blockMarkSyntax(NSRange(location: li.start + idx, length: 1))
+                    }
+                    idx += 1
+                }
+            case .code, .fence, .headingUnderline, .tableSeparator:
+                break   // codeBlock attr rides in base; whole-line syntax via markerRange
+            default:
+                break
+            }
+
+            if li.hasNewline {
+                out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: plan.paragraphStyle]))
+            }
+
+            // Blockquote bar run: line content + its newline, applied AFTER the
+            // newline exists (consecutive quote lines form one contiguous bar).
+            if case .quote = plan.role {
+                let len = (li.text as NSString).length + (li.hasNewline ? 1 : 0)
+                out.addAttribute(.markdownBlockquote, value: true, range: NSRange(location: li.start, length: len))
+            }
+        }
+        if let c = currentCodeSpan { codeSpans.append(c) }
+
+        // --- Continuous code-block background ---
+        // The WHOLE fence content (every line plus its newline and any interior
+        // blank line) is ONE .markdownCodeBlock run. The layout manager walks
+        // attribute runs, so with per-line markers the separating newlines were
+        // plain runs and each line drew its own small rounded rect. Unioning the
+        // span yields a single contiguous run → one full-height rounded block.
+        for span in codeSpans {
+            out.addAttribute(.markdownCodeBlock, value: true, range: span.range)
+        }
+
+        // --- Code syntax highlighting (Xcode-style categories, GitHub palette) ---
+        // Lex each fenced-code span with its language; per-token foreground colors
+        // override the uniform code-text color. Unknown languages keep the plain
+        // code style (no tokens). Token colors are applied AFTER the base attrs so
+        // they win; link tokens also get the underline matching GitHub's code themes.
+        for span in codeSpans where !span.language.isEmpty {
+            let code = (markdown as NSString).substring(with: span.range)
+            // Language display name for the block's corner label (drawn by the
+            // layout manager; independent of tokenization — even an all-plain
+            // recognized block gets its name).
+            if let spec = CodeHighlighter.spec(forLanguage: span.language) {
+                out.addAttribute(.markdownCodeLanguage, value: spec.name, range: span.range)
+            }
+            let tokens = CodeHighlighter.tokens(in: code, language: span.language)
+            guard !tokens.isEmpty else { continue }
+            let scheme = style.codeScheme
+            for t in tokens {
+                let r = NSRange(location: span.range.location + t.range.location, length: t.range.length)
+                out.addAttribute(.foregroundColor, value: scheme.color(for: t.kind), range: r)
+                if t.kind == .link {
+                    out.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: r)
+                    out.addAttribute(.underlineColor, value: scheme.link, range: r)
+                }
             }
         }
 
-        var i = 0
-        while i < count {
-            let raw = lines[i]
-            let trimmed = raw.trimmingCharacters(in: .whitespaces)
-            let rawLen = lineLen(i)
-
-            // Blank line: emit its newline only, so the output stays character-identical.
-            if trimmed.isEmpty {
-                // The split of a trailing "\n" produces a phantom "" line — it carries no characters.
-                let isPhantom = (i == count - 1) && endsWithNewline
-                if endOfLine(i) && !isPhantom { emit("\n", attrs: [.paragraphStyle: style.bodyParagraph()]) }
-                i += 1
-                continue
-            }
-
-            // ATX heading: ^(\s*)(#{1,6})([ \t]+)(.*)$
-            if let m = match(raw, pattern: "^(\\s*)(#{1,6})([ \\t]+)(.*)$") {
-                let level = m[2].count
-                let prefixLen = m[1].count + m[2].count + m[3].count
-                let text = m[4]
-                let para = style.headingParagraph(level: level)
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: style.headingFont(level: level),
-                    .foregroundColor: style.textColor,
-                    .paragraphStyle: para,
-                ]
-                let start = out.length
-                emit(raw, attrs: attrs)
-                markSyntax(NSRange(location: start, length: prefixLen))
-                applyInline(NSRange(location: start + prefixLen, length: rawLen - prefixLen), base: attrs)
-                emitNewline(i, para: para)
-                blocks.append(.heading(level: level, text: text))
-                i += 1
-                continue
-            }
-
-            // Horizontal rule: ^\s*([-*_])(\s*\1){2,}\s*$ (alone on the line)
-            if match(raw, pattern: "^\\s*([-*_])(\\s*\\1){2,}\\s*$") != nil {
-                let para = style.bodyParagraph()
-                let start = out.length
-                emit(raw, attrs: [.paragraphStyle: para, .foregroundColor: style.textColor, .font: style.bodyFont])
-                markSyntax(NSRange(location: start, length: rawLen))
-                out.addAttribute(.markdownRule, value: true, range: NSRange(location: start, length: rawLen))
-                emitNewline(i, para: para)
-                blocks.append(.rule)
-                i += 1
-                continue
-            }
-
-            // Blockquote: leading whitespace + one or more '>' + following whitespace
-            if trimmed.hasPrefix(">") {
-                let para = style.quoteParagraph()
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: style.bodyFont,
-                    .foregroundColor: style.quoteTextColor,
-                    .paragraphStyle: para,
-                ]
-                var quoteLines: [String] = []
-                var markers: [Int] = []
-                var j = i
-                while j < count {
-                    let l = lines[j]
-                    let t = l.trimmingCharacters(in: .whitespaces)
-                    guard t.hasPrefix(">") else { break }
-                    let leadingWs = (l as NSString).length - (t as NSString).length
-                    let markerCount = t.prefix(while: { $0 == ">" }).count
-                    let rest = t.dropFirst(markerCount)
-                    let wsLen = rest.prefix(while: { $0 == " " || $0 == "\t" }).count
-                    let markerLen = leadingWs + markerCount + wsLen
-                    markers.append(markerLen)
-                    quoteLines.append((l as NSString).substring(from: markerLen))
-                    j += 1
-                }
-                for (k, lineIdx) in (i..<j).enumerated() {
-                    let l = lines[lineIdx]
-                    let start = out.length
-                    emit(l, attrs: attrs)
-                    markSyntax(NSRange(location: start, length: markers[k]))
-                    applyInline(NSRange(location: start + markers[k], length: lineLen(lineIdx) - markers[k]), base: attrs)
-                    emitNewline(lineIdx, para: para)
-                }
-                blocks.append(.blockquote(quoteLines.joined(separator: "\n")))
-                i = j
-                continue
-            }
-
-            // Task list: ^(\s*)[-*+][ \t]+\[[ xX]\][ \t]+content
-            if match(raw, pattern: "^[ \\t]*[-*+][ \\t]+\\[[ xX]\\]") != nil {
-                var items: [TaskItem] = []
-                while i < count,
-                      let mm = match(lines[i], pattern: "^([ \\t]*)([-*+])([ \\t]+)(\\[[ xX]\\])([ \\t]+)(.*)$") {
-                    let level = mm[1].count / 2
-                    let marker = mm[1] + mm[2] + mm[3]          // indent + bullet + spaces
-                    let checkbox = mm[4]
-                    let spacing = mm[5]
-                    let text = mm[6]
-                    let checked = checkbox.contains("x") || checkbox.contains("X")
-                    let para = style.bodyParagraph()
-                    let baseAttrs: [NSAttributedString.Key: Any] = [
-                        .font: style.bodyFont,
-                        .foregroundColor: checked ? style.checkedTextColor : style.textColor,
-                        .paragraphStyle: style.listParagraph(level: level, markerWidth: 24),
-                    ]
-                    let start = out.length
-                    emit(lines[i], attrs: baseAttrs)
-                    markSyntax(NSRange(location: start, length: marker.count))
-                    out.addAttribute(.markdownListMarker, value: true, range: NSRange(location: start, length: marker.count))
-                    let cbRange = NSRange(location: start + marker.count, length: checkbox.count)
-                    out.addAttribute(.markdownCheckbox, value: checked, range: cbRange)
-                    out.addAttribute(.markdownSyntax, value: true, range: cbRange)
-                    let contentStart = start + marker.count + checkbox.count + spacing.count
-                    let contentLen = lineLen(i) - (marker.count + checkbox.count + spacing.count)
-                    applyInline(NSRange(location: contentStart, length: contentLen), base: baseAttrs)
-                    emitNewline(i, para: para)
-                    items.append(TaskItem(text: text, checked: checked, level: level))
-                    i += 1
-                }
-                blocks.append(.taskList(items: items))
-                continue
-            }
-
-            // Unordered / ordered list: ^(\s*)([-*+]|\d+[.)])[ \t]+content
-            if let m = match(raw, pattern: "^([ \\t]*)([-*+]|\\d+[.)])([ \\t]+)(.*)$") {
-                let isOrdered = m[2].first?.isNumber == true
-                var items: [ListItem] = []
-                var listLevel = 0
-                while i < count,
-                      let mm = match(lines[i], pattern: "^([ \\t]*)([-*+]|\\d+[.)])([ \\t]+)(.*)$") {
-                    let level = mm[1].count / 2
-                    let marker = mm[1] + mm[2] + mm[3]
-                    let text = mm[4]
-                    let width: CGFloat = isOrdered ? 30 : 18
-                    let para = style.bodyParagraph()
-                    let baseAttrs: [NSAttributedString.Key: Any] = [
-                        .font: style.bodyFont,
-                        .foregroundColor: style.textColor,
-                        .paragraphStyle: style.listParagraph(level: level, markerWidth: width),
-                    ]
-                    let start = out.length
-                    emit(lines[i], attrs: baseAttrs)
-                    markSyntax(NSRange(location: start, length: marker.count))
-                    out.addAttribute(.markdownListMarker, value: true, range: NSRange(location: start, length: marker.count))
-                    applyInline(NSRange(location: start + marker.count, length: lineLen(i) - marker.count), base: baseAttrs)
-                    emitNewline(i, para: para)
-                    items.append(ListItem(text: text, level: level))
-                    listLevel = level
-                    i += 1
-                }
-                blocks.append(isOrdered
-                    ? .orderedList(items: items, level: listLevel)
-                    : .unorderedList(items: items, level: listLevel))
-                continue
-            }
-
-            // Fenced code block: ^[ \t]{0,3}(`{3,}|~{3,})(.*)$
-            if let m = match(raw, pattern: "^[ \\t]{0,3}(`{3,}|~{3,})(.*)$") {
-                let fence = m[1]
-                let lang = m[2].trimmingCharacters(in: .whitespaces)
-                let closePrefix = String(fence.prefix(3))
-                var closingFenceLine: Int? = nil
-                var j = i + 1
-                while j < count {
-                    if lines[j].trimmingCharacters(in: .whitespaces).hasPrefix(closePrefix) {
-                        closingFenceLine = j
-                        break
-                    }
-                    j += 1
-                }
-                let codePara = NSMutableParagraphStyle()
-                codePara.lineSpacing = 0
-                codePara.paragraphSpacing = 0
-                let codeAttrs: [NSAttributedString.Key: Any] = [
-                    .font: style.codeFont,
-                    .foregroundColor: style.codeTextColor,
-                    .markdownCodeBlock: true,
-                    .paragraphStyle: codePara,
-                ]
-                // Opening fence line (marker + language): syntax-marked
-                let start = out.length
-                emit(lines[i], attrs: codeAttrs)
-                markSyntax(NSRange(location: start, length: lineLen(i)))
-                emitNewline(i, para: codePara)
-                // Code content — verbatim, no inline interpretation
-                var codeLines: [String] = []
-                let contentEnd = closingFenceLine ?? count
-                for lineIdx2 in (i + 1)..<contentEnd {
-                    codeLines.append(lines[lineIdx2])
-                    emit(lines[lineIdx2], attrs: codeAttrs)
-                    emitNewline(lineIdx2, para: codePara)
-                }
-                // Closing fence: syntax-marked
-                if let cf = closingFenceLine {
-                    let s = out.length
-                    emit(lines[cf], attrs: codeAttrs)
-                    markSyntax(NSRange(location: s, length: lineLen(cf)))
-                    emitNewline(cf, para: codePara)
-                }
-                blocks.append(.codeFence(language: lang, code: codeLines.joined(separator: "\n")))
-                i = (closingFenceLine ?? count) + (closingFenceLine == nil ? 0 : 1)
-                continue
-            }
-
-            // Table: current line has '|' and the next line is a GFM separator row.
-            // Rendering note: NSTextTable would replace the structural '|' characters with
-            // layout, breaking the verbatim-source invariant — so tables render as monospace
-            // blocks with pipes as syntax (hidden when inactive, tertiary when active).
-            if trimmed.contains("|"), i + 1 < count,
-               match(lines[i + 1], pattern: "^\\s*\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)*\\|?\\s*$") != nil,
-               lines[i + 1].contains("-") {
-                let headerCells = splitCells(trimmed)
-                let alignments = splitCells(lines[i + 1]).map { cell -> Alignment in
-                    let c = cell.trimmingCharacters(in: .whitespaces)
-                    if c.hasPrefix(":") && c.hasSuffix(":") { return .center }
-                    if c.hasSuffix(":") { return .right }
-                    return .left
-                }
-                var rows: [[String]] = []
-                var j = i + 2
-                while j < count {
-                    let t = lines[j].trimmingCharacters(in: .whitespaces)
-                    guard t.contains("|"), !t.isEmpty else { break }
-                    rows.append(splitCells(t))
-                    j += 1
-                }
-                let tablePara = NSMutableParagraphStyle()
-                tablePara.lineSpacing = 0
-                tablePara.paragraphSpacing = 0
-                let cellAttrs: [NSAttributedString.Key: Any] = [
-                    .font: style.codeFont, .foregroundColor: style.textColor, .paragraphStyle: tablePara,
-                ]
-                let headerAttrs: [NSAttributedString.Key: Any] = [
-                    .font: style.emphasisFont(base: style.codeFont, bold: true, italic: false),
-                    .foregroundColor: style.textColor, .paragraphStyle: tablePara,
-                ]
-                func markPipes(_ line: String, at start: Int) {
-                    let ns = line as NSString
-                    var idx = 0
-                    while idx < ns.length {
-                        if ns.character(at: idx) == 0x7C { // |
-                            markSyntax(NSRange(location: start + idx, length: 1))
-                        }
-                        idx += 1
-                    }
-                }
-                // Header row: bold, pipes syntax
-                let hs = out.length
-                emit(raw, attrs: headerAttrs)
-                markPipes(raw, at: hs)
-                emitNewline(i, para: tablePara)
-                // Separator row: entirely syntax
-                let ss = out.length
-                emit(lines[i + 1], attrs: cellAttrs)
-                markSyntax(NSRange(location: ss, length: lineLen(i + 1)))
-                emitNewline(i + 1, para: tablePara)
-                // Body rows: pipes syntax
-                for (k, rowLine) in lines[(i + 2)..<j].enumerated() {
-                    let rs = out.length
-                    emit(rowLine, attrs: cellAttrs)
-                    markPipes(rowLine, at: rs)
-                    emitNewline(i + 2 + k, para: tablePara)
-                }
-                blocks.append(.table(header: headerCells, rows: rows, alignments: alignments))
-                i = j
-                continue
-            }
-
-            // Paragraph / setext heading — consume until blank line or a line starting a new block.
-            // (Fence/list/task/table handlers are added by later tasks and intercept first.)
-            var j = i
-            var paraLines: [String] = []
-            while j < count {
-                let t = lines[j].trimmingCharacters(in: .whitespaces)
-                if t.isEmpty { break }
-                if j > i && isUnderline(lines[j]) { break }        // setext underline ends the paragraph
-                if j > i && startsNewBlock(t) { break }
-                paraLines.append(lines[j])
-                j += 1
-            }
-
-            // Setext heading: collected paragraph immediately followed by an underline line
-            if j < count, isUnderline(lines[j]) {
-                let m = match(lines[j], pattern: "^\\s*(=+|-+)\\s*$")!
-                let level = m[1].hasPrefix("=") ? 1 : 2
-                let hPara = style.headingParagraph(level: level)
-                let hAttrs: [NSAttributedString.Key: Any] = [
-                    .font: style.headingFont(level: level),
-                    .foregroundColor: style.textColor,
-                    .paragraphStyle: hPara,
-                ]
-                for lineIdx in i..<j {
-                    let start = out.length
-                    emit(lines[lineIdx], attrs: hAttrs)
-                    applyInline(NSRange(location: start, length: lineLen(lineIdx)), base: hAttrs)
-                    emitNewline(lineIdx, para: hPara)
-                }
-                let uStart = out.length
-                emit(lines[j], attrs: hAttrs)
-                markSyntax(NSRange(location: uStart, length: lineLen(j)))
-                emitNewline(j, para: hPara)
-                blocks.append(.heading(level: level, text: paraLines.joined(separator: "\n")))
-                i = j + 1
-                continue
-            }
-
-            // Plain paragraph
-            let para = style.bodyParagraph()
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: style.bodyFont,
-                .foregroundColor: style.textColor,
-                .paragraphStyle: para,
-            ]
-            for lineIdx in i..<j {
-                let start = out.length
-                emit(lines[lineIdx], attrs: attrs)
-                applyInline(NSRange(location: start, length: lineLen(lineIdx)), base: attrs)
-                emitNewline(lineIdx, para: para)
-            }
-            blocks.append(.paragraph(paraLines.joined(separator: "\n")))
-            i = j
+        // --- Inline pass over every paragraph/heading subtree (once per container) ---
+        // Base attrs = the plan of the container's first covered line (list item lines
+        // carry the item's level/checkbox styling into the emphasis font base).
+        for ci in planner.containers {
+            let startIdx = max(0, ci.startLine - 1)
+            guard startIdx < plans.count else { continue }
+            let base = plans[startIdx].base
+            guard !base.isEmpty else { continue }
+            applyInline(ci.node, base: base)
         }
 
         return ParsedMarkdown(attributed: out, syntaxRanges: syntaxRanges, blocks: blocks)
     }
 
-    // MARK: - Block classification
+    // MARK: - AST → Block (test surface; nested lists flattened like the old parser)
 
-    static func startsNewBlock(_ line: String) -> Bool {
-        line.hasPrefix("#") || line.hasPrefix(">")
-            || line.hasPrefix("```") || line.hasPrefix("~~~")
-            || match(line, pattern: "^\\s*([-*_])(\\s*\\1){2,}\\s*$") != nil
-            || match(line, pattern: "^\\s*[-*+]\\s+") != nil
-            || match(line, pattern: "^\\s*\\d+[.)]\\s+") != nil
-            || line.contains("|")
+    /// Plain text of a block for the test-surface mapping: paragraphs and list items
+    /// use their RAW source text (matches the old parser's line-joined semantics,
+    /// inline markup preserved); headings use plainText; containers join children.
+    private static func blockText(_ node: Markup, source: NSString, lineStarts: [Int], lineTexts: [String]) -> String {
+        if let p = node as? Paragraph, let r = p.range {
+            return sourceText(r, source: source, lineStarts: lineStarts, lineTexts: lineTexts)
+        }
+        if let h = node as? Heading { return h.plainText }
+        if let item = node as? Markdown.ListItem {
+            return itemText(item, source: source, lineStarts: lineStarts, lineTexts: lineTexts)
+        }
+        if let q = node as? BlockQuote {
+            return q.children.compactMap { ($0 as? Paragraph).map { blockText($0, source: source, lineStarts: lineStarts, lineTexts: lineTexts) } }
+                .joined(separator: "\n")
+        }
+        if let l = node as? UnorderedList, let items = l.children as? [Markdown.ListItem] {
+            return items.map { itemText($0, source: source, lineStarts: lineStarts, lineTexts: lineTexts) }.joined(separator: "\n")
+        }
+        if let l = node as? OrderedList, let items = l.children as? [Markdown.ListItem] {
+            return items.map { itemText($0, source: source, lineStarts: lineStarts, lineTexts: lineTexts) }.joined(separator: "\n")
+        }
+        if let cb = node as? CodeBlock { return cb.code }
+        if let t = node as? Table { return blockText(t.head, source: source, lineStarts: lineStarts, lineTexts: lineTexts) }
+        return ""
     }
 
-    static func isUnderline(_ line: String) -> Bool {
-        match(line, pattern: "^\\s*(=+|-+)\\s*$") != nil
+    /// Source substring of a cmark range (verbatim, UTF-16-accurate).
+    private static func sourceText(_ r: SourceRange, source: NSString, lineStarts: [Int], lineTexts: [String]) -> String {
+        guard let nr = sourceRange(r, lineStarts: lineStarts, lineTexts: lineTexts) else { return "" }
+        return source.substring(with: nr)
     }
 
-    /// Splits a GFM table row into cells ("| a | b |" -> ["a", "b"]).
-    static func splitCells(_ line: String) -> [String] {
-        let t = line.trimmingCharacters(in: .whitespaces)
-        let inner = t.hasPrefix("|") ? String(t.dropFirst()) : t
-        let trimmedEnd = inner.hasSuffix("|") ? String(inner.dropLast()) : inner
-        return trimmedEnd.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+    private static func sourceRange(_ r: SourceRange, lineStarts: [Int], lineTexts: [String]) -> NSRange? {
+        let l1 = r.lowerBound.line, c1 = r.lowerBound.column
+        let l2 = r.upperBound.line, c2 = r.upperBound.column
+        guard l1 >= 1, l2 >= 1, l1 <= lineStarts.count, l2 <= lineStarts.count else { return nil }
+        let s = lineStarts[l1 - 1] + byteToUTF16(c1 - 1, in: lineTexts[l1 - 1])
+        let e = lineStarts[l2 - 1] + byteToUTF16(c2 - 1, in: lineTexts[l2 - 1])
+        guard e >= s else { return nil }
+        return NSRange(location: s, length: e - s)
     }
+
+    static func blocks(from doc: Markup, source: String) -> [Block] {
+        let ns = source as NSString
+        let rawLines = ns.components(separatedBy: "\n")
+        let endsWithNewline = source.hasSuffix("\n")
+        var lineStarts: [Int] = []
+        var lineTexts: [String] = []
+        var off = 0
+        for (idx, l) in rawLines.enumerated() {
+            lineStarts.append(off)
+            lineTexts.append(l)
+            let hasNL = idx < rawLines.count - 1 || (endsWithNewline && !l.isEmpty)
+            off += (l as NSString).length + (hasNL ? 1 : 0)
+        }
+        func txt(_ node: Markup) -> String {
+            blockText(node, source: ns, lineStarts: lineStarts, lineTexts: lineTexts)
+        }
+        return doc.children.compactMap { child in
+            switch child {
+            case let h as Heading:
+                return .heading(level: h.level, text: h.plainText)
+            case is ThematicBreak:
+                return .rule
+            case let q as BlockQuote:
+                return .blockquote(txt(q))
+            case let ul as UnorderedList:
+                return listBlock(ul, ordered: false, text: txt)
+            case let ol as OrderedList:
+                return listBlock(ol, ordered: true, text: txt)
+            case let cb as CodeBlock:
+                return .codeFence(language: cb.language ?? "", code: cb.code)
+            case let t as Table:
+                return tableBlock(t)
+            case let p as Paragraph:
+                return .paragraph(txt(p))
+            default:
+                return .paragraph(txt(child))
+            }
+        }
+    }
+
+    private static func listBlock(_ list: Markup, ordered: Bool, text: (Markup) -> String) -> Block {
+        var items: [ListItem] = []
+        var tasks: [TaskItem] = []
+        var allTask = true
+        var lastLevel = 0
+        func collect(_ container: Markup) {
+            for child in container.children {
+                if let item = child as? Markdown.ListItem {
+                    let level = itemLevel(item)
+                    lastLevel = level
+                    let itemTextValue = text(item)
+                    if let cb = item.checkbox {
+                        tasks.append(TaskItem(text: itemTextValue, checked: cb == .checked, level: level))
+                    } else {
+                        allTask = false
+                        items.append(ListItem(text: itemTextValue, level: level))
+                    }
+                }
+                collect(child)   // recurse through nested lists/paragraphs too
+            }
+        }
+        collect(list)
+        if allTask && !tasks.isEmpty { return .taskList(items: tasks) }
+        return ordered ? .orderedList(items: items, level: lastLevel)
+                       : .unorderedList(items: items, level: lastLevel)
+    }
+
+    private static func itemText(_ item: Markdown.ListItem, source: NSString, lineStarts: [Int], lineTexts: [String]) -> String {
+        for c in item.children {
+            if let p = c as? Paragraph { return sourceText(p.range!, source: source, lineStarts: lineStarts, lineTexts: lineTexts) }
+        }
+        return ""
+    }
+
+    private static func itemLevel(_ item: Markdown.ListItem) -> Int {
+        max(0, ((item.range?.lowerBound.column ?? 1) - 1) / 2)
+    }
+
+    private static func tableBlock(_ t: Table) -> Block {
+        let header = t.head.children.compactMap { $0 as? Table.Cell }.map { $0.plainText }
+        let rows: [[String]] = t.body.children.compactMap { $0 as? Table.Row }.map { row in
+            row.children.compactMap { $0 as? Table.Cell }.map { $0.plainText }
+        }
+        let aligns = t.columnAlignments.map { a -> Alignment in
+            switch a {
+            case .center: return .center
+            case .right: return .right
+            default: return .left
+            }
+        }
+        return .table(header: header, rows: rows, alignments: aligns)
+    }
+
+    // MARK: - Per-line plan (AST decides the role; regexes give exact marker ranges)
+
+    private struct LineInfo {
+        let start: Int          // UTF-16 offset of the line in the document
+        let text: String        // line content, no newline
+        let hasNewline: Bool
+    }
+
+    private struct LinePlan {
+        enum Role: Equatable {
+            case blank
+            case heading(level: Int)
+            case headingUnderline
+            case quote
+            case listItem(ordered: Bool, level: Int, width: CGFloat, checked: Bool?)
+            case listFallback
+            case fence
+            case code
+            case tableHeader
+            case tableSeparator
+            case tableBody
+            case rule
+            case html
+            case paragraph
+            case plain
+        }
+        var role: Role
+        var base: [NSAttributedString.Key: Any]
+        var paragraphStyle: NSParagraphStyle
+        var markerRange: NSRange?
+        var listMarkerRange: NSRange?
+        var checkboxRange: NSRange?
+        var checked: Bool?
+    }
+
+    private struct TopBlock {
+        let node: Markup
+        let startLine: Int      // 1-based, inclusive
+        let endLine: Int        // 1-based, inclusive
+    }
+
+    private struct ItemInfo {
+        let item: Markdown.ListItem
+        let startLine: Int
+        let endLine: Int
+        let checked: Bool?
+        let ordered: Bool
+    }
+
+    private struct ContainerInfo {
+        let node: Markup
+        let startLine: Int
+        let endLine: Int
+        let length: Int         // range length for "innermost" selection
+    }
+
+    private struct LinePlanner {
+        let lines: [LineInfo]
+        let style: MarkdownStyle
+        let topBlocks: [TopBlock]
+        let items: [ItemInfo]
+        let containers: [ContainerInfo]
+
+        init(doc: Markup, lines: [LineInfo], style: MarkdownStyle) {
+            self.lines = lines
+            self.style = style
+            topBlocks = doc.children.compactMap { node in
+                guard let r = node.range else { return nil }
+                return TopBlock(node: node, startLine: r.lowerBound.line, endLine: r.upperBound.line)
+            }
+            var items: [ItemInfo] = []
+            var containers: [ContainerInfo] = []
+            func walk(_ node: Markup, ordered: Bool) {
+                if let p = node as? Paragraph, let r = p.range {
+                    containers.append(ContainerInfo(node: p, startLine: r.lowerBound.line, endLine: r.upperBound.line,
+                                                    length: (r.upperBound.line - r.lowerBound.line) * 10000 + (r.upperBound.column - r.lowerBound.column)))
+                } else if let h = node as? Heading, let r = h.range {
+                    containers.append(ContainerInfo(node: h, startLine: r.lowerBound.line, endLine: r.upperBound.line,
+                                                    length: (r.upperBound.line - r.lowerBound.line) * 10000 + (r.upperBound.column - r.lowerBound.column)))
+                }
+                if let item = node as? Markdown.ListItem, let r = item.range {
+                    let checked: Bool? = item.checkbox.map { $0 == .checked }
+                    items.append(ItemInfo(item: item, startLine: r.lowerBound.line, endLine: r.upperBound.line,
+                                          checked: checked, ordered: ordered))
+                }
+                if let ol = node as? OrderedList {
+                    for c in ol.children { walk(c, ordered: true) }
+                } else if let ul = node as? UnorderedList {
+                    for c in ul.children { walk(c, ordered: false) }
+                } else {
+                    for c in node.children { walk(c, ordered: ordered) }
+                }
+            }
+            walk(doc, ordered: false)
+            self.items = items
+            self.containers = containers
+        }
+
+        func plan(for index: Int) -> LinePlan {
+            let lineNo = index + 1
+            let li = lines[index]
+            let top = topBlocks.first { $0.startLine <= lineNo && lineNo <= $0.endLine }
+
+            // Code blocks FIRST: blank lines inside a fence stay code.
+            if let t = top, let cb = t.node as? CodeBlock {
+                let codePara = codeParagraph()
+                let codeBase: [NSAttributedString.Key: Any] = [
+                    .font: style.codeFont, .foregroundColor: style.codeTextColor,
+                    .paragraphStyle: codePara,
+                ]
+                let firstLineText = lines[t.startLine - 1].text
+                let openMatch = match(firstLineText, pattern: "^[ \\t]{0,3}(`{3,}|~{3,})(.*)$")
+                let fenceChar: unichar? = openMatch.flatMap { ($0[1] as NSString).character(at: 0) }
+                let isFenceLine: Bool
+                if index == t.startLine - 1 {
+                    isFenceLine = openMatch != nil
+                } else if index == t.endLine - 1, let fc = fenceChar {
+                    let c = Character(UnicodeScalar(fc) ?? "`")
+                    let prefix3 = String(repeating: c, count: 3)
+                    isFenceLine = li.text.trimmingCharacters(in: .whitespaces).hasPrefix(prefix3)
+                } else {
+                    isFenceLine = false
+                }
+                if isFenceLine {
+                    let full = NSRange(location: li.start, length: (li.text as NSString).length)
+                    return LinePlan(role: .fence, base: codeBase, paragraphStyle: codePara, markerRange: full)
+                }
+                return LinePlan(role: .code, base: codeBase, paragraphStyle: codePara)
+            }
+
+            // Blank line: plain newline (body paragraph style).
+            if li.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                return LinePlan(role: .blank, base: [:], paragraphStyle: style.bodyParagraph())
+            }
+
+            guard let t = top else {
+                return LinePlan(role: .plain, base: bodyBase(), paragraphStyle: style.bodyParagraph())
+            }
+
+            switch t.node {
+            case let h as Heading:
+                let para = style.headingParagraph(level: h.level)
+                let base: [NSAttributedString.Key: Any] = [
+                    .font: style.headingFont(level: h.level), .foregroundColor: style.textColor, .paragraphStyle: para,
+                ]
+                // Setext underline: whole line is syntax (ATX marker regex won't match it).
+                if match(li.text, pattern: "^\\s*(=+|-+)\\s*$") != nil {
+                    let full = NSRange(location: li.start, length: (li.text as NSString).length)
+                    return LinePlan(role: .headingUnderline, base: base, paragraphStyle: para, markerRange: full)
+                }
+                var plan = LinePlan(role: .heading(level: h.level), base: base, paragraphStyle: para)
+                if let m = match(li.text, pattern: "^([ \\t]*)(#{1,6})([ \\t]+)(.*)$") {
+                    let prefixLen = (m[1] as NSString).length + (m[2] as NSString).length + (m[3] as NSString).length
+                    plan.markerRange = NSRange(location: li.start, length: prefixLen)
+                }
+                return plan
+
+            case is ThematicBreak:
+                let full = NSRange(location: li.start, length: (li.text as NSString).length)
+                return LinePlan(role: .rule, base: bodyBase(), paragraphStyle: style.bodyParagraph(), markerRange: full)
+
+            case is BlockQuote:
+                let base: [NSAttributedString.Key: Any] = [
+                    .font: style.bodyFont, .foregroundColor: style.quoteTextColor, .paragraphStyle: style.quoteParagraph(),
+                ]
+                var plan = LinePlan(role: .quote, base: base, paragraphStyle: style.quoteParagraph())
+                let trimmed = li.text.trimmingCharacters(in: .whitespaces)
+                let leadingWs = (li.text as NSString).length - (trimmed as NSString).length
+                let markerCount = trimmed.prefix(while: { $0 == ">" }).count
+                let rest = trimmed.dropFirst(markerCount)
+                let wsLen = rest.prefix(while: { $0 == " " || $0 == "\t" }).count
+                let markerLen = leadingWs + markerCount + wsLen
+                plan.markerRange = NSRange(location: li.start, length: markerLen)
+                return plan
+
+            case is UnorderedList, is OrderedList:
+                let ordered = t.node is OrderedList
+                if let m = match(li.text, pattern: "^([ \\t]*)([-*+]|\\d+[.)])([ \\t]+)(.*)$") {
+                    let level = (m[1] as NSString).length / 2
+                    let item = innermostItem(covering: lineNo)
+                    let isTask = item?.checked != nil
+                    let width: CGFloat = isTask ? 24 : (ordered ? 30 : 18)
+                    let checked = item?.checked
+                    let para = style.listParagraph(level: level, markerWidth: width)
+                    let base: [NSAttributedString.Key: Any] = [
+                        .font: style.bodyFont,
+                        .foregroundColor: checked == true ? style.checkedTextColor : style.textColor,
+                        .paragraphStyle: para,
+                    ]
+                    var plan = LinePlan(role: .listItem(ordered: ordered, level: level, width: width, checked: checked),
+                                        base: base, paragraphStyle: para)
+                    if isTask,
+                       let tm = match(li.text, pattern: "^([ \\t]*)([-*+])([ \\t]+)(\\[[ xX]\\])([ \\t]+)(.*)$") {
+                        let m1 = (tm[1] as NSString).length, m2 = (tm[2] as NSString).length, m3 = (tm[3] as NSString).length
+                        let markerEnd = li.start + m1 + m2 + m3
+                        plan.markerRange = NSRange(location: li.start, length: m1 + m2 + m3)
+                        plan.checkboxRange = NSRange(location: markerEnd, length: (tm[4] as NSString).length)
+                        plan.checked = checked
+                    } else {
+                        plan.markerRange = NSRange(location: li.start,
+                                                   length: (m[1] as NSString).length + (m[2] as NSString).length + (m[3] as NSString).length)
+                    }
+                    plan.listMarkerRange = plan.markerRange
+                    return plan
+                }
+                // Line inside a list that has no marker (lazy continuation): plain body.
+                var plan = LinePlan(role: .listFallback, base: bodyBase(), paragraphStyle: style.bodyParagraph())
+                return plan
+
+            case is Table:
+                let tablePara = tableParagraph()
+                let offset = lineNo - t.startLine   // 0 = header row, 1 = separator row
+                if offset == 0 {
+                    let base: [NSAttributedString.Key: Any] = [
+                        .font: style.emphasisFont(base: style.codeFont, bold: true, italic: false),
+                        .foregroundColor: style.textColor, .paragraphStyle: tablePara,
+                    ]
+                    return LinePlan(role: .tableHeader, base: base, paragraphStyle: tablePara)
+                }
+                let base: [NSAttributedString.Key: Any] = [
+                    .font: style.codeFont, .foregroundColor: style.textColor, .paragraphStyle: tablePara,
+                ]
+                if offset == 1 {
+                    let full = NSRange(location: li.start, length: (li.text as NSString).length)
+                    return LinePlan(role: .tableSeparator, base: base, paragraphStyle: tablePara, markerRange: full)
+                }
+                return LinePlan(role: .tableBody, base: base, paragraphStyle: tablePara)
+
+            case is Paragraph:
+                var plan = LinePlan(role: .paragraph, base: bodyBase(), paragraphStyle: style.bodyParagraph())
+                return plan
+
+            default:    // HTMLBlock, CustomBlock, block directives: visible plain text
+                return LinePlan(role: .html, base: bodyBase(), paragraphStyle: style.bodyParagraph())
+            }
+        }
+
+        private func bodyBase() -> [NSAttributedString.Key: Any] {
+            [.font: style.bodyFont, .foregroundColor: style.textColor, .paragraphStyle: style.bodyParagraph()]
+        }
+
+        private func innermostItem(covering lineNo: Int) -> ItemInfo? {
+            var best: ItemInfo? = nil
+            for it in items where it.startLine <= lineNo && lineNo <= it.endLine {
+                if best == nil || (it.endLine - it.startLine) < (best!.endLine - best!.startLine) { best = it }
+            }
+            return best
+        }
+
+        private func codeParagraph() -> NSParagraphStyle {
+            let p = NSMutableParagraphStyle()
+            p.lineSpacing = 0
+            p.paragraphSpacing = 0
+            return p
+        }
+
+        private func tableParagraph() -> NSParagraphStyle {
+            let p = NSMutableParagraphStyle()
+            p.lineSpacing = 0
+            p.paragraphSpacing = 0
+            return p
+        }
+    }
+
+    /// Byte offset (cmark column - 1) within a line → UTF-16 offset. cmark advances
+    /// one column per UTF-8 byte; multibyte chars consume their byte count.
+    private static func byteToUTF16(_ byteOffset: Int, in lineText: String) -> Int {
+        let bytes = Array(lineText.utf8)
+        var b = 0, u16 = 0
+        let target = max(0, min(byteOffset, bytes.count))
+        while b < target {
+            let byte = bytes[b]
+            if byte < 0x80 { b += 1; u16 += 1 }
+            else if byte >= 0xF0 { b += 4; u16 += 2 }        // 4-byte → surrogate pair
+            else if byte >= 0xE0 { b += 3; u16 += 1 }
+            else if byte >= 0xC0 { b += 2; u16 += 1 }
+            else { b += 1 }                                  // stray continuation byte
+        }
+        return u16
+    }
+
+    // MARK: - Smart-newline continuation for list items (used by insertNewline)
+
+    /// Given a line (without its trailing newline), returns the marker to prepend to
+    /// the next line — ordered-list numbers are incremented, task checkboxes keep
+    /// their state — or nil if the line is not a list item. `empty` is true when the
+    /// line holds only the marker; the editor then removes the marker on Return
+    /// (exits the list) instead of continuing it.
+    struct ListContinuation: Equatable {
+        let marker: String
+        let empty: Bool
+    }
+
+    static func listContinuation(for line: String) -> ListContinuation? {
+        // Task item FIRST: "- [x] text" also matches the plain bullet pattern below.
+        if let m = match(line, pattern: "^([ \\t]*)([-*+])([ \\t]+)(\\[[ xX]\\])([ \\t]+)(.*)$") {
+            let marker = m[1] + m[2] + m[3] + m[4] + m[5]
+            return ListContinuation(marker: marker, empty: m[6].trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        if let m = match(line, pattern: "^([ \\t]*)(\\d+)([.)])([ \\t]+)(.*)$") {
+            let n = Int(m[2]) ?? 0
+            let marker = m[1] + String(n + 1) + m[3] + m[4]
+            return ListContinuation(marker: marker, empty: m[5].trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        if let m = match(line, pattern: "^([ \\t]*)([-*+])([ \\t]+)(.*)$") {
+            let marker = m[1] + m[2] + m[3]
+            return ListContinuation(marker: marker, empty: m[4].trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        return nil
+    }
+
+    // MARK: - Regex helper
 
     static func match(_ s: String, pattern: String) -> [String]? {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
         let ns = s as NSString
         guard let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) else { return nil }
         return (0..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0)) }
-    }
-
-    // MARK: - Inline pass
-
-    /// Styles inline markdown: **bold**, *italic*, ***both***, __…__, _…_ (word-boundary
-    /// guarded), ~~strikethrough~~, `code` spans (equal-length backtick runs), \escapes.
-    /// Returns the styled text (character-identical to `text`) plus syntax ranges
-    /// (relative to the returned string) for the delimiter characters.
-    static func inline(_ text: String, style: MarkdownStyle, base: [NSAttributedString.Key: Any])
-        -> (attributed: NSAttributedString, syntax: [NSRange]) {
-        let ns = text as NSString
-        let len = ns.length
-        let out = NSMutableAttributedString()
-        var syntax: [NSRange] = []
-
-        let bodyFont = base[.font] as? NSFont ?? style.bodyFont
-        let bodyColor = base[.foregroundColor] as? NSColor ?? style.textColor
-
-        func appendSyntax(_ s: String) {
-            let r = NSRange(location: out.length, length: (s as NSString).length)
-            out.append(NSAttributedString(string: s, attributes: style.syntaxAttributes()))
-            syntax.append(r)
-        }
-        func appendPlain(_ s: String) {
-            out.append(NSAttributedString(string: s, attributes: base))
-        }
-
-        var i = 0
-        while i < len {
-            let c = ns.character(at: i)
-
-            // Escape: \X → '\' (syntax) + literal X
-            if c == 0x5C, i + 1 < len, isPunctuation(ns.character(at: i + 1)) {
-                appendSyntax("\\")
-                appendPlain(String(UnicodeScalar(ns.character(at: i + 1))!))
-                i += 2
-                continue
-            }
-
-            // Code span: backtick run of length n, closed by an equal-length run
-            if c == 0x60 {
-                var run = 1
-                while i + run < len && ns.character(at: i + run) == 0x60 { run += 1 }
-                if let close = findRun(ns, char: 0x60, len: run, from: i + run) {
-                    var codeRange = NSRange(location: i + run, length: close - (i + run))
-                    // CommonMark: if code starts AND ends with a space, drop one on each side
-                    if codeRange.length >= 2,
-                       ns.character(at: codeRange.location) == 0x20,
-                       ns.character(at: NSMaxRange(codeRange) - 1) == 0x20 {
-                        codeRange = NSRange(location: codeRange.location + 1, length: codeRange.length - 2)
-                    }
-                    appendSyntax(String(repeating: "`", count: run))
-                    out.append(NSAttributedString(string: ns.substring(with: codeRange), attributes: style.codeAttributes()))
-                    appendSyntax(String(repeating: "`", count: run))
-                    i = close + run
-                    continue
-                }
-                appendPlain(String(repeating: "`", count: run))
-                i += run
-                continue
-            }
-
-            // Image: ![alt](url) — handled at the '!' so the whole construct is consumed
-            if c == 0x21, i + 1 < len, ns.character(at: i + 1) == 0x5B,
-               let (textRange, urlRange, _) = tryLink(ns, at: i + 1) {
-                let urlString = ns.substring(with: urlRange)
-                appendSyntax("![")
-                out.append(NSAttributedString(string: ns.substring(with: textRange), attributes: style.codeAttributes())) // alt placeholder
-                let wholeStart = out.length - (2 + textRange.length)
-                appendSyntax("](" + urlString + ")")
-                if let url = URL(string: urlString) {
-                    out.addAttribute(.markdownImage, value: url,
-                                     range: NSRange(location: wholeStart, length: out.length - wholeStart))
-                }
-                i = NSMaxRange(urlRange) + 1   // past ')'
-                continue
-            }
-
-            // Link: [text](url)
-            if c == 0x5B {
-                if let (textRange, urlRange, _) = tryLink(ns, at: i) {
-                    let urlString = ns.substring(with: urlRange)
-                    appendSyntax("[")
-                    let styledText = NSMutableAttributedString(string: ns.substring(with: textRange), attributes: base)
-                    styledText.addAttribute(.foregroundColor, value: style.linkColor, range: NSRange(location: 0, length: styledText.length))
-                    styledText.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: styledText.length))
-                    if let url = URL(string: urlString) {
-                        styledText.addAttribute(.link, value: url, range: NSRange(location: 0, length: styledText.length))
-                    }
-                    out.append(styledText)
-                    appendSyntax("](" + urlString + ")")
-                    i = NSMaxRange(urlRange) + 1   // past ')'
-                    continue
-                }
-                // Not a link — '[' stays plain
-                let chRange = ns.rangeOfComposedCharacterSequence(at: i)
-                appendPlain(ns.substring(with: chRange))
-                i = NSMaxRange(chRange)
-                continue
-            }
-
-            // Strikethrough: ~~…~~
-            if c == 0x7E, i + 1 < len, ns.character(at: i + 1) == 0x7E {
-                if let close = findRun(ns, char: 0x7E, len: 2, from: i + 2) {
-                    appendSyntax("~~")
-                    let inner = NSMutableAttributedString(string: ns.substring(with: NSRange(location: i + 2, length: close - (i + 2))), attributes: base)
-                    inner.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: inner.length))
-                    inner.addAttribute(.strikethroughColor, value: bodyColor, range: NSRange(location: 0, length: inner.length))
-                    out.append(inner)
-                    appendSyntax("~~")
-                    i = close + 2
-                    continue
-                }
-                appendPlain("~")
-                i += 1
-                continue
-            }
-
-            // Emphasis delimiters: * and _
-            if c == 0x2A || c == 0x5F {
-                var run = 1
-                while i + run < len && ns.character(at: i + run) == c { run += 1 }
-                // '_' does not open intraword (between two alphanumerics)
-                let prevAlnum = i > 0 && isAlnum(ns.character(at: i - 1))
-                let nextAlnum = i + run < len && isAlnum(ns.character(at: i + run))
-                if c == 0x5F, prevAlnum, nextAlnum {
-                    appendPlain(ns.substring(with: NSRange(location: i, length: run)))
-                    i += run
-                    continue
-                }
-                if let close = findEmphasisClose(ns, char: c, from: i + run) {
-                    let closerLen = closeRunLen(ns, close, char: c)
-                    let bold = run >= 2 || closerLen >= 2
-                    let italic = run % 2 == 1 || closerLen % 2 == 1
-                    appendSyntax(ns.substring(with: NSRange(location: i, length: run)))
-                    let inner = ns.substring(with: NSRange(location: i + run, length: close - (i + run)))
-                    out.append(NSAttributedString(string: inner, attributes: [
-                        .font: style.emphasisFont(base: bodyFont, bold: bold, italic: italic),
-                        .foregroundColor: bodyColor,
-                    ]))
-                    appendSyntax(ns.substring(with: NSRange(location: close, length: closerLen)))
-                    i = close + closerLen
-                    continue
-                }
-                appendPlain(ns.substring(with: NSRange(location: i, length: run)))
-                i += run
-                continue
-            }
-
-            // Plain character — use composed sequences so emoji (surrogate pairs) survive intact.
-            let chRange = ns.rangeOfComposedCharacterSequence(at: i)
-            appendPlain(ns.substring(with: chRange))
-            i = NSMaxRange(chRange)
-        }
-        return (out, syntax)
-    }
-
-    /// At a '[' position, returns (textRange, urlRange, isImage) for [t](u) / ![t](u), or nil.
-    /// textRange is the link text / alt text; urlRange is the URL between '(' and ')'.
-    private static func tryLink(_ ns: NSString, at i: Int) -> (NSRange, NSRange, Bool)? {
-        let isImage = i > 0 && ns.character(at: i - 1) == 0x21 // '!'
-        let textStart = i + 1                                 // always past the '['
-        var j = textStart
-        while j < ns.length && ns.character(at: j) != 0x5D {   // ]
-            if ns.character(at: j) == 0x0A { return nil }
-            j += 1
-        }
-        guard j < ns.length, j + 1 < ns.length, ns.character(at: j + 1) == 0x28 else { return nil } // (
-        var k = j + 2
-        while k < ns.length && ns.character(at: k) != 0x29 {    // )
-            if ns.character(at: k) == 0x0A { return nil }
-            k += 1
-        }
-        guard k < ns.length else { return nil }
-        return (NSRange(location: textStart, length: j - textStart),
-                NSRange(location: j + 2, length: k - (j + 2)), isImage)
-    }
-    private static func isPunctuation(_ c: unichar) -> Bool {
-        guard let s = UnicodeScalar(c) else { return false }
-        return "\\`*_{}[]()#+-.!>~|".unicodeScalars.contains(s)
-    }
-    private static func isAlnum(_ c: unichar) -> Bool {
-        guard let s = UnicodeScalar(c) else { return false }
-        return CharacterSet.alphanumerics.contains(s)
-    }
-    /// Finds a run of exactly `len` copies of `char`, starting the search at `start`.
-    private static func findRun(_ ns: NSString, char: unichar, len: Int, from start: Int) -> Int? {
-        var j = start
-        while j < ns.length {
-            if ns.character(at: j) == char {
-                var k = 0
-                while j + k < ns.length && ns.character(at: j + k) == char { k += 1 }
-                if k == len { return j }
-                j += k
-            } else {
-                j += 1
-            }
-        }
-        return nil
-    }
-    private static func closeRunLen(_ ns: NSString, _ pos: Int, char: unichar) -> Int {
-        var k = 0
-        while pos + k < ns.length && ns.character(at: pos + k) == char { k += 1 }
-        return k
-    }
-    /// Finds the first same-char run that can close emphasis (skipping intraword '_').
-    private static func findEmphasisClose(_ ns: NSString, char: unichar, from start: Int) -> Int? {
-        var j = start
-        while j < ns.length {
-            if ns.character(at: j) == char {
-                if char == 0x5F, j > 0, j + 1 < ns.length,
-                   isAlnum(ns.character(at: j - 1)), isAlnum(ns.character(at: j + 1)) {
-                    j += 1
-                    continue
-                }
-                return j
-            }
-            j += 1
-        }
-        return nil
     }
 }

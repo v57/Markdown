@@ -7,4 +7,7 @@ if CommandLine.arguments.contains("--selftest") {
 if CommandLine.arguments.contains("--smoke") {
     SmokeTest.schedule()    // quits after 3 s, prints SMOKE OK
 }
+if CommandLine.arguments.contains("--typingprobe") {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { SelfTest.typingProbe() }
+}
 MarkdownApp.main()

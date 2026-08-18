@@ -18,6 +18,21 @@ extension NSAttributedString.Key {
     /// Marks list markers ("- ", "* ", "1. ") that are ALWAYS shown (never hidden or
     /// collapsed), even on inactive lines — Obsidian-style persistent bullets.
     static let markdownListMarker = NSAttributedString.Key("MarkdownListMarker")
+    /// Marks BLOCK-level syntax (heading prefix, blockquote '>', code fences, table
+    /// pipes, setext underline, rule): shown while the caret is anywhere on the line.
+    static let markdownLineCommand = NSAttributedString.Key("MarkdownLineCommand")
+    /// Marks the full span of an inline command ("**bold**", "`code`", "[link](url)").
+    /// Value is an NSValue-wrapped NSRange. The command's delimiters are shown while
+    /// the caret is inside (or just after) this span.
+    static let markdownCommandSpan = NSAttributedString.Key("MarkdownCommandSpan")
+    /// Marks blockquote lines (including their trailing newline); the layout manager
+    /// draws a vertical bar at the quote block's left edge instead of relying on the
+    /// '>' markers alone (those collapse to zero width on inactive lines).
+    static let markdownBlockquote = NSAttributedString.Key("MarkdownBlockquote")
+    /// Marks fenced-code content with its language display name (e.g. "Swift")
+    /// when the fence language is recognized; the layout manager draws a language
+    /// label for the block. Absent for unknown languages.
+    static let markdownCodeLanguage = NSAttributedString.Key("MarkdownCodeLanguage")
 }
 
 struct MarkdownStyle {
@@ -28,9 +43,14 @@ struct MarkdownStyle {
     let codeTextColor: NSColor = .secondaryLabelColor
     let linkColor: NSColor = .linkColor
     let quoteTextColor: NSColor = .secondaryLabelColor
-    let quoteBarColor: NSColor = .tertiaryLabelColor
+    let quoteBarColor: NSColor = .systemRed
     let ruleColor: NSColor = .separatorColor
     let checkedTextColor: NSColor = .secondaryLabelColor
+
+    /// Code syntax color scheme (Xcode-style categories; GitHub Light/Dark
+    /// defaults). Resolved afresh on every parse: an appearance switch restyles
+    /// fenced code with the matching palette on the next edit/restyle pass.
+    var codeScheme: CodeColorScheme { .systemAware }
 
     // Fonts
     let bodyFont = NSFont.systemFont(ofSize: 15)

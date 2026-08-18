@@ -22,9 +22,33 @@ enum SampleDocument {
 
     > This is a blockquote. The `>` marker hides when you edit another line.
 
+    ## Syntax highlighting
+
+    Fenced code gets the GitHub palette (Xcode-style categories) for the
+    20 most-used languages. Switch the system appearance to flip the palette:
+
     ```swift
-    let greeting = "Hello from the code block"
-    print(greeting)   // no syntax highlighting needed
+    struct Greeting {
+        let text = "Hello, world!"          // comment
+        func message(count: Int) -> String {
+            let n = count > 1 ? "\\(count) times" : "once"
+            return text + " " + n
+        }
+    }
+    ```
+
+    ```python
+    def greet(names):
+        # say hi to everyone
+        for name in names:
+            print(f"Hello, {name}!")
+    ```
+
+    ```bash
+    #!/bin/bash
+    for file in *.md; do
+        echo "Processing $file"
+    done
     ```
 
     | Feature | Status |
