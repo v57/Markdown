@@ -536,7 +536,11 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         let y = origin.y + fragRect.minY + fragRect.height / 2 - 0.5
         let path = PlatformBezierPath()
         path.move(to: CGPoint(x: origin.x + fragRect.minX, y: y))
+        #if canImport(AppKit)
         path.line(to: CGPoint(x: origin.x + fragRect.maxX, y: y))
+        #else
+        path.addLine(to: CGPoint(x: origin.x + fragRect.maxX, y: y))
+        #endif
         path.lineWidth = 1
         ruleColor().setStroke()
         path.stroke()

@@ -18,6 +18,7 @@ let package = Package(
         .library(name: "Md", targets: ["Md"]),
         .library(name: "MdCode", targets: ["MdCode"]),
         .library(name: "MdCore", targets: ["MdCore"]),
+        .library(name: "MdUIKit", targets: ["MdUIKit"]),
     ],
     dependencies: [
         // swift-markdown (also an Xcode SPM dependency) — provides the Markdown module (cmark AST).
@@ -46,6 +47,13 @@ let package = Package(
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
+        .target(
+            name: "MdUIKit",
+            dependencies: ["MdCore", "MdCode"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
         .testTarget(
             name: "MdTests",
             dependencies: ["Md", "MdCore", "MdCode"],
@@ -63,6 +71,13 @@ let package = Package(
         .testTarget(
             name: "MdCoreTests",
             dependencies: ["MdCore", "MdCode"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .testTarget(
+            name: "MdUIKitTests",
+            dependencies: ["MdUIKit", "MdCore", "MdCode"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

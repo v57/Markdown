@@ -121,7 +121,7 @@ public enum MarkdownRenderer {
     #if canImport(UIKit)
     private static func resolveUIKit(_ color: MarkdownColor) -> UIColor {
         switch color {
-        case .rgb(let hex): return UIColor(hex: hex)
+        case .rgb(let hex): return UIColor.hex(hex)
         case .label: return .label
         case .secondaryLabel: return .secondaryLabel
         case .tertiaryLabel: return .tertiaryLabel
