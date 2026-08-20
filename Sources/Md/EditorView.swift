@@ -1,9 +1,10 @@
 import SwiftUI
 import AppKit
 
-struct EditorView: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> NSScrollView {
+public struct MarkdownEditorView: NSViewRepresentable {
+    public init() {}
+    public func makeCoordinator() -> Coordinator { Coordinator() }
+    public func makeNSView(context: Context) -> NSScrollView {
         let textView = EditorTextView()
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
@@ -13,6 +14,6 @@ struct EditorView: NSViewRepresentable {
         scroll.documentView = textView
         return scroll
     }
-    func updateNSView(_ nsView: NSScrollView, context: Context) {}
-    @MainActor final class Coordinator: NSObject {}
+    public func updateNSView(_ nsView: NSScrollView, context: Context) {}
+    @MainActor public final class Coordinator: NSObject {}
 }

@@ -1,6 +1,7 @@
 import AppKit
+import MdCode
 
-extension NSAttributedString.Key {
+public extension NSAttributedString.Key {
     /// Marks markdown "command symbol" ranges (hidden on inactive lines, tertiary when active).
     static let markdownSyntax = NSAttributedString.Key("MarkdownSyntax")
     /// Marks task-list checkbox ranges ("[x]"/"[ ]"); the layout manager draws a checkbox
@@ -33,35 +34,39 @@ extension NSAttributedString.Key {
     /// when the fence language is recognized; the layout manager draws a language
     /// label for the block. Absent for unknown languages.
     static let markdownCodeLanguage = NSAttributedString.Key("MarkdownCodeLanguage")
+    /// Marks inline-code content (the text between backticks, NOT the backticks);
+    /// the layout manager draws a rounded chip behind it instead of the flat
+    /// `.backgroundColor` rect (which can't round corners).
+    static let markdownInlineCode = NSAttributedString.Key("MarkdownInlineCode")
 }
 
-struct MarkdownStyle {
+public struct MarkdownStyle {
     // Colors — all dynamic system colors → automatic dark/light support
-    let textColor: NSColor = .labelColor
-    let syntaxColor: NSColor = .tertiaryLabelColor   // ★ "commands in tertiary color"
-    let codeBackground: NSColor = .quaternarySystemFill
-    let codeTextColor: NSColor = .secondaryLabelColor
-    let linkColor: NSColor = .linkColor
-    let quoteTextColor: NSColor = .secondaryLabelColor
-    let quoteBarColor: NSColor = .systemRed
-    let ruleColor: NSColor = .separatorColor
-    let checkedTextColor: NSColor = .secondaryLabelColor
+    public let textColor: NSColor = .labelColor
+    public let syntaxColor: NSColor = .tertiaryLabelColor   // ★ "commands in tertiary color"
+    public let codeBackground: NSColor = .quaternarySystemFill   // macOS 14+; package targets macOS 12
+    public let codeTextColor: NSColor = .secondaryLabelColor
+    public let linkColor: NSColor = .linkColor
+    public let quoteTextColor: NSColor = .secondaryLabelColor
+    public let quoteBarColor: NSColor = .systemRed
+    public let ruleColor: NSColor = .separatorColor
+    public let checkedTextColor: NSColor = .secondaryLabelColor
 
     /// Code syntax color scheme (Xcode-style categories; GitHub Light/Dark
     /// defaults). Resolved afresh on every parse: an appearance switch restyles
     /// fenced code with the matching palette on the next edit/restyle pass.
-    var codeScheme: CodeColorScheme { .systemAware }
+    public var codeScheme: CodeColorScheme { .systemAware }
 
     // Fonts
-    let bodyFont = NSFont.systemFont(ofSize: 15)
-    let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    let headingSizes: [CGFloat] = [28, 24, 20, 17, 15, 13]   // h1…h6
-    func headingFont(level: Int) -> NSFont {
+    public let bodyFont = NSFont.systemFont(ofSize: 15)
+    public let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+    public let headingSizes: [CGFloat] = [28, 24, 20, 17, 15, 13]   // h1…h6
+    public func headingFont(level: Int) -> NSFont {
         let size = headingSizes[max(0, min(5, level - 1))]
         let weight: NSFont.Weight = level <= 3 ? .bold : .semibold
         return .systemFont(ofSize: size, weight: weight)
     }
-    func emphasisFont(base: NSFont, bold: Bool, italic: Bool) -> NSFont {
+    public func emphasisFont(base: NSFont, bold: Bool, italic: Bool) -> NSFont {
         var traits: NSFontDescriptor.SymbolicTraits = []
         if bold { traits.insert(.bold) }
         if italic { traits.insert(.italic) }
@@ -70,19 +75,19 @@ struct MarkdownStyle {
     }
 
     // Paragraph styles
-    func bodyParagraph() -> NSParagraphStyle {
+    public func bodyParagraph() -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
         p.lineSpacing = 2
         p.paragraphSpacing = 6
         return p
     }
-    func headingParagraph(level: Int) -> NSParagraphStyle {
+    public func headingParagraph(level: Int) -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
         p.paragraphSpacingBefore = level <= 2 ? 12 : 8
         p.paragraphSpacing = level <= 2 ? 8 : 6
         return p
     }
-    func listParagraph(level: Int, markerWidth: CGFloat) -> NSParagraphStyle {
+    public func listParagraph(level: Int, markerWidth: CGFloat) -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
         let indent = 24 * CGFloat(level)
         p.firstLineHeadIndent = indent
@@ -90,24 +95,31 @@ struct MarkdownStyle {
         p.paragraphSpacing = 3
         return p
     }
-    func quoteParagraph() -> NSParagraphStyle {
+    public func quoteParagraph() -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
-        p.firstLineHeadIndent = 24
-        p.headIndent = 24
+        p.firstLineHeadIndent = 12
+        p.headIndent = 12
         p.paragraphSpacing = 6
         return p
     }
 
     // Attribute bundles
-    var typingAttributes: [NSAttributedString.Key: Any] {
+    public var typingAttributes: [NSAttributedString.Key: Any] {
         [.font: bodyFont, .foregroundColor: textColor, .paragraphStyle: bodyParagraph()]
     }
-    func syntaxAttributes() -> [NSAttributedString.Key: Any] {
+    public func syntaxAttributes() -> [NSAttributedString.Key: Any] {
         [.foregroundColor: syntaxColor, .markdownSyntax: true]
     }
-    func codeAttributes() -> [NSAttributedString.Key: Any] {
+    public func codeAttributes() -> [NSAttributedString.Key: Any] {
         [.font: codeFont, .foregroundColor: codeTextColor, .backgroundColor: codeBackground]
     }
+    public func inlineCodeAttributes() -> [NSAttributedString.Key: Any] {
+        // No .backgroundColor — the layout manager draws a rounded chip behind the
+        // range (marked .markdownInlineCode) so corners can be rounded.
+        [.font: codeFont, .foregroundColor: codeTextColor, .markdownInlineCode: true]
+    }
 
-    static let standard = MarkdownStyle()
+    /// The default style. Computed (not a stored global) so the non-Sendable
+    /// NSColor/NSFont value type stays concurrency-safe under Swift 6.
+    public static var standard: MarkdownStyle { MarkdownStyle() }
 }

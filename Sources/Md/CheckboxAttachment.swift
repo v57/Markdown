@@ -2,8 +2,8 @@ import AppKit
 
 /// Draws the task-list checkbox. The layout manager renders this image in place of the
 /// "[x]"/"[ ]" characters (which stay in the source string, marked .markdownCheckbox).
-enum CheckboxRenderer {
-    static func image(checked: Bool, size: CGFloat = 13) -> NSImage {
+public enum CheckboxRenderer {
+    public static func image(checked: Bool, size: CGFloat = 13) -> NSImage {
         let s = NSSize(width: size, height: size)
         return NSImage(size: s, flipped: false) { rect in
             let box = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3)

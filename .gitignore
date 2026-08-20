@@ -3,3 +3,5 @@ build/
 
 # Command Code session files
 .commandcode/
+.build/
+.hermes/

@@ -1,8 +1,10 @@
 import AppKit
+import MdCode
 
 // MARK: - Self-test harness (CLI-verifiable TDD: `Markdown --selftest`)
 
-enum SelfTest {
+@MainActor
+public enum SelfTest {
     private static var passed = 0
     private static var failed = 0
 
@@ -11,7 +13,7 @@ enum SelfTest {
     /// attribute restyle, activeCharacterRange, and the textViewDidChangeSelection
     /// invalidations) and prints the line-fragment glyph ranges after every step so
     /// the step that corrupts line breaking (newline no longer ends line 1) is visible.
-    static func headlessSequenceProbe() {
+    public static func headlessSequenceProbe() {
         // Variant 2 (LIVE-MIRROR): the attribute restyle runs INSIDE the storage's
         // didProcessEditing callback (as reapplyMarkdown does in the text view),
         // instead of after replaceCharacters returns.
@@ -69,7 +71,7 @@ enum SelfTest {
     /// glyph-to-character mapping and fragment widths so the failure mode
     /// (parser attribute vs stale layout mapping vs draw skip) is identifiable
     /// from the log alone. Run via: Markdown --typingprobe
-    static func typingProbe() {
+    public static func typingProbe() {
         headlessSequenceProbe()   // storage-level repro first (no window needed)
         guard let tv = EditorTextView.live else {
             print("TYPINGPROBE FAIL no live text view")
@@ -142,7 +144,7 @@ enum SelfTest {
         }
     }
 
-    static func check(_ name: String, _ condition: Bool, _ detail: String = "") {
+    public static func check(_ name: String, _ condition: Bool, _ detail: String = "") {
         if condition {
             passed += 1
             print("  PASS \(name)")
@@ -152,7 +154,7 @@ enum SelfTest {
         }
     }
 
-    static func runAndExit() -> Never {
+    public static func runAndExit() -> Never {
         print("SELFTEST START")
         check("empty doc parses", MarkdownParser.parse("", style: .standard).blocks.isEmpty)
         let sample = MarkdownParser.parse(SampleDocument.text, style: .standard)
@@ -177,7 +179,9 @@ enum SelfTest {
               && qa2.attribute(.markdownBlockquote, at: 4, effectiveRange: nil) != nil)
         check("quote bar attr absent on plain", MarkdownParser.parse("plain").attributed.attribute(.markdownBlockquote, at: 0, effectiveRange: nil) == nil)
         check("quote bar color systemRed", MarkdownStyle.standard.quoteBarColor == .systemRed)
-        // Bar geometry: x = quote content's left edge (24pt indent), bar spans all lines.
+        // Bar geometry: the bar is drawn at x = origin.x (container left edge), while
+        // the quote text keeps its 12pt paragraph indent. Headless: verify the text
+        // indent is unchanged (used.minX == 12) — the bar's x is origin by construction.
         let qbDoc = MarkdownParser.parse("> a\n> b").attributed.mutableCopy() as! NSMutableAttributedString
         let qbStorage = NSTextStorage(attributedString: qbDoc)
         let qbLM = EditorLayoutManager()
@@ -185,16 +189,17 @@ enum SelfTest {
         let qbContainer = NSTextContainer(size: NSSize(width: 400, height: 2000))
         qbLM.addTextContainer(qbContainer)
         qbLM.ensureLayout(for: qbContainer)
-        var qbBarX: CGFloat? = nil
+        let qbGlyphRange = qbLM.glyphRange(forCharacterRange: NSRange(location: 0, length: qbStorage.length), actualCharacterRange: nil)
+        var qbTextX: CGFloat? = nil
         var qbMinY = CGFloat.greatestFiniteMagnitude
         var qbMaxY = -CGFloat.greatestFiniteMagnitude
-        qbLM.enumerateLineFragments(forGlyphRange: qbLM.glyphRange(forCharacterRange: NSRange(location: 0, length: qbStorage.length), actualCharacterRange: nil)) { rect, used, _, _, _ in
-            if qbBarX == nil { qbBarX = used.minX }
+        qbLM.enumerateLineFragments(forGlyphRange: qbGlyphRange) { rect, used, _, _, _ in
+            if qbTextX == nil { qbTextX = used.minX }          // quote text left edge
             qbMinY = min(qbMinY, rect.minY)
             qbMaxY = max(qbMaxY, rect.maxY)
         }
-        print("QUOTEBAR x=\(qbBarX ?? -1) span=\(qbMaxY - qbMinY)")
-        check("quote bar at 24pt left edge", qbBarX == 24, "x=\(qbBarX ?? -1)")
+        print("QUOTEBAR x=0 span=\(qbMaxY - qbMinY) textX=\(qbTextX ?? -1)")
+        check("quote text indent 12", qbTextX == 12, "x=\(qbTextX ?? -1)")
         check("quote bar spans both lines", qbMaxY - qbMinY > 30, "h=\(qbMaxY - qbMinY)")
         check("paragraph", MarkdownParser.parse("a\nb").blocks == [.paragraph("a\nb")])
         check("verbatim invariant",
@@ -216,7 +221,10 @@ enum SelfTest {
         check("strike attr", strike.attribute(.strikethroughStyle, at: 2, effectiveRange: nil) as? Int == NSUnderlineStyle.single.rawValue)
         let code = MarkdownParser.parse("`x`").attributed
         check("code font", (code.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)?.fontName.contains("Mono") == true)
-        check("code bg", code.attribute(.backgroundColor, at: 1, effectiveRange: nil) != nil)
+        // Inline code content is marked .markdownInlineCode (the layout manager draws
+        // a rounded chip) — NOT .backgroundColor (a flat rect can't round corners).
+        check("code chip marker", code.attribute(.markdownInlineCode, at: 1, effectiveRange: nil) != nil)
+        check("code no bg attr", code.attribute(.backgroundColor, at: 1, effectiveRange: nil) == nil)
         check("code markers syntax", code.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil)
         // Inline code CONTENT must never be marked syntax — it stays visible when the
         // caret is outside the span (only the backtick delimiters collapse). Regression
@@ -228,6 +236,39 @@ enum SelfTest {
         check("code double-backtick delims", code2.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil
             && code2.attribute(.markdownSyntax, at: 5, effectiveRange: nil) != nil)
         check("code content backtick plain", code2.attribute(.markdownSyntax, at: 3, effectiveRange: nil) == nil)
+        // Two adjacent inline-code spans must stay TWO separate chips (the draw loop
+        // merges only contiguous sub-runs belonging to the SAME span; a gap between
+        // spans starts a new run).
+        let twoSpans = MarkdownParser.parse("`a` `b`").attributed
+        var chipRuns: [NSRange] = []
+        twoSpans.enumerateAttribute(.markdownInlineCode, in: NSRange(location: 0, length: twoSpans.length), options: []) { value, range, _ in
+            if value != nil { chipRuns.append(range) }
+        }
+        check("two inline code chips separate", chipRuns.count == 2, "runs=\(chipRuns.count)")
+        check("inline chip 1 range", chipRuns.first == NSRange(location: 1, length: 1), "r=\(String(describing: chipRuns.first))")
+        check("inline chip 2 range", chipRuns.last == NSRange(location: 5, length: 1), "r=\(String(describing: chipRuns.last))")
+        // The chip must hug ONLY the code glyphs on a mixed line ("text `code` more"),
+        // NOT the whole line fragment. Reproduces the "highlights full line" bug: the
+        // line fragment's `used` rect spans the whole line; boundingRect gives just
+        // the code glyphs. Assert the code's glyph bounds are narrower than the line.
+        let mixedDoc = MarkdownParser.parse("text `code` more").attributed.mutableCopy() as! NSMutableAttributedString
+        let mixedStorage = NSTextStorage(attributedString: mixedDoc)
+        let mixedLM = EditorLayoutManager()
+        mixedStorage.addLayoutManager(mixedLM)
+        let mixedContainer = NSTextContainer(size: NSSize(width: 400, height: 2000))
+        mixedLM.addTextContainer(mixedContainer)
+        mixedLM.ensureLayout(for: mixedContainer)
+        // Code content is "code" — chars 6..9 (text _code_ more).
+        let codeRange = NSRange(location: 6, length: 4)
+        let codeGlyphs = mixedLM.glyphRange(forCharacterRange: codeRange, actualCharacterRange: nil)
+        let codeBounds = mixedLM.boundingRect(forGlyphRange: codeGlyphs, in: mixedContainer)
+        var mixedLineWidth: CGFloat = 0
+        mixedLM.enumerateLineFragments(forGlyphRange: mixedLM.glyphRange(forCharacterRange: NSRange(location: 0, length: mixedStorage.length), actualCharacterRange: nil)) { rect, _, _, _, _ in
+            mixedLineWidth = max(mixedLineWidth, rect.width)
+        }
+        print("MIXEDCODE codeW=\(codeBounds.width) lineW=\(mixedLineWidth)")
+        check("inline chip narrower than line", codeBounds.width < mixedLineWidth * 0.6, "codeW=\(codeBounds.width) lineW=\(mixedLineWidth)")
+        check("inline chip starts at code", codeBounds.minX > 20, "minX=\(codeBounds.minX)")
         let esc = MarkdownParser.parse("\\*x\\*").attributed
         check("escape literal", esc.string == "\\*x\\*")
         check("escape asterisk plain", esc.attribute(.markdownSyntax, at: 1, effectiveRange: nil) == nil)
@@ -487,6 +528,17 @@ enum SelfTest {
         check("continuation heading", MarkdownParser.listContinuation(for: "# head") == nil)
         check("continuation no-space dash", MarkdownParser.listContinuation(for: "-not a list") == nil)
 
+        // Quote continuation: Return on a quote line prepends "> " to the new line;
+        // a marker-only "> " line exits the quote (marker dropped).
+        check("quote continuation", MarkdownParser.quoteContinuation(for: "> quoted") == MarkdownParser.ListContinuation(marker: "> ", empty: false))
+        check("quote continuation no space", MarkdownParser.quoteContinuation(for: ">quoted") == MarkdownParser.ListContinuation(marker: "> ", empty: false))
+        check("quote continuation nested", MarkdownParser.quoteContinuation(for: ">> deep") == MarkdownParser.ListContinuation(marker: ">> ", empty: false))
+        check("quote continuation indented", MarkdownParser.quoteContinuation(for: "  > quoted") == MarkdownParser.ListContinuation(marker: "  > ", empty: false))
+        check("quote continuation empty", MarkdownParser.quoteContinuation(for: "> ") == MarkdownParser.ListContinuation(marker: "> ", empty: true))
+        check("quote continuation whitespace-only", MarkdownParser.quoteContinuation(for: ">   ") == MarkdownParser.ListContinuation(marker: ">   ", empty: true))
+        check("quote continuation plain", MarkdownParser.quoteContinuation(for: "plain text") == nil)
+        check("quote continuation heading", MarkdownParser.quoteContinuation(for: "# head") == nil)
+
         // --- Task 18: swift-markdown parser (regressions + new capabilities) ---
         // The old hand-rolled parser LOOPED FOREVER on a bare "- [ ]" (no trailing
         // space): the task-list guard matched but the full pattern did not, so the
@@ -715,7 +767,7 @@ enum SelfTest {
     /// frame must track the layout manager's usedRect (+ vertical textContainerInset)
     /// so the scroller covers exactly the document. Drives the caret to the end and
     /// re-measures, since selection-driven reflows (zero-width commands) change layout.
-    static func scrollGeometryProbe() {
+    public static func scrollGeometryProbe() {
         guard let tv = EditorTextView.live, let scroll = tv.enclosingScrollView else {
             print("SCROLLPROBE FAIL no live text view / scroll view")
             return
@@ -750,7 +802,7 @@ enum SelfTest {
 
     /// Drives the live editor through insertText / deleteBackward / insertNewline to
     /// diagnose "backspace does nothing" / "second Enter does nothing" reports.
-    static func editPathProbe() {
+    public static func editPathProbe() {
         guard let tv = EditorTextView.live else {
             print("EDITPROBE FAIL no live text view")
             return
@@ -808,6 +860,18 @@ enum SelfTest {
         tv.insertNewline(nil)
         report("list continuation exit", tv.string.hasSuffix("- [ ] task\n"), "suffix=[\(String(tv.string.suffix(16)))]")
         report("list continuation exit caret", tv.selectedRange.location == (tv.string as NSString).length, "caret=\(tv.selectedRange.location) len=\((tv.string as NSString).length)")
+        // Smart quote continuation: Return on a quote line prepends "> "; Return on
+        // the fresh marker-only "> " line removes it again (exits the quote).
+        let cq0 = (tv.string as NSString).length
+        tv.setSelectedRange(NSRange(location: cq0, length: 0))
+        tv.insertText("> quoted")
+        tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+        tv.insertNewline(nil)
+        report("quote continuation marker", tv.string.hasSuffix("> quoted\n> "), "suffix=[\(String(tv.string.suffix(18)))]")
+        report("quote continuation caret", tv.selectedRange.location == (tv.string as NSString).length, "caret=\(tv.selectedRange.location) len=\((tv.string as NSString).length)")
+        tv.insertNewline(nil)
+        report("quote continuation exit", tv.string.hasSuffix("> quoted\n"), "suffix=[\(String(tv.string.suffix(12)))]")
+        report("quote continuation exit caret", tv.selectedRange.location == (tv.string as NSString).length, "caret=\(tv.selectedRange.location) len=\((tv.string as NSString).length)")
         // Middle-of-text edits (common backspace case)
         let mid = (tv.string as NSString).length / 2
         tv.setSelectedRange(NSRange(location: mid, length: 0))
@@ -829,8 +893,9 @@ enum SelfTest {
 
 // MARK: - Smoke mode (launch, log, self-quit)
 
-enum SmokeTest {
-    static func schedule() {
+@MainActor
+public enum SmokeTest {
+    public static func schedule() {
         // Drive the live editor through the real edit path after the window is up.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             SelfTest.scrollGeometryProbe()   // runs first: editPathProbe empties the doc
@@ -850,8 +915,9 @@ enum SmokeTest {
 
 /// After the edit probe empties the document, the text view frame must shrink to
 /// just the vertical insets (no minSize clamp to the first viewport height).
-enum EmptyDocScrollProbe {
-    static func run() {
+@MainActor
+public enum EmptyDocScrollProbe {
+    public static func run() {
         guard let tv = EditorTextView.live else {
             print("EMPTYDOC FAIL no live text view")
             return

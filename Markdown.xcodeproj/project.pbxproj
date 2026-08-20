@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		267577A53037283100FB9989 /* Md in Frameworks */ = {isa = PBXBuildFile; productRef = 267577A43037283100FB9989 /* Md */; };
 		269C449B303192220055AD81 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 269C449A303192220055AD81 /* Markdown */; };
 		26B6F287303441E5003711C9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 26B6F286303441E5003711C9 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
@@ -29,6 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				269C449B303192220055AD81 /* Markdown in Frameworks */,
+				267577A53037283100FB9989 /* Md in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -70,6 +72,7 @@
 			name = Markdown;
 			packageProductDependencies = (
 				269C449A303192220055AD81 /* Markdown */,
+				267577A43037283100FB9989 /* Md */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Markdown.app */;
@@ -101,6 +104,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				269C4499303192220055AD81 /* XCRemoteSwiftPackageReference "swift-markdown" */,
+				267577A33037283100FB9989 /* XCLocalSwiftPackageReference "../Markdown" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -286,7 +290,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.v57.md;
 				PRODUCT_MODULE_NAME = MarkdownEditor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -326,7 +330,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.v57.md;
 				PRODUCT_MODULE_NAME = MarkdownEditor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -363,6 +367,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		267577A33037283100FB9989 /* XCLocalSwiftPackageReference "../Markdown" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Markdown;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		269C4499303192220055AD81 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -375,6 +386,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		267577A43037283100FB9989 /* Md */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Md;
+		};
 		269C449A303192220055AD81 /* Markdown */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 269C4499303192220055AD81 /* XCRemoteSwiftPackageReference "swift-markdown" */;

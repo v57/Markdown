@@ -1,7 +1,7 @@
 import Foundation
 
-enum SampleDocument {
-    static let text = """
+public enum SampleDocument {
+    public static let text = """
     # Markdown Editor
 
     A **live-preview** markdown editor built on *AppKit* `NSTextView`. The markdown

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Md
 
 if CommandLine.arguments.contains("--selftest") {
     SelfTest.runAndExit()   // Never

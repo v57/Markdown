@@ -1,14 +1,15 @@
 import AppKit
 
-final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDelegate {
+@MainActor
+public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDelegate {
     /// Weak handle for the smoke/probe harness to drive the live editor.
-    static weak var live: EditorTextView?
+    public static weak var live: EditorTextView?
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
     private var lastSyntaxRangeCount = 0
 
-    init() {
+    public init() {
         markdownStorage = NSTextStorage()
         markdownLayout = EditorLayoutManager()
         markdownStorage.addLayoutManager(markdownLayout)
@@ -78,7 +79,7 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
     /// selection, e.g. Select-All → Delete); here the selection is valid.
     private var lastLoggedSyntaxCount = -1
 
-    func textDidChange(_ notification: Notification) {
+    public func textDidChange(_ notification: Notification) {
         reapplyMarkdown()
         typingAttributes = MarkdownStyle.standard.typingAttributes
     }
@@ -122,7 +123,7 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
 
     // MARK: - Selection / active line (drives syntax show/hide)
 
-    func textViewDidChangeSelection(_ notification: Notification) {
+    public func textViewDidChangeSelection(_ notification: Notification) {
         guard let lm = layoutManager as? EditorLayoutManager else { return }
         let newSelection = selectedRange()
         guard newSelection != lm.activeCharacterRange else { return }
@@ -143,7 +144,7 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
     /// scroll view tiles it as documentView), which would clamp the frame to the first
     /// viewport size and break both scroll growth and shrinking for short documents.
     /// Re-assert before super so the text view stays free to track the layout height.
-    override func setFrameSize(_ newSize: NSSize) {
+    public override func setFrameSize(_ newSize: NSSize) {
         minSize = NSSize(width: 0, height: 0)
         maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         super.setFrameSize(newSize)
@@ -155,7 +156,7 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
     /// view's content size always equals the document. Fired by the layout manager
     /// after every completed layout pass — including the selection-driven reflows
     /// (zero-width commands) and typing — so the scroller stays correct.
-    func layoutManager(_ layoutManager: NSLayoutManager, didCompleteLayoutFor textContainer: NSTextContainer?,
+    public func layoutManager(_ layoutManager: NSLayoutManager, didCompleteLayoutFor textContainer: NSTextContainer?,
                        atEnd layoutFinishedFlag: Bool) {
         guard let container = textContainer else { return }
         let used = layoutManager.usedRect(for: container)
@@ -167,14 +168,14 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
 
     // MARK: - Links
 
-    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+    public func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
         if let url = link as? URL { NSWorkspace.shared.open(url) }
         return true
     }
 
     // MARK: - Checkbox click-to-toggle (Obsidian-style)
 
-    override func mouseDown(with event: NSEvent) {
+    public override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         // Code-block copy button: copy the block's code to the clipboard.
         if let lm = layoutManager as? EditorLayoutManager,
@@ -217,7 +218,7 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
     /// is prepended with the item's marker (ordered-list numbers incremented, task
     /// checkboxes keep their state, indentation preserved). Return on a marker-only
     /// item removes the marker instead — that's the standard "exit the list" gesture.
-    override func insertNewline(_ sender: Any?) {
+    public override func insertNewline(_ sender: Any?) {
         let sel = selectedRange()
         let ns = string as NSString
         if sel.length == 0, ns.length > 0, sel.location <= ns.length {
@@ -225,33 +226,44 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
             let line = ns.substring(with: lineRange)
             let content = line.hasSuffix("\n") ? String(line.dropLast()) : line
             if let cont = MarkdownParser.listContinuation(for: content) {
-                if cont.empty {
-                    // Marker-only item: drop the marker, caret stays on the empty line.
-                    let markerLen = lineRange.length - (line.hasSuffix("\n") ? 1 : 0)
-                    let markerRange = NSRange(location: lineRange.location, length: markerLen)
-                    if shouldChangeText(in: markerRange, replacementString: "") {
-                        textStorage?.replaceCharacters(in: markerRange, with: "")
-                        didChangeText()
-                        setSelectedRange(NSRange(location: markerRange.location, length: 0))
-                    }
-                } else {
-                    // Split at the caret and carry the marker onto the new line.
-                    let insertion = "\n" + cont.marker
-                    let insertRange = NSRange(location: sel.location, length: 0)
-                    if shouldChangeText(in: insertRange, replacementString: insertion) {
-                        textStorage?.replaceCharacters(in: insertRange, with: insertion)
-                        didChangeText()
-                        let newCaret = sel.location + (insertion as NSString).length
-                        setSelectedRange(NSRange(location: newCaret, length: 0))
-                    }
-                }
+                continueBlock(cont, lineRange: lineRange, line: line, caret: sel.location)
+                return
+            }
+            if let cont = MarkdownParser.quoteContinuation(for: content) {
+                continueBlock(cont, lineRange: lineRange, line: line, caret: sel.location)
                 return
             }
         }
         super.insertNewline(sender)
     }
 
-    override func viewDidMoveToWindow() {
+    /// Shared continuation for list items and quotes: a marker-only line drops the
+    /// marker (exits the block); otherwise the marker is carried onto the new line.
+    private func continueBlock(_ cont: MarkdownParser.ListContinuation, lineRange: NSRange,
+                               line: String, caret: Int) {
+        if cont.empty {
+            // Marker-only item: drop the marker, caret stays on the empty line.
+            let markerLen = lineRange.length - (line.hasSuffix("\n") ? 1 : 0)
+            let markerRange = NSRange(location: lineRange.location, length: markerLen)
+            if shouldChangeText(in: markerRange, replacementString: "") {
+                textStorage?.replaceCharacters(in: markerRange, with: "")
+                didChangeText()
+                setSelectedRange(NSRange(location: markerRange.location, length: 0))
+            }
+        } else {
+            // Split at the caret and carry the marker onto the new line.
+            let insertion = "\n" + cont.marker
+            let insertRange = NSRange(location: caret, length: 0)
+            if shouldChangeText(in: insertRange, replacementString: insertion) {
+                textStorage?.replaceCharacters(in: insertRange, with: insertion)
+                didChangeText()
+                let newCaret = caret + (insertion as NSString).length
+                setSelectedRange(NSRange(location: newCaret, length: 0))
+            }
+        }
+    }
+
+    public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
             // Re-assert after the scroll view sized us: NSTextView can clamp min/max
@@ -268,7 +280,7 @@ final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDeleg
     /// The code palette is GitHub Light/Dark (static colors, unlike the dynamic
     /// system colors used elsewhere) — re-apply when the appearance switches so
     /// fenced code restyles immediately instead of waiting for the next edit.
-    override func viewDidChangeEffectiveAppearance() {
+    public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         reapplyMarkdown()
     }

@@ -2,9 +2,14 @@ import Foundation
 
 /// A lexical token: a UTF-16 range (relative to the scanned code string) and its
 /// Xcode-style syntax kind.
-struct CodeToken {
-    let range: NSRange
-    let kind: SyntaxKind
+public struct CodeToken {
+    public let range: NSRange
+    public let kind: SyntaxKind
+
+    public init(range: NSRange, kind: SyntaxKind) {
+        self.range = range
+        self.kind = kind
+    }
 }
 
 /// Shared regex-scanning engine behind every language in LanguageCatalog.
@@ -14,7 +19,7 @@ struct CodeToken {
 /// typing: unterminated constructs color to end of line and resume cleanly.
 /// All ranges are UTF-16 (NSString coordinates), matching the parser's document
 /// offsets (emoji and other surrogate-pair characters never split).
-struct CodeScanner {
+public struct CodeScanner {
     private struct Line {
         let start: Int          // UTF-16 offset of the line in the code string
         let text: String
@@ -44,7 +49,7 @@ struct CodeScanner {
     private let rustAttrPattern: NSRegularExpression?
     private let directivePattern: NSRegularExpression?
 
-    init(code: String, spec: LanguageSpec) {
+    public init(code: String, spec: LanguageSpec) {
         self.spec = spec
         source = code as NSString
 
@@ -79,7 +84,7 @@ struct CodeScanner {
         directivePattern = (spec.hashDirectives && spec.hashDirectivesAnchored) ? re("[ \\t]*#[ \\t]*([A-Za-z_][A-Za-z0-9_]*)") : nil
     }
 
-    mutating func scan() -> [CodeToken] {
+    public mutating func scan() -> [CodeToken] {
         for line in lines { scanLine(line) }
         return tokens
     }

@@ -6,7 +6,7 @@ import Foundation
 /// Other Types, Other Members.
 ///
 /// The lexers emit these kinds; `CodeColorScheme` maps each kind to a color.
-enum SyntaxKind: Equatable {
+public enum SyntaxKind: Equatable, Sendable {
     /// Plain code text (untokenized characters and ordinary identifiers).
     case plainText
     /// Line and block comments (`//`, `/* */`, `#` where it is a comment, `--`).

@@ -1,6 +1,11 @@
 import AppKit
 
-final class EditorLayoutManager: NSLayoutManager {
+/// TextKit 1 layout manager. Not actor-isolated: NSLayoutManager's drawing/layout
+/// overrides are nonisolated SDK methods called on the main thread, and the class
+/// only touches main-thread state (textStorage, activeCharacterRange). The app
+/// target previously compiled this under default MainActor isolation; in the
+/// package it compiles as plain (nonisolated) code with identical runtime behavior.
+public final class EditorLayoutManager: NSLayoutManager {
     /// The caret/selection character range. Visibility is derived from it:
     /// line-level commands (heading '#', blockquote '>', fences, table pipes) show
     /// while the caret is on their line; inline delimiters (**bold**, `code`, links)
@@ -8,30 +13,30 @@ final class EditorLayoutManager: NSLayoutManager {
     /// glyphs are replaced with a zero-width glyph at layout time (Obsidian-style
     /// live preview: hidden commands collapse to zero width, so text shifts when
     /// the caret lands on/inside a command).
-    var activeCharacterRange: NSRange = NSRange(location: 0, length: 0)
+    public var activeCharacterRange: NSRange = NSRange(location: 0, length: 0)
 
     /// One code block's reusable "chrome": the copy-button frame plus the block's
     /// document range (to read the code for copying) and language name (for the
     /// label). Frames are in the layout manager's drawing coordinates (== the text
     /// view's coordinate space after `origin`), so the editor hit-tests them with a
     /// converted click point.
-    struct CodeBlockChrome {
-        let copyFrame: NSRect
-        let blockRange: NSRange
-        let language: String?
-        var copied: Bool
+    public struct CodeBlockChrome {
+        public let copyFrame: NSRect
+        public let blockRange: NSRange
+        public let language: String?
+        public var copied: Bool
     }
     /// Copy buttons for the currently visible code blocks, rebuilt each draw pass.
-    private(set) var copyButtons: [CodeBlockChrome] = []
+    public private(set) var copyButtons: [CodeBlockChrome] = []
     /// Flash state: which block most recently showed "Copied".
-    private(set) var copiedBlockRange: NSRange?
+    public private(set) var copiedBlockRange: NSRange?
 
     /// Marks this block's button as "Copied" (flash). The editor schedules the
     /// matching `clearCopied` after a delay and redraws.
-    func markCopied(_ blockRange: NSRange) {
+    public func markCopied(_ blockRange: NSRange) {
         copiedBlockRange = blockRange
     }
-    func clearCopied(_ blockRange: NSRange) {
+    public func clearCopied(_ blockRange: NSRange) {
         if copiedBlockRange == blockRange { copiedBlockRange = nil }
     }
 
@@ -90,7 +95,7 @@ final class EditorLayoutManager: NSLayoutManager {
 
     /// Character ranges whose visibility can change when the caret is at `selection`
     /// (the lines it touches plus any command spans adjacent to it).
-    func affectedRange(for selection: NSRange) -> NSRange {
+    public func affectedRange(for selection: NSRange) -> NSRange {
         guard let storage = textStorage else { return NSRange(location: 0, length: 0) }
         let ns = storage.string as NSString
         let loc = min(max(selection.location, 0), ns.length)
@@ -110,7 +115,10 @@ final class EditorLayoutManager: NSLayoutManager {
 
     // MARK: - Zero-width glyph substitution for hidden command symbols
 
-    private static var zeroGlyphCache: [String: CGGlyph] = [:]
+    // TextKit 1 layout runs on the main thread; these caches are only touched from
+    // setGlyphs/drawGlyphs (main-thread callbacks), so they are safe to treat as
+    // nonisolated shared state under Swift 6.
+    private static nonisolated(unsafe) var zeroGlyphCache: [String: CGGlyph] = [:]
 
     /// A real glyph with zero advancement for the given font. NSNullGlyph + .null property
     /// is NOT used: a run of null-property glyphs at the start of a line gets split into
@@ -148,7 +156,7 @@ final class EditorLayoutManager: NSLayoutManager {
     /// (U+2002, 0.5 em) when the font has it, else EN QUAD (U+2000), else plain space.
     /// Gives "[x]" and "[ ]" the same slot width and enough room for the drawn
     /// checkbox image (which replaces the literal glyphs, so only width matters).
-    private static var checkboxSlotGlyphCache: [String: CGGlyph] = [:]
+    private static nonisolated(unsafe) var checkboxSlotGlyphCache: [String: CGGlyph] = [:]
 
     private static func checkboxSlotGlyph(for font: NSFont) -> CGGlyph {
         let key = font.fontName
@@ -172,7 +180,7 @@ final class EditorLayoutManager: NSLayoutManager {
         checkboxSlotGlyphCache[key] = glyph
         return glyph
     }
-    override func setGlyphs(_ glyphs: UnsafePointer<CGGlyph>, properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+    public override func setGlyphs(_ glyphs: UnsafePointer<CGGlyph>, properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
                             characterIndexes charIndexes: UnsafePointer<Int>, font: NSFont, forGlyphRange glyphRange: NSRange) {
         guard glyphRange.length > 0, let storage = textStorage else {
             super.setGlyphs(glyphs, properties: props, characterIndexes: charIndexes, font: font, forGlyphRange: glyphRange)
@@ -220,7 +228,7 @@ final class EditorLayoutManager: NSLayoutManager {
 
     // MARK: - Backgrounds (continuous code-block fills)
 
-    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+    public override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         guard let storage = textStorage else {
             super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
             return
@@ -228,6 +236,7 @@ final class EditorLayoutManager: NSLayoutManager {
         let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
         var codeRuns: [NSRange] = []
         var quoteRuns: [NSRange] = []
+        var inlineCodeRuns: [NSRange] = []
         var plainRuns: [NSRange] = []
         var i = charRange.location
         let end = NSMaxRange(charRange)
@@ -246,6 +255,14 @@ final class EditorLayoutManager: NSLayoutManager {
                         quoteRuns[quoteRuns.count - 1] = NSUnionRange(last, clamped)
                     } else {
                         quoteRuns.append(clamped)
+                    }
+                } else if attrs[.markdownInlineCode] != nil {
+                    // Adjacent inline-code sub-runs (content vs attribute boundaries)
+                    // merge into one chip per code span.
+                    if let last = inlineCodeRuns.last, NSMaxRange(last) == clamped.location {
+                        inlineCodeRuns[inlineCodeRuns.count - 1] = NSUnionRange(last, clamped)
+                    } else {
+                        inlineCodeRuns.append(clamped)
                     }
                 } else {
                     plainRuns.append(clamped)
@@ -272,6 +289,11 @@ final class EditorLayoutManager: NSLayoutManager {
             super.drawBackground(forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil), at: origin)
             drawQuoteBar(forCharacterRange: r, at: origin)
         }
+        for r in inlineCodeRuns {
+            // super first so the selection highlight stays visible on top of the chip
+            super.drawBackground(forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil), at: origin)
+            drawInlineCodeChip(forCharacterRange: r, at: origin)
+        }
         for r in plainRuns {
             super.drawBackground(forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil), at: origin)
         }
@@ -291,6 +313,35 @@ final class EditorLayoutManager: NSLayoutManager {
         MarkdownStyle.standard.codeBackground.setFill()
         path.fill()
         return union
+    }
+
+    /// Rounded chip behind inline code (`` `code` ``), GitHub-style: the fill spans
+    /// the code glyphs plus horizontal padding, vertically inset slightly so the
+    /// chip doesn't touch the line's top/bottom edges. The horizontal extent comes
+    /// from `boundingRect(forGlyphRange:in:)` — the line fragment's `used` rect
+    /// would span the WHOLE mixed line (text `code` more), not just the code glyphs.
+    /// The corner radius scales with the line height so tall fonts still look rounded.
+    private func drawInlineCodeChip(forCharacterRange r: NSRange, at origin: NSPoint) {
+        let g = glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+        guard g.length > 0, let container = textContainers.first else { return }
+        let bounds = boundingRect(forGlyphRange: g, in: container)
+        guard !bounds.isNull, bounds.width > 0 else { return }
+        var minY = CGFloat.greatestFiniteMagnitude
+        var maxY = -CGFloat.greatestFiniteMagnitude
+        enumerateLineFragments(forGlyphRange: g) { rect, _, _, _, _ in
+            minY = min(minY, rect.minY)
+            maxY = max(maxY, rect.maxY)
+        }
+        guard minY <= maxY else { return }
+        let hPad: CGFloat = 5
+        let vInset: CGFloat = 1.5
+        let height = maxY - minY
+        let radius = min(4, height / 2 - vInset)
+        let chip = NSRect(x: origin.x + bounds.minX - hPad, y: origin.y + minY + vInset,
+                          width: bounds.width + hPad * 2, height: height - vInset * 2)
+        let path = NSBezierPath(roundedRect: chip, xRadius: radius, yRadius: radius)
+        MarkdownStyle.standard.codeBackground.setFill()
+        path.fill()
     }
 
     /// Draws the copy button (top-right) and language label (top-left) on the
@@ -360,7 +411,7 @@ final class EditorLayoutManager: NSLayoutManager {
     /// contiguously (NSMaxRange == next.location). Used to turn the many per-token
     /// `.markdownCodeBlock` sub-runs of one fence into a single block. Runs are
     /// assumed sorted and tiling within each contiguous region.
-    static func mergedCodeRuns(_ runs: [NSRange]) -> [NSRange] {
+    public static func mergedCodeRuns(_ runs: [NSRange]) -> [NSRange] {
         var out: [NSRange] = []
         for r in runs {
             if let last = out.last, NSMaxRange(last) == r.location {
@@ -372,24 +423,22 @@ final class EditorLayoutManager: NSLayoutManager {
         return out
     }
 
-    /// Vertical bar at the left edge of a blockquote (Obsidian-style). Spans every
-    /// line fragment of the quote run, so consecutive quote lines merge into one
-    /// continuous bar (adjacent sub-runs are coalesced by drawBackground). The bar x
-    /// is the quote content's left edge — the used-rect minX (the 24pt paragraph
-    /// indent); the '>' marker glyphs sit 5pt (lineFragmentPadding) to its right.
+    /// Vertical bar at the container's left edge for a blockquote (Obsidian-style).
+    /// Spans every line fragment of the quote run, so consecutive quote lines merge
+    /// into one continuous bar (adjacent sub-runs are coalesced by drawBackground).
+    /// The bar sits at x = origin.x (the container's left edge) while the quote text
+    /// keeps its 12pt paragraph indent — the bar moved left, text spacing unchanged;
+    /// the '>' marker glyphs sit at the indent + lineFragmentPadding to its right.
     private func drawQuoteBar(forCharacterRange r: NSRange, at origin: NSPoint) {
         let g = glyphRange(forCharacterRange: r, actualCharacterRange: nil)
         guard g.length > 0 else { return }
-        var barX: CGFloat? = nil
         var minY = CGFloat.greatestFiniteMagnitude
         var maxY = -CGFloat.greatestFiniteMagnitude
-        enumerateLineFragments(forGlyphRange: g) { rect, used, _, _, _ in
-            if barX == nil { barX = origin.x + used.minX }
+        enumerateLineFragments(forGlyphRange: g) { rect, _, _, _, _ in
             minY = min(minY, rect.minY)
             maxY = max(maxY, rect.maxY)
         }
-        guard let barX else { return }
-        let bar = NSRect(x: barX, y: origin.y + minY, width: 3, height: maxY - minY)
+        let bar = NSRect(x: origin.x, y: origin.y + minY, width: 3, height: maxY - minY)
         let path = NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5)
         MarkdownStyle.standard.quoteBarColor.setFill()
         path.fill()
@@ -397,7 +446,7 @@ final class EditorLayoutManager: NSLayoutManager {
 
     // MARK: - Glyphs (hide command symbols on inactive lines)
 
-    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+    public override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         guard let storage = textStorage else {
             super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
             return

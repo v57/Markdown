@@ -1,10 +1,11 @@
 import AppKit
 import Markdown
+import MdCode
 
-struct ParsedMarkdown {
-    let attributed: NSAttributedString
-    let syntaxRanges: [NSRange]
-    let blocks: [MarkdownParser.Block]
+public struct ParsedMarkdown {
+    public let attributed: NSAttributedString
+    public let syntaxRanges: [NSRange]
+    public let blocks: [MarkdownParser.Block]
 }
 
 /// Markdown → styled attributed string, built on swift-markdown (CommonMark + GFM:
@@ -19,9 +20,9 @@ struct ParsedMarkdown {
 /// per-line marker ranges come from the same total regexes as before (every line
 /// classifies — no loops); inline styling ranges come from the AST's source ranges
 /// (cmark byte columns converted to UTF-16 offsets).
-enum MarkdownParser {
+public enum MarkdownParser {
 
-    enum Block: Equatable {
+    public enum Block: Equatable {
         case heading(level: Int, text: String)
         case paragraph(String)
         case blockquote(String)
@@ -32,9 +33,13 @@ enum MarkdownParser {
         case codeFence(language: String, code: String)
         case table(header: [String], rows: [[String]], alignments: [Alignment])
     }
-    struct ListItem: Equatable { let text: String; let level: Int }
-    struct TaskItem: Equatable { let text: String; let checked: Bool; let level: Int }
-    enum Alignment: Equatable { case left, center, right }
+    public struct ListItem: Equatable { public let text: String; public let level: Int
+        public init(text: String, level: Int) { self.text = text; self.level = level }
+    }
+    public struct TaskItem: Equatable { public let text: String; public let checked: Bool; public let level: Int
+        public init(text: String, checked: Bool, level: Int) { self.text = text; self.checked = checked; self.level = level }
+    }
+    public enum Alignment: Equatable { case left, center, right }
 
     // MARK: - Entry
 
@@ -42,7 +47,7 @@ enum MarkdownParser {
     /// INVARIANT: `attributed.string == markdown` — the output is the source text
     /// verbatim, with attributes layered on. (The live editor re-applies this to the
     /// text storage, so the characters must never change.)
-    static func parse(_ markdown: String, style: MarkdownStyle = .standard) -> ParsedMarkdown {
+    public static func parse(_ markdown: String, style: MarkdownStyle = .standard) -> ParsedMarkdown {
         let out = NSMutableAttributedString()
         var syntaxRanges: [NSRange] = []
 
@@ -192,7 +197,7 @@ enum MarkdownParser {
                         var close = 0
                         while close < srcNs.length - open && srcNs.character(at: srcNs.length - 1 - close) == 0x60 { close += 1 }
                         let content = NSRange(location: r.location + open, length: srcNs.length - open - close)
-                        for (k, v) in style.codeAttributes() { out.addAttribute(k, value: v, range: content) }
+                        for (k, v) in style.inlineCodeAttributes() { out.addAttribute(k, value: v, range: content) }
                         out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
                         if open > 0 { inlineSyntaxMark(NSRange(location: r.location, length: open)) }
                         if close > 0 { inlineSyntaxMark(NSRange(location: NSMaxRange(content), length: close)) }
@@ -412,7 +417,7 @@ enum MarkdownParser {
         return NSRange(location: s, length: e - s)
     }
 
-    static func blocks(from doc: Markup, source: String) -> [Block] {
+    public static func blocks(from doc: Markup, source: String) -> [Block] {
         let ns = source as NSString
         let rawLines = ns.components(separatedBy: "\n")
         let endsWithNewline = source.hasSuffix("\n")
@@ -786,19 +791,19 @@ enum MarkdownParser {
         return u16
     }
 
-    // MARK: - Smart-newline continuation for list items (used by insertNewline)
+    // MARK: - Smart-newline continuation for list items / quotes (used by insertNewline)
 
     /// Given a line (without its trailing newline), returns the marker to prepend to
     /// the next line — ordered-list numbers are incremented, task checkboxes keep
     /// their state — or nil if the line is not a list item. `empty` is true when the
     /// line holds only the marker; the editor then removes the marker on Return
     /// (exits the list) instead of continuing it.
-    struct ListContinuation: Equatable {
-        let marker: String
-        let empty: Bool
+    public struct ListContinuation: Equatable {
+        public let marker: String
+        public let empty: Bool
     }
 
-    static func listContinuation(for line: String) -> ListContinuation? {
+    public static func listContinuation(for line: String) -> ListContinuation? {
         // Task item FIRST: "- [x] text" also matches the plain bullet pattern below.
         if let m = match(line, pattern: "^([ \\t]*)([-*+])([ \\t]+)(\\[[ xX]\\])([ \\t]+)(.*)$") {
             let marker = m[1] + m[2] + m[3] + m[4] + m[5]
@@ -816,9 +821,22 @@ enum MarkdownParser {
         return nil
     }
 
+    /// Given a line (without its trailing newline), returns the quote marker to
+    /// prepend to the next line when the line is a blockquote ("> "), preserving
+    /// any leading indentation. `empty` is true when the line holds only the quote
+    /// marker ("> "); the editor then removes the marker on Return (exits the
+    /// quote) instead of continuing it.
+    public static func quoteContinuation(for line: String) -> ListContinuation? {
+        if let m = match(line, pattern: "^([ \\t]*)(>+)([ \\t]*)(.*)$") {
+            let marker = m[1] + m[2] + (m[3].isEmpty ? " " : m[3])
+            return ListContinuation(marker: marker, empty: m[4].trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        return nil
+    }
+
     // MARK: - Regex helper
 
-    static func match(_ s: String, pattern: String) -> [String]? {
+    public static func match(_ s: String, pattern: String) -> [String]? {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
         let ns = s as NSString
         guard let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) else { return nil }

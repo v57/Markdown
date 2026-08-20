@@ -3,8 +3,8 @@ import Foundation
 /// The 20 most-used languages, in GitHub Octoverse 2024 ranking order
 /// (JavaScript, TypeScript, Python, Java, C#, C++, PHP, Shell, C, Ruby, Rust,
 /// Go, Kotlin, Dart, Swift, Objective-C, Scala, PowerShell, Lua, Haskell).
-enum LanguageCatalog {
-    static let all: [LanguageSpec] = [
+public enum LanguageCatalog {
+    public static let all: [LanguageSpec] = [
         javascript, typescript, python, java, csharp, cpp, php, shell, c, ruby,
         rust, go, kotlin, dart, swift, objectiveC, scala, powershell, lua, haskell,
     ]

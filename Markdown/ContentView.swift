@@ -1,9 +1,10 @@
 import SwiftUI
+import Md
 
 struct MarkdownApp: App {
     var body: some Scene {
         WindowGroup("Markdown") {
-            EditorView()
+            MarkdownEditorView()
                 .frame(minWidth: 480, minHeight: 360)
         }
         .defaultSize(width: 900, height: 700)
