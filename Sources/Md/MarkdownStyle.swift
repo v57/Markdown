@@ -56,7 +56,6 @@ public struct MarkdownStyle {
     /// defaults). Resolved afresh on every parse: an appearance switch restyles
     /// fenced code with the matching palette on the next edit/restyle pass.
     public var codeScheme: CodeColorScheme { .systemAware }
-
     // Fonts
     public let bodyFont = NSFont.systemFont(ofSize: 15)
     public let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
@@ -122,4 +121,14 @@ public struct MarkdownStyle {
     /// The default style. Computed (not a stored global) so the non-Sendable
     /// NSColor/NSFont value type stays concurrency-safe under Swift 6.
     public static var standard: MarkdownStyle { MarkdownStyle() }
+}
+
+public extension NSColor {
+    /// sRGB color from a 0xRRGGBB hex value (e.g. 0x24292E). The AppKit-side
+    /// counterpart of `CodeColorScheme`'s platform-neutral `UInt32` storage.
+    static func hex(_ hex: UInt32) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
 }

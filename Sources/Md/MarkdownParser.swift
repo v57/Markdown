@@ -351,10 +351,10 @@ public enum MarkdownParser {
             let scheme = style.codeScheme
             for t in tokens {
                 let r = NSRange(location: span.range.location + t.range.location, length: t.range.length)
-                out.addAttribute(.foregroundColor, value: scheme.color(for: t.kind), range: r)
+                out.addAttribute(.foregroundColor, value: NSColor.hex(scheme.color(for: t.kind)), range: r)
                 if t.kind == .link {
                     out.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: r)
-                    out.addAttribute(.underlineColor, value: scheme.link, range: r)
+                    out.addAttribute(.underlineColor, value: NSColor.hex(scheme.link), range: r)
                 }
             }
         }

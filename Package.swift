@@ -10,11 +10,14 @@ let package = Package(
         // marks AppKit's NSLayoutManager/NSTextView methods @MainActor; targeting an
         // older platform would compile them as nonisolated and break the overrides.
         .macOS(.v27),
+        // iOS support: the UIKit alternative editor stack (MdUIKit) builds on iOS 17+.
+        .iOS(.v17),
     ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(name: "Md", targets: ["Md"]),
         .library(name: "MdCode", targets: ["MdCode"]),
+        .library(name: "MdCore", targets: ["MdCore"]),
     ],
     dependencies: [
         // swift-markdown (also an Xcode SPM dependency) — provides the Markdown module (cmark AST).
@@ -24,8 +27,15 @@ let package = Package(
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
+            name: "MdCore",
+            dependencies: [.product(name: "Markdown", package: "swift-markdown")],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .target(
             name: "Md",
-            dependencies: ["MdCode", .product(name: "Markdown", package: "swift-markdown")],
+            dependencies: ["MdCore", "MdCode", .product(name: "Markdown", package: "swift-markdown")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

@@ -1,41 +1,48 @@
+import Foundation
+#if canImport(AppKit)
 import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
-/// A code color scheme: one `NSColor` per Xcode-style syntax category.
+/// A code color scheme: one `UInt32` sRGB hex value (0xRRGGBB) per
+/// Xcode-style syntax category. Platform-neutral — the platform layer
+/// converts hex values to `NSColor`/`UIColor` as needed.
 ///
 /// Defaults are GitHub's official Light / Dark code themes (primer
 /// github-syntax-theme-generator, lib/themes/light.json and dark.json — the
 /// classic editor palette that powers github.com code rendering).
 public struct CodeColorScheme {
-    public var plainText: NSColor
-    public var comment: NSColor
-    public var prose: NSColor
-    public var keyword: NSColor
-    public var string: NSColor
-    public var number: NSColor
-    public var link: NSColor
-    public var preprocessor: NSColor
-    public var typeDeclaration: NSColor
-    public var memberDeclaration: NSColor
-    public var projectType: NSColor
-    public var projectMember: NSColor
-    public var otherType: NSColor
-    public var otherMember: NSColor
+    public var plainText: UInt32
+    public var comment: UInt32
+    public var prose: UInt32
+    public var keyword: UInt32
+    public var string: UInt32
+    public var number: UInt32
+    public var link: UInt32
+    public var preprocessor: UInt32
+    public var typeDeclaration: UInt32
+    public var memberDeclaration: UInt32
+    public var projectType: UInt32
+    public var projectMember: UInt32
+    public var otherType: UInt32
+    public var otherMember: UInt32
 
     public init(
-        plainText: NSColor,
-        comment: NSColor,
-        prose: NSColor,
-        keyword: NSColor,
-        string: NSColor,
-        number: NSColor,
-        link: NSColor,
-        preprocessor: NSColor,
-        typeDeclaration: NSColor,
-        memberDeclaration: NSColor,
-        projectType: NSColor,
-        projectMember: NSColor,
-        otherType: NSColor,
-        otherMember: NSColor
+        plainText: UInt32,
+        comment: UInt32,
+        prose: UInt32,
+        keyword: UInt32,
+        string: UInt32,
+        number: UInt32,
+        link: UInt32,
+        preprocessor: UInt32,
+        typeDeclaration: UInt32,
+        memberDeclaration: UInt32,
+        projectType: UInt32,
+        projectMember: UInt32,
+        otherType: UInt32,
+        otherMember: UInt32
     ) {
         self.plainText = plainText
         self.comment = comment
@@ -53,7 +60,7 @@ public struct CodeColorScheme {
         self.otherMember = otherMember
     }
 
-    public func color(for kind: SyntaxKind) -> NSColor {
+    public func color(for kind: SyntaxKind) -> UInt32 {
         switch kind {
         case .plainText: return plainText
         case .comment: return comment
@@ -79,63 +86,62 @@ public struct CodeColorScheme {
     /// Constant (numbers) #005cc5 · Entity (types) #6f42c1 · Variable #e36209 ·
     /// Link #032f62 · Preprocessor (keyword) #d73a49.
     public nonisolated(unsafe) static let githubLight = CodeColorScheme(
-        plainText: .hex("24292e"),
-        comment: .hex("6a737d"),
-        prose: .hex("24292e"),
-        keyword: .hex("d73a49"),
-        string: .hex("032f62"),
-        number: .hex("005cc5"),
-        link: .hex("032f62"),
-        preprocessor: .hex("d73a49"),
-        typeDeclaration: .hex("6f42c1"),
-        memberDeclaration: .hex("6f42c1"),
-        projectType: .hex("6f42c1"),
-        projectMember: .hex("e36209"),
-        otherType: .hex("6f42c1"),
-        otherMember: .hex("e36209"))
+        plainText: 0x24292E,
+        comment: 0x6A737D,
+        prose: 0x24292E,
+        keyword: 0xD73A49,
+        string: 0x032F62,
+        number: 0x005CC5,
+        link: 0x032F62,
+        preprocessor: 0xD73A49,
+        typeDeclaration: 0x6F42C1,
+        memberDeclaration: 0x6F42C1,
+        projectType: 0x6F42C1,
+        projectMember: 0xE36209,
+        otherType: 0x6F42C1,
+        otherMember: 0xE36209)
 
     /// GitHub Dark code theme (primer lib/themes/dark.json).
     /// Plain #f6f8fa · Comment #959da5 · Keyword #ea4a5a · String #79b8ff ·
     /// Constant (numbers) #c8e1ff · Entity (types) #b392f0 · Variable #fb8532 ·
     /// Link #79b8ff · Preprocessor (keyword) #ea4a5a.
     public nonisolated(unsafe) static let githubDark = CodeColorScheme(
-        plainText: .hex("f6f8fa"),
-        comment: .hex("959da5"),
-        prose: .hex("f6f8fa"),
-        keyword: .hex("ea4a5a"),
-        string: .hex("79b8ff"),
-        number: .hex("c8e1ff"),
-        link: .hex("79b8ff"),
-        preprocessor: .hex("ea4a5a"),
-        typeDeclaration: .hex("b392f0"),
-        memberDeclaration: .hex("b392f0"),
-        projectType: .hex("b392f0"),
-        projectMember: .hex("fb8532"),
-        otherType: .hex("b392f0"),
-        otherMember: .hex("fb8532"))
+        plainText: 0xF6F8FA,
+        comment: 0x959DA5,
+        prose: 0xF6F8FA,
+        keyword: 0xEA4A5A,
+        string: 0x79B8FF,
+        number: 0xC8E1FF,
+        link: 0x79B8FF,
+        preprocessor: 0xEA4A5A,
+        typeDeclaration: 0xB392F0,
+        memberDeclaration: 0xB392F0,
+        projectType: 0xB392F0,
+        projectMember: 0xFB8532,
+        otherType: 0xB392F0,
+        otherMember: 0xFB8532)
 
-    /// Resolves the scheme from the current app appearance: dark → GitHub Dark,
-    /// otherwise GitHub Light. Resolved afresh on every parse, so an appearance
-    /// switch re-applies the matching palette on the next restyle.
-    /// Uses `NSAppearance.currentDrawing()` (not `NSApp.effectiveAppearance`) so the
-    /// scheme can be resolved from a nonisolated context (the parser is not
-    /// MainActor-isolated).
-    public static var systemAware: CodeColorScheme {
-        if NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return .githubDark
-        }
-        return .githubLight
+    /// Resolves the scheme from the caller-provided dark-mode state: dark →
+    /// GitHub Dark, otherwise GitHub Light. Platform-neutral; each platform
+    /// determines `isDark` from its own appearance/trait API.
+    public static func systemAware(isDark: Bool) -> CodeColorScheme {
+        isDark ? .githubDark : .githubLight
     }
-}
 
-public extension NSColor {
-    /// sRGB color from a 6-digit hex string ("24292e").
-    static func hex(_ hex: String) -> NSColor {
-        var v: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&v)
-        let r = CGFloat((v >> 16) & 0xFF) / 255
-        let g = CGFloat((v >> 8) & 0xFF) / 255
-        let b = CGFloat(v & 0xFF) / 255
-        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
+    /// Resolves the scheme from the current platform's appearance: dark →
+    /// GitHub Dark, otherwise GitHub Light. Resolved afresh on every parse, so
+    /// an appearance switch re-applies the matching palette on the next restyle.
+    /// Uses `NSAppearance.currentDrawing()` (not `NSApp.effectiveAppearance`)
+    /// so the scheme can be resolved from a nonisolated context on macOS.
+    public static var systemAware: CodeColorScheme {
+        #if canImport(AppKit)
+        let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return systemAware(isDark: isDark)
+        #elseif canImport(UIKit)
+        let isDark = UITraitCollection.current.userInterfaceStyle == .dark
+        return systemAware(isDark: isDark)
+        #else
+        return systemAware(isDark: false)
+        #endif
     }
 }

@@ -1,5 +1,5 @@
+import Foundation
 import Testing
-import AppKit
 @testable import MdCode
 
 // MARK: - Code syntax highlighting (CodeHighlighter / CodeScanner / LanguageCatalog)
@@ -123,8 +123,8 @@ private func kindAt(_ code: String, _ language: String, _ offset: Int) -> Syntax
     // MARK: - GitHub schemes: struct colors per Xcode category, dark vs light distinct
 
     @Test func githubSchemes() {
-        #expect(CodeColorScheme.githubLight.plainText == .hex("24292e"))
-        #expect(CodeColorScheme.githubDark.comment == .hex("959da5"))
+        #expect(CodeColorScheme.githubLight.plainText == 0x24292E)
+        #expect(CodeColorScheme.githubDark.comment == 0x959DA5)
         #expect(CodeColorScheme.githubDark.keyword != CodeColorScheme.githubLight.keyword
             && CodeColorScheme.githubDark.plainText != CodeColorScheme.githubLight.plainText)
         #expect(CodeColorScheme.githubDark.color(for: .keyword) == CodeColorScheme.githubDark.keyword

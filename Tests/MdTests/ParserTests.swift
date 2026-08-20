@@ -25,6 +25,14 @@ import MdCode
         aqua.performAsCurrentDrawingAppearance(body)
     }
 
+    /// AppKit color for a 0xRRGGBB scheme value (the platform layer converts
+    /// `CodeColorScheme`'s platform-neutral hex storage to `NSColor`).
+    private func ns(_ hex: UInt32) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+    }
+
     // MARK: - Task 4: blocks
 
     @Test func emptyAndSampleDoc() {
@@ -507,16 +515,16 @@ import MdCode
                 guard loc != NSNotFound else { return nil }
                 return parsed.attributed.attribute(.foregroundColor, at: loc, effectiveRange: nil) as? NSColor
             }
-            #expect(colorAt("func") == CodeColorScheme.githubLight.keyword)
-            #expect(colorAt("42") == CodeColorScheme.githubLight.number)
-            #expect(colorAt("hi") == CodeColorScheme.githubLight.comment)
-            #expect(colorAt("https://a.b") == CodeColorScheme.githubLight.link)
+            #expect(colorAt("func") == ns(CodeColorScheme.githubLight.keyword))
+            #expect(colorAt("42") == ns(CodeColorScheme.githubLight.number))
+            #expect(colorAt("hi") == ns(CodeColorScheme.githubLight.comment))
+            #expect(colorAt("https://a.b") == ns(CodeColorScheme.githubLight.link))
             #expect(parsed.attributed.attribute(.underlineStyle,
                                                 at: mdNs.range(of: "https://a.b").location,
                                                 effectiveRange: nil) as? Int == NSUnderlineStyle.single.rawValue)
             #expect(parsed.attributed.attribute(.underlineColor,
                                                 at: mdNs.range(of: "https://a.b").location,
-                                                effectiveRange: nil) as? NSColor == CodeColorScheme.githubLight.link)
+                                                effectiveRange: nil) as? NSColor == ns(CodeColorScheme.githubLight.link))
             #expect(parsed.attributed.attribute(.markdownCodeBlock, at: mdNs.range(of: "func").location, effectiveRange: nil) != nil)
         }
     }
@@ -587,8 +595,8 @@ import MdCode
                                                 effectiveRange: nil) as? NSColor
             let jsKw = tp.attributed.attribute(.foregroundColor, at: tNs.range(of: "const").location,
                                                effectiveRange: nil) as? NSColor
-            #expect(pyNum == CodeColorScheme.githubLight.number)
-            #expect(jsKw == CodeColorScheme.githubLight.keyword)
+            #expect(pyNum == ns(CodeColorScheme.githubLight.number))
+            #expect(jsKw == ns(CodeColorScheme.githubLight.keyword))
         }
     }
 }
