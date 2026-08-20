@@ -2,6 +2,7 @@ import Testing
 import AppKit
 import MdCode
 @testable import Md
+@testable import MdCore
 
 // MARK: - Parser + layout + parser-integration tests
 //
@@ -36,8 +37,8 @@ import MdCode
     // MARK: - Task 4: blocks
 
     @Test func emptyAndSampleDoc() {
-        #expect(MarkdownParser.parse("", style: .standard).blocks.isEmpty)
-        let sample = MarkdownParser.parse(SampleDocument.text, style: .standard)
+        #expect(MarkdownParser.parse("", style: MarkdownStyleSpec.standard).blocks.isEmpty)
+        let sample = MarkdownParser.parse(SampleDocument.text, style: MarkdownStyleSpec.standard)
         #expect(sample.attributed.length >= 0)
     }
 
@@ -245,7 +246,7 @@ import MdCode
         // Regression: "Hello" + Return + "Hello" rendered as "Hello" / "ello" in the
         // LIVE view (fragment 1 absorbed the second line's 'H'). Headless check: the
         // plain two-line doc must break into [0,6) and [6,11) — the newline ends line 1.
-        let nlDoc = MarkdownParser.parse("Hello" + String(UnicodeScalar(10)) + "Hello", style: .standard).attributed
+        let nlDoc = MarkdownParser.parse("Hello" + String(UnicodeScalar(10)) + "Hello", style: MarkdownStyleSpec.standard).attributed
         let nlStorage = NSTextStorage(attributedString: nlDoc)
         let nlLM = EditorLayoutManager()
         nlStorage.addLayoutManager(nlLM)
@@ -425,12 +426,12 @@ import MdCode
         // space): the task-list guard matched but the full pattern did not, so the
         // group index never advanced. That input is exactly what backspacing a
         // checkbox produces. swift-markdown (cmark) cannot loop; assert clean parses.
-        let bare = MarkdownParser.parse("- [ ]", style: .standard)
+        let bare = MarkdownParser.parse("- [ ]", style: MarkdownStyleSpec.standard)
         #expect(bare.attributed.string == "- [ ]")
         // cmark's GFM task marker requires trailing whitespace, so "- [ ]" is a plain
         // list item holding the literal "[ ]" — it parses cleanly (the old parser
         // looped forever here) and renders as text, never crashing the editor.
-        #expect(bare.blocks == [.unorderedList(items: [.init(text: "[ ]", level: 0)], level: 0)])
+        #expect(bare.blocks == [MarkdownParser.Block.unorderedList(items: [.init(text: "[ ]", level: 0)], level: 0)])
         #expect(MarkdownParser.parse("- [ ] ").blocks == [.taskList(items: [.init(text: "", checked: false, level: 0)])])
         let bareSpaced = MarkdownParser.parse("- [ ] \n- [x] done")
         #expect(bareSpaced.attributed.string == "- [ ] \n- [x] done")

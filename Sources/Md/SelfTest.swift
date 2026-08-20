@@ -1,5 +1,6 @@
 import AppKit
 import MdCode
+import MdCore
 
 // MARK: - Self-test harness (CLI-verifiable TDD: `Markdown --selftest`)
 
@@ -23,7 +24,7 @@ public enum SelfTest {
             func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
                              range editedRange: NSRange, changeInLength delta: Int) {
                 guard editedMask.contains(.editedCharacters) else { return }
-                let parsed = MarkdownParser.parse(textStorage.string, style: .standard)
+                let parsed = MarkdownParser.parse(textStorage.string)
                 parsed.attributed.enumerateAttributes(in: NSRange(location: 0, length: parsed.attributed.length), options: []) { attrs, range, _ in
                     textStorage.setAttributes(attrs, range: range)   // NO begin/endEditing: fires per-run, still inside the callback
                 }

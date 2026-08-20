@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import Markdown
 import MdCode
 
@@ -47,7 +47,12 @@ public enum MarkdownParser {
     /// INVARIANT: `attributed.string == markdown` — the output is the source text
     /// verbatim, with attributes layered on. (The live editor re-applies this to the
     /// text storage, so the characters must never change.)
-    public static func parse(_ markdown: String, style: MarkdownStyle = .standard) -> ParsedMarkdown {
+    ///
+    /// The style is a platform-neutral `MarkdownStyling`; the resulting attributed
+    /// string is rendered with the platform's native font/color/paragraph types via
+    /// `MarkdownRenderer`, so callers (macOS `NSTextView`, iOS `UITextView`) consume
+    /// a fully-native `NSAttributedString`.
+    public static func parse(_ markdown: String, style: any MarkdownStyling = MarkdownStyleSpec.standard) -> ParsedMarkdown {
         let out = NSMutableAttributedString()
         var syntaxRanges: [NSRange] = []
 
@@ -124,23 +129,22 @@ public enum MarkdownParser {
         }
         /// Inline styling pass over one paragraph/heading subtree.
         func applyInline(_ container: Markup, base: [NSAttributedString.Key: Any]) {
-            let bodyFont = base[.font] as? NSFont ?? style.bodyFont
-            let bodyColor = base[.foregroundColor] as? NSColor ?? style.textColor
+            let bodyFont = (base[.font] as? MarkdownFont) ?? style.bodyFont()
+            let bodyColor = (base[.foregroundColor] as? MarkdownColor) ?? style.textColor
             /// Font already applied at the range's start (nested containers combine
             /// traits with the outer container instead of replacing them).
-            func currentFont(_ r: NSRange) -> NSFont {
-                (out.attribute(.font, at: r.location, effectiveRange: nil) as? NSFont) ?? bodyFont
+            func currentFont(_ r: NSRange) -> MarkdownFont {
+                (out.attribute(.font, at: r.location, effectiveRange: nil) as? MarkdownFont) ?? bodyFont
             }
             /// Builds a font with the requested traits UNIONED onto the current font.
             /// Only ever ADDS traits — a nested strong must keep the outer emphasis's
             /// italic (`***x***` stays bold-italic), so "false" never removes.
-            func traitFont(bold: Bool, italic: Bool, at r: NSRange) -> NSFont {
+            func traitFont(bold: Bool, italic: Bool, at r: NSRange) -> MarkdownFont {
                 let base = currentFont(r)
-                var traits = base.fontDescriptor.symbolicTraits
+                var traits = base.traits
                 if bold { traits.insert(.bold) }
                 if italic { traits.insert(.italic) }
-                let desc = base.fontDescriptor.withSymbolicTraits(traits)
-                return NSFont(descriptor: desc, size: base.pointSize) ?? base
+                return base.addingTraits(traits)
             }
             func walk(_ node: Markup) {
                 switch node {
@@ -197,14 +201,19 @@ public enum MarkdownParser {
                         var close = 0
                         while close < srcNs.length - open && srcNs.character(at: srcNs.length - 1 - close) == 0x60 { close += 1 }
                         let content = NSRange(location: r.location + open, length: srcNs.length - open - close)
-                        for (k, v) in style.inlineCodeAttributes() { out.addAttribute(k, value: v, range: content) }
+                        let inlineCodeAttrs: [NSAttributedString.Key: Any] = [
+                            .font: style.codeFont(),
+                            .foregroundColor: style.codeTextColor,
+                            .markdownInlineCode: true,
+                        ]
+                        for (k, v) in inlineCodeAttrs { out.addAttribute(k, value: v, range: content) }
                         out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
                         if open > 0 { inlineSyntaxMark(NSRange(location: r.location, length: open)) }
                         if close > 0 { inlineSyntaxMark(NSRange(location: NSMaxRange(content), length: close)) }
                     }
                 case let st as Strikethrough:
                     if let r = nsRange(st.range) {
-                        out.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: r)
+                        out.addAttribute(.strikethroughStyle, value: 1, range: r)
                         out.addAttribute(.strikethroughColor, value: bodyColor, range: r)
                         out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
                         markGaps(st, in: r)
@@ -213,7 +222,7 @@ public enum MarkdownParser {
                     if let r = nsRange(l.range) {
                         if let content = unionChildrenRanges(l) {
                             out.addAttribute(.foregroundColor, value: style.linkColor, range: content)
-                            out.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: content)
+                            out.addAttribute(.underlineStyle, value: 1, range: content)
                             if let dest = l.destination, let url = URL(string: dest) {
                                 out.addAttribute(.link, value: url, range: content)
                             }
@@ -224,7 +233,12 @@ public enum MarkdownParser {
                 case let img as Image:
                     if let r = nsRange(img.range) {
                         if let content = unionChildrenRanges(img) {
-                            for (k, v) in style.codeAttributes() { out.addAttribute(k, value: v, range: content) }
+                            let codeAttrs: [NSAttributedString.Key: Any] = [
+                                .font: style.codeFont(),
+                                .foregroundColor: style.codeTextColor,
+                                .backgroundColor: style.codeBackground,
+                            ]
+                            for (k, v) in codeAttrs { out.addAttribute(k, value: v, range: content) }
                         }
                         if let src = img.source, let url = URL(string: src) {
                             out.addAttribute(.markdownImage, value: url, range: r)
@@ -275,7 +289,7 @@ public enum MarkdownParser {
             switch plan.role {
             case .blank:
                 if li.hasNewline {
-                    out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: style.bodyParagraph()]))
+                    out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: MarkdownRenderer.resolve(style.bodyParagraph())]))
                 }
                 continue
             default:
@@ -311,7 +325,7 @@ public enum MarkdownParser {
             }
 
             if li.hasNewline {
-                out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: plan.paragraphStyle]))
+                out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: MarkdownRenderer.resolve(plan.paragraphStyle)]))
             }
 
             // Blockquote bar run: line content + its newline, applied AFTER the
@@ -348,13 +362,13 @@ public enum MarkdownParser {
             }
             let tokens = CodeHighlighter.tokens(in: code, language: span.language)
             guard !tokens.isEmpty else { continue }
-            let scheme = style.codeScheme
+            let scheme = MarkdownRenderer.currentCodeScheme()
             for t in tokens {
                 let r = NSRange(location: span.range.location + t.range.location, length: t.range.length)
-                out.addAttribute(.foregroundColor, value: NSColor.hex(scheme.color(for: t.kind)), range: r)
+                out.addAttribute(.foregroundColor, value: MarkdownColor.rgb(scheme.color(for: t.kind)), range: r)
                 if t.kind == .link {
-                    out.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: r)
-                    out.addAttribute(.underlineColor, value: NSColor.hex(scheme.link), range: r)
+                    out.addAttribute(.underlineStyle, value: 1, range: r)
+                    out.addAttribute(.underlineColor, value: MarkdownColor.rgb(scheme.link), range: r)
                 }
             }
         }
@@ -370,7 +384,12 @@ public enum MarkdownParser {
             applyInline(ci.node, base: base)
         }
 
-        return ParsedMarkdown(attributed: out, syntaxRanges: syntaxRanges, blocks: blocks)
+        // --- Platform render pass ---
+        // The parser stored platform-neutral attribute values (MarkdownColor,
+        // MarkdownFont, MarkdownParagraph); resolve them to the native types
+        // (NSColor/NSFont/NSParagraphStyle on macOS, UIColor/UIFont on iOS).
+        let native = MarkdownRenderer.render(out)
+        return ParsedMarkdown(attributed: native, syntaxRanges: syntaxRanges, blocks: blocks)
     }
 
     // MARK: - AST → Block (test surface; nested lists flattened like the old parser)
@@ -538,7 +557,7 @@ public enum MarkdownParser {
         }
         var role: Role
         var base: [NSAttributedString.Key: Any]
-        var paragraphStyle: NSParagraphStyle
+        var paragraphStyle: MarkdownParagraph
         var markerRange: NSRange?
         var listMarkerRange: NSRange?
         var checkboxRange: NSRange?
@@ -568,12 +587,12 @@ public enum MarkdownParser {
 
     private struct LinePlanner {
         let lines: [LineInfo]
-        let style: MarkdownStyle
+        let style: any MarkdownStyling
         let topBlocks: [TopBlock]
         let items: [ItemInfo]
         let containers: [ContainerInfo]
 
-        init(doc: Markup, lines: [LineInfo], style: MarkdownStyle) {
+        init(doc: Markup, lines: [LineInfo], style: any MarkdownStyling) {
             self.lines = lines
             self.style = style
             topBlocks = doc.children.compactMap { node in
@@ -617,7 +636,7 @@ public enum MarkdownParser {
             if let t = top, let cb = t.node as? CodeBlock {
                 let codePara = codeParagraph()
                 let codeBase: [NSAttributedString.Key: Any] = [
-                    .font: style.codeFont, .foregroundColor: style.codeTextColor,
+                    .font: style.codeFont(), .foregroundColor: style.codeTextColor,
                     .paragraphStyle: codePara,
                 ]
                 let firstLineText = lines[t.startLine - 1].text
@@ -673,7 +692,7 @@ public enum MarkdownParser {
 
             case is BlockQuote:
                 let base: [NSAttributedString.Key: Any] = [
-                    .font: style.bodyFont, .foregroundColor: style.quoteTextColor, .paragraphStyle: style.quoteParagraph(),
+                    .font: style.bodyFont(), .foregroundColor: style.quoteTextColor, .paragraphStyle: style.quoteParagraph(),
                 ]
                 var plan = LinePlan(role: .quote, base: base, paragraphStyle: style.quoteParagraph())
                 let trimmed = li.text.trimmingCharacters(in: .whitespaces)
@@ -695,7 +714,7 @@ public enum MarkdownParser {
                     let checked = item?.checked
                     let para = style.listParagraph(level: level, markerWidth: width)
                     let base: [NSAttributedString.Key: Any] = [
-                        .font: style.bodyFont,
+                        .font: style.bodyFont(),
                         .foregroundColor: checked == true ? style.checkedTextColor : style.textColor,
                         .paragraphStyle: para,
                     ]
@@ -724,13 +743,13 @@ public enum MarkdownParser {
                 let offset = lineNo - t.startLine   // 0 = header row, 1 = separator row
                 if offset == 0 {
                     let base: [NSAttributedString.Key: Any] = [
-                        .font: style.emphasisFont(base: style.codeFont, bold: true, italic: false),
+                        .font: style.emphasisFont(base: style.codeFont(), bold: true, italic: false),
                         .foregroundColor: style.textColor, .paragraphStyle: tablePara,
                     ]
                     return LinePlan(role: .tableHeader, base: base, paragraphStyle: tablePara)
                 }
                 let base: [NSAttributedString.Key: Any] = [
-                    .font: style.codeFont, .foregroundColor: style.textColor, .paragraphStyle: tablePara,
+                    .font: style.codeFont(), .foregroundColor: style.textColor, .paragraphStyle: tablePara,
                 ]
                 if offset == 1 {
                     let full = NSRange(location: li.start, length: (li.text as NSString).length)
@@ -748,7 +767,7 @@ public enum MarkdownParser {
         }
 
         private func bodyBase() -> [NSAttributedString.Key: Any] {
-            [.font: style.bodyFont, .foregroundColor: style.textColor, .paragraphStyle: style.bodyParagraph()]
+            [.font: style.bodyFont(), .foregroundColor: style.textColor, .paragraphStyle: style.bodyParagraph()]
         }
 
         private func innermostItem(covering lineNo: Int) -> ItemInfo? {
@@ -759,18 +778,12 @@ public enum MarkdownParser {
             return best
         }
 
-        private func codeParagraph() -> NSParagraphStyle {
-            let p = NSMutableParagraphStyle()
-            p.lineSpacing = 0
-            p.paragraphSpacing = 0
-            return p
+        private func codeParagraph() -> MarkdownParagraph {
+            style.codeParagraph()
         }
 
-        private func tableParagraph() -> NSParagraphStyle {
-            let p = NSMutableParagraphStyle()
-            p.lineSpacing = 0
-            p.paragraphSpacing = 0
-            return p
+        private func tableParagraph() -> MarkdownParagraph {
+            style.tableParagraph()
         }
     }
 

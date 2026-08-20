@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 
 @MainActor
 public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDelegate {
@@ -85,7 +86,7 @@ public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManag
     }
 
     private func reapplyMarkdown() {
-        let parsed = MarkdownParser.parse(string, style: .standard)
+        let parsed = MarkdownParser.parse(string)
         lastSyntaxRangeCount = parsed.syntaxRanges.count
         // Apply attributes only (characters are identical — verbatim invariant), so the
         // storage reports .editedAttributes and the guard above stops the loop.

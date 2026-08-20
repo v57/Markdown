@@ -28,7 +28,7 @@ let package = Package(
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "MdCore",
-            dependencies: [.product(name: "Markdown", package: "swift-markdown")],
+            dependencies: ["MdCode", .product(name: "Markdown", package: "swift-markdown")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
@@ -48,7 +48,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MdTests",
-            dependencies: ["Md", "MdCode"],
+            dependencies: ["Md", "MdCore", "MdCode"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
@@ -56,6 +56,13 @@ let package = Package(
         .testTarget(
             name: "MdCodeTests",
             dependencies: ["MdCode"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .testTarget(
+            name: "MdCoreTests",
+            dependencies: ["MdCore", "MdCode"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
