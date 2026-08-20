@@ -38,7 +38,14 @@ let package = Package(
         ),
         .testTarget(
             name: "MdTests",
-            dependencies: ["Md"],
+            dependencies: ["Md", "MdCode"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .testTarget(
+            name: "MdCodeTests",
+            dependencies: ["MdCode"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
