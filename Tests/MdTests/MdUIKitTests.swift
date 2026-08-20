@@ -1,10 +1,8 @@
 #if canImport(UIKit)
 import Testing
 import UIKit
+@testable import Md
 
-@testable import MdUIKit
-@testable import MdCore
-@testable import MdCode
 
 // MARK: - iOS (UIKit) editor stack tests
 //
@@ -28,7 +26,10 @@ import UIKit
         #expect(style.headingUIFont(level: 1).pointSize == 28)
         #expect(style.headingUIFont(level: 4).pointSize == 17)
         #expect(style.headingUIFont(level: 1).fontDescriptor.symbolicTraits.contains(.traitBold))
-        #expect(style.headingUIFont(level: 4).fontDescriptor.symbolicTraits.contains(.traitSemibold))
+        // h4 uses .semibold weight (no semibold symbolic trait in UIKit — check
+        // the weight trait in the descriptor's traits dict).
+        let h4Traits = style.headingUIFont(level: 4).fontDescriptor.fontAttributes[.traits] as? [UIFontDescriptor.TraitKey: Any]
+        #expect((h4Traits?[.weight] as? CGFloat) == UIFont.Weight.semibold.rawValue)
     }
 
     @Test func uikitParserOutputIsNative() {

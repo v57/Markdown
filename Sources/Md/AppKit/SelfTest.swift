@@ -1,6 +1,5 @@
+#if canImport(AppKit)
 import AppKit
-import MdCode
-import MdCore
 
 // MARK: - Self-test harness (CLI-verifiable TDD: `Markdown --selftest`)
 
@@ -340,3 +339,4 @@ public enum EmptyDocScrollProbe {
         print("EMPTYDOC \(abs(delta) < 1.0 ? "PASS" : "FAIL") frame shrinks with content")
     }
 }
+#endif

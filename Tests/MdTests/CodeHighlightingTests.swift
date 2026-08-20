@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MdCode
+@testable import Md
 
 // MARK: - Code syntax highlighting (CodeHighlighter / CodeScanner / LanguageCatalog)
 

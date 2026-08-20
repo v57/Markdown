@@ -10,74 +10,34 @@ let package = Package(
         // marks AppKit's NSLayoutManager/NSTextView methods @MainActor; targeting an
         // older platform would compile them as nonisolated and break the overrides.
         .macOS(.v27),
-        // iOS support: the UIKit alternative editor stack (MdUIKit) builds on iOS 17+.
+        // iOS support: the UIKit alternative editor stack (Sources/Md/UIKit) builds
+        // on iOS 17+.
         .iOS(.v17),
     ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
+        // The single library: shared core + AppKit stack (macOS) + UIKit stack (iOS),
+        // selected by #if canImport(...) in Sources/Md/AppKit and Sources/Md/UIKit.
         .library(name: "Md", targets: ["Md"]),
-        .library(name: "MdCode", targets: ["MdCode"]),
-        .library(name: "MdCore", targets: ["MdCore"]),
-        .library(name: "MdUIKit", targets: ["MdUIKit"]),
     ],
     dependencies: [
         // swift-markdown (also an Xcode SPM dependency) — provides the Markdown module (cmark AST).
         .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.8.0"),
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
-        .target(
-            name: "MdCore",
-            dependencies: ["MdCode", .product(name: "Markdown", package: "swift-markdown")],
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
-        ),
+        // The single target: every source under Sources/Md/ compiles into the Md
+        // module on the host platform. Sources/Md/AppKit is #if canImport(AppKit)-
+        // guarded (macOS only); Sources/Md/UIKit is #if canImport(UIKit)-guarded
+        // (iOS only); the shared core in Sources/Md/ is platform-neutral.
         .target(
             name: "Md",
-            dependencies: ["MdCore", "MdCode", .product(name: "Markdown", package: "swift-markdown")],
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
-        ),
-        .target(
-            name: "MdCode",
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
-        ),
-        .target(
-            name: "MdUIKit",
-            dependencies: ["MdCore", "MdCode"],
+            dependencies: [.product(name: "Markdown", package: "swift-markdown")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
         .testTarget(
             name: "MdTests",
-            dependencies: ["Md", "MdCore", "MdCode"],
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
-        ),
-        .testTarget(
-            name: "MdCodeTests",
-            dependencies: ["MdCode"],
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
-        ),
-        .testTarget(
-            name: "MdCoreTests",
-            dependencies: ["MdCore", "MdCode"],
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
-        ),
-        .testTarget(
-            name: "MdUIKitTests",
-            dependencies: ["MdUIKit", "MdCore", "MdCode"],
+            dependencies: ["Md"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

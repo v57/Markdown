@@ -1,3 +1,4 @@
+#if canImport(AppKit)
 import AppKit
 
 /// Draws the task-list checkbox. The layout manager renders this image in place of the
@@ -28,3 +29,4 @@ public enum CheckboxRenderer {
         }
     }
 }
+#endif

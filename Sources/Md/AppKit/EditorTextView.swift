@@ -1,5 +1,5 @@
+#if canImport(AppKit)
 import AppKit
-import MdCore
 
 @MainActor
 public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDelegate {
@@ -286,3 +286,4 @@ public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManag
         reapplyMarkdown()
     }
 }
+#endif

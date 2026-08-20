@@ -1,3 +1,4 @@
+#if canImport(AppKit)
 import SwiftUI
 import AppKit
 
@@ -17,3 +18,4 @@ public struct MarkdownEditorView: NSViewRepresentable {
     public func updateNSView(_ nsView: NSScrollView, context: Context) {}
     @MainActor public final class Coordinator: NSObject {}
 }
+#endif

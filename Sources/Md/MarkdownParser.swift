@@ -1,6 +1,5 @@
 import Foundation
 import Markdown
-import MdCode
 
 public struct ParsedMarkdown {
     public let attributed: NSAttributedString

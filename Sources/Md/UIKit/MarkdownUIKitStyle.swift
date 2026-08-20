@@ -1,6 +1,5 @@
 #if canImport(UIKit)
 import UIKit
-import MdCore
 
 /// UIKit implementation of the platform-neutral `MarkdownStyling` contract.
 /// Mirrors the AppKit `MarkdownStyle` numeric values EXACTLY: colors resolve to

@@ -1,27 +1,27 @@
-import AppKit
-import MdCore
+#if canImport(UIKit)
+import UIKit
 
-/// TextKit 1 layout manager (AppKit stack). All glyph/geometry/merge logic lives
+/// TextKit 1 layout manager (UIKit stack). All glyph/geometry/merge logic lives
 /// in the platform-neutral `EditorLayoutManagerCore`; this subclass supplies the
-/// AppKit drawing (NSBezierPath, NSColor, NSImage, NSString) through the core's
-/// `open` hooks.
+/// UIKit drawing (UIBezierPath, UIColor, UIImage, NSString) through the core's
+/// `open` hooks. Mirrors `Sources/Md/EditorLayoutManager.swift` (AppKit).
 public final class EditorLayoutManager: EditorLayoutManagerCore {
-    // MARK: - Drawing hooks (AppKit)
+    // MARK: - Drawing hooks (UIKit)
 
     public override func drawCodeBlockBackground(union: CGRect, at origin: CGPoint) {
-        let path = NSBezierPath(roundedRect: union, xRadius: 6, yRadius: 6)
+        let path = UIBezierPath(roundedRect: union, cornerRadius: 6)
         codeBlockBackgroundColor().setFill()
         path.fill()
     }
 
     public override func drawInlineCodeChipHook(chip: CGRect, radius: CGFloat) {
-        let path = NSBezierPath(roundedRect: chip, xRadius: radius, yRadius: radius)
+        let path = UIBezierPath(roundedRect: chip, cornerRadius: radius)
         codeBlockBackgroundColor().setFill()
         path.fill()
     }
 
     public override func drawQuoteBarHook(bar: CGRect) {
-        let path = NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5)
+        let path = UIBezierPath(roundedRect: bar, cornerRadius: 1.5)
         quoteBarColor().setFill()
         path.fill()
     }
@@ -43,17 +43,18 @@ public final class EditorLayoutManager: EditorLayoutManagerCore {
     }
 
     public override func chromeFont() -> PlatformFont {
-        NSFont.systemFont(ofSize: 11, weight: .semibold)
+        UIFont.systemFont(ofSize: 11, weight: .semibold)
     }
 
     public override func chromeAttributes(font: PlatformFont) -> [NSAttributedString.Key: Any] {
-        [.font: font, .foregroundColor: MarkdownStyle.standard.codeTextColor]
+        [.font: font, .foregroundColor: MarkdownUIKitStyle.standard.color(.secondaryLabel)]
     }
 
-    // MARK: - Colors (AppKit dynamic system colors)
+    // MARK: - Colors (UIKit dynamic system colors)
 
-    public override func codeTextColor() -> PlatformColor { MarkdownStyle.standard.codeTextColor }
-    public override func codeBlockBackgroundColor() -> PlatformColor { MarkdownStyle.standard.codeBackground }
-    public override func quoteBarColor() -> PlatformColor { MarkdownStyle.standard.quoteBarColor }
-    public override func ruleColor() -> PlatformColor { MarkdownStyle.standard.ruleColor }
+    public override func codeTextColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.secondaryLabel) }
+    public override func codeBlockBackgroundColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.quaternarySystemFill) }
+    public override func quoteBarColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.systemRed) }
+    public override func ruleColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.separator) }
 }
+#endif

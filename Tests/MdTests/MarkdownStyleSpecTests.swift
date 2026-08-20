@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MdCore
+@testable import Md
 
 @Suite("MarkdownStyleSpec")
 struct MarkdownStyleSpecTests {

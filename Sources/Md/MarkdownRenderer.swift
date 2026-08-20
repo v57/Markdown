@@ -1,5 +1,4 @@
 import Foundation
-import MdCode
 #if canImport(AppKit)
 import AppKit
 #elseif canImport(UIKit)

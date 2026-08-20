@@ -1,6 +1,5 @@
 #if canImport(UIKit)
 import UIKit
-import MdCore
 
 /// The main iOS deliverable: a `UIViewController` hosting the UIKit markdown
 /// editor (`EditorTextView`). This is the UIKit alternative to the macOS

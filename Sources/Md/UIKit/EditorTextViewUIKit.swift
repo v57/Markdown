@@ -1,6 +1,5 @@
 #if canImport(UIKit)
 import UIKit
-import MdCore
 
 /// TextKit 1 editor text view (UIKit stack). Mirrors the AppKit `EditorTextView`
 /// (NSTextView) behavior for the iOS editor: live markdown re-styling on every

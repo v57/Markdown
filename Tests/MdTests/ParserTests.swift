@@ -1,8 +1,7 @@
+#if canImport(AppKit)
 import Testing
 import AppKit
-import MdCode
 @testable import Md
-@testable import MdCore
 
 // MARK: - Parser + layout + parser-integration tests
 //
@@ -601,3 +600,4 @@ import MdCode
         }
     }
 }
+#endif

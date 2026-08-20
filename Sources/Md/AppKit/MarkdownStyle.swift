@@ -1,6 +1,5 @@
+#if canImport(AppKit)
 import AppKit
-import MdCode
-import MdCore
 
 public struct MarkdownStyle {
     // Colors — all dynamic system colors → automatic dark/light support
@@ -84,13 +83,4 @@ public struct MarkdownStyle {
     /// NSColor/NSFont value type stays concurrency-safe under Swift 6.
     public static var standard: MarkdownStyle { MarkdownStyle() }
 }
-
-public extension NSColor {
-    /// sRGB color from a 0xRRGGBB hex value (e.g. 0x24292E). The AppKit-side
-    /// counterpart of `CodeColorScheme`'s platform-neutral `UInt32` storage.
-    static func hex(_ hex: UInt32) -> NSColor {
-        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
-                green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-    }
-}
+#endif

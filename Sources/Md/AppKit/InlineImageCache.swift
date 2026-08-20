@@ -1,3 +1,4 @@
+#if canImport(AppKit)
 import AppKit
 
 /// Cache of loaded inline images, keyed by URL. The editor layout manager draws these
@@ -24,3 +25,4 @@ public final class InlineImageCache {
         task.resume()
     }
 }
+#endif
