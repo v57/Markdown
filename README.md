@@ -83,6 +83,15 @@ Embedding
       parsed.attributed                          // native NSAttributedString
       parsed.blocks                              // [MarkdownParser.Block]
 
+App (Markdown.xcodeproj)
+
+  The sample app is a SwiftUI app that builds and runs on BOTH macOS and iOS.
+  Entry is @main on MarkdownApp (Markdown/ContentView.swift); the macOS CLI
+  harness (--selftest / --smoke / --typingprobe) runs in MarkdownApp.init
+  under #if os(macOS) and is absent on iOS. The single MarkdownEditorView
+  symbol resolves to the AppKit NSViewRepresentable on macOS and the UIKit
+  UIViewControllerRepresentable on iOS.
+
 Features (both stacks)
 
   - Live re-styling on every edit; the source text is kept verbatim.
@@ -100,6 +109,9 @@ Verification
 
   macOS:  swift build && swift test
           (48 tests: parser, style spec, layout probes, highlighter, schemes)
+          xcodebuild -project Markdown.xcodeproj -scheme Markdown build
   iOS:    swift build --triple arm64-apple-ios17.0-simulator --build-tests
-          (the UIKit tests in Tests/MdTests/MdUIKitTests.swift run via Xcode
-          on an iOS simulator)
+          xcodebuild -project Markdown.xcodeproj -scheme Markdown
+            -destination 'generic/platform=iOS Simulator' build
+          (app runs on the iOS simulator; UIKit tests in
+          Tests/MdTests/MdUIKitTests.swift run via Xcode)
