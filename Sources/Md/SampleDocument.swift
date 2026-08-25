@@ -2,67 +2,34 @@ import Foundation
 
 public enum SampleDocument {
     public static let text = """
-    # Markdown Editor
+Hello World
+# H1
+Hello World
+###### H6
+Hello World
+Body **Body** *Body* ***Body*** ~~Body~~ [Link](https://www.apple.com)
 
-    A **live-preview** markdown editor built on *AppKit* `NSTextView`. The markdown
-    symbols only appear on the line you're editing — in the ~~tertiary~~ **tertiary color**,
-    just like Obsidian. Here's a [link to Apple](https://www.apple.com).
+Hello `code`
 
-    ## Features
+---
 
-    - Headings, **bold**, *italic*, ***both***, ~~strikethrough~~, and `inline code`
-    - Bullet and numbered lists, nested lists, and task lists
-    - Blockquotes, fenced code blocks, tables, and horizontal rules
+- List
+1. A
+2. B
+   1. B2
+- [x] Renders checkboxes inline
+- [ ] Hides syntax symbols on inactive lines
+> Quote
+> Second one
 
-    ### Task list
+```swift
+let a = 10
+print("Hello World")
+```
 
-    - [x] Renders checkboxes inline
-    - [ ] Hides syntax symbols on inactive lines
-    - [ ] Looks good in dark mode
-
-    > This is a blockquote. The `>` marker hides when you edit another line.
-
-    ## Syntax highlighting
-
-    Fenced code gets the GitHub palette (Xcode-style categories) for the
-    20 most-used languages. Switch the system appearance to flip the palette:
-
-    ```swift
-    struct Greeting {
-        let text = "Hello, world!"          // comment
-        func message(count: Int) -> String {
-            let n = count > 1 ? "\\(count) times" : "once"
-            return text + " " + n
-        }
-    }
-    ```
-
-    ```python
-    def greet(names):
-        # say hi to everyone
-        for name in names:
-            print(f"Hello, {name}!")
-    ```
-
-    ```bash
-    #!/bin/bash
-    for file in *.md; do
-        echo "Processing $file"
-    done
-    ```
-
-    | Feature | Status |
-    |---------|--------|
-    | Headings | ✅ |
-    | Tables | ✅ |
-
-    ---
-
-    1. Numbered items work too
-    2. With nesting:
-       1. like this
-
-    Click the link above, tick a checkbox, or edit any line to see its symbols appear.
-    Escape example: \\*not italic\\*.
-    """
+| Feature | Status |
+|---------|--------|
+| Headings | ✅ |
+| Tables | ✅ |
+"""
 }

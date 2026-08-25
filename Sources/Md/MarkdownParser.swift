@@ -200,8 +200,13 @@ public enum MarkdownParser {
                         var close = 0
                         while close < srcNs.length - open && srcNs.character(at: srcNs.length - 1 - close) == 0x60 { close += 1 }
                         let content = NSRange(location: r.location + open, length: srcNs.length - open - close)
+                        // Inline code scales with its container: container font size
+                        // minus 1 (13→12 in body, 26→25 in an h1) so code is readable
+                        // inside headings. Kind stays .code → monospaced resolution.
+                        let containerSize = bodyFont.size
+                        let inlineCodeFont = MarkdownFont(kind: .code, size: max(9, containerSize - 1), weight: .regular)
                         let inlineCodeAttrs: [NSAttributedString.Key: Any] = [
-                            .font: style.codeFont(),
+                            .font: inlineCodeFont,
                             .foregroundColor: style.codeTextColor,
                             .markdownInlineCode: true,
                         ]
@@ -297,7 +302,11 @@ public enum MarkdownParser {
 
             out.append(NSAttributedString(string: li.text, attributes: plan.base))
             if let mr = plan.markerRange { blockMarkSyntax(mr) }
-            if let lmr = plan.listMarkerRange { out.addAttribute(.markdownListMarker, value: true, range: lmr) }
+            if let lmr = plan.listMarkerRange {
+                out.addAttribute(.markdownListMarker, value: true, range: lmr)
+                // List markers (`-`, `1.`) render systemBlue, overriding the syntax gray.
+                out.addAttribute(.foregroundColor, value: style.listMarkerColor, range: lmr)
+            }
             if let cr = plan.checkboxRange, let checked = plan.checked {
                 out.addAttribute(.markdownCheckbox, value: checked, range: cr)
                 out.addAttribute(.markdownSyntax, value: true, range: cr)
@@ -709,7 +718,7 @@ public enum MarkdownParser {
                     let level = (m[1] as NSString).length / 2
                     let item = innermostItem(covering: lineNo)
                     let isTask = item?.checked != nil
-                    let width: CGFloat = isTask ? 24 : (ordered ? 30 : 18)
+                    let width = style.listMarkerWidth(task: isTask, ordered: ordered)
                     let checked = item?.checked
                     let para = style.listParagraph(level: level, markerWidth: width)
                     let base: [NSAttributedString.Key: Any] = [

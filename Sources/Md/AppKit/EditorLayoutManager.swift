@@ -9,19 +9,29 @@ public final class EditorLayoutManager: EditorLayoutManagerCore {
     // MARK: - Drawing hooks (AppKit)
 
     public override func drawCodeBlockBackground(union: CGRect, at origin: CGPoint) {
-        let path = NSBezierPath(roundedRect: union, xRadius: 6, yRadius: 6)
+        let r = MarkdownMetrics.standard.codeBlockCornerRadius
+        let path = NSBezierPath(roundedRect: union, xRadius: r, yRadius: r)
         codeBlockBackgroundColor().setFill()
         path.fill()
     }
 
     public override func drawInlineCodeChipHook(chip: CGRect, radius: CGFloat) {
-        let path = NSBezierPath(roundedRect: chip, xRadius: radius, yRadius: radius)
-        codeBlockBackgroundColor().setFill()
-        path.fill()
+        // Fill: primary @ 5% opacity (the SwiftUI `fill(.primary.opacity(0.05))`).
+        inlineCodeFillColor().setFill()
+        NSBezierPath(roundedRect: chip, xRadius: radius, yRadius: radius).fill()
+        // Border: 0.5pt stroke at primary @ 5% — strokeBorder insets by half the
+        // line width so the stroke sits inside the chip's edge.
+        let stroke = MarkdownMetrics.standard.inlineCodeChipStrokeWidth
+        let inset = chip.insetBy(dx: stroke / 2, dy: stroke / 2)
+        let path = NSBezierPath(roundedRect: inset, xRadius: max(0, radius - stroke / 2), yRadius: max(0, radius - stroke / 2))
+        path.lineWidth = stroke
+        inlineCodeStrokeColor().setStroke()
+        path.stroke()
     }
 
     public override func drawQuoteBarHook(bar: CGRect) {
-        let path = NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5)
+        let r = MarkdownMetrics.standard.quoteBarCornerRadius
+        let path = NSBezierPath(roundedRect: bar, xRadius: r, yRadius: r)
         quoteBarColor().setFill()
         path.fill()
     }
@@ -43,7 +53,7 @@ public final class EditorLayoutManager: EditorLayoutManagerCore {
     }
 
     public override func chromeFont() -> PlatformFont {
-        NSFont.systemFont(ofSize: 11, weight: .semibold)
+        NSFont.systemFont(ofSize: MarkdownMetrics.standard.chromeFontSize, weight: .semibold)
     }
 
     public override func chromeAttributes(font: PlatformFont) -> [NSAttributedString.Key: Any] {
@@ -54,6 +64,8 @@ public final class EditorLayoutManager: EditorLayoutManagerCore {
 
     public override func codeTextColor() -> PlatformColor { MarkdownStyle.standard.codeTextColor }
     public override func codeBlockBackgroundColor() -> PlatformColor { MarkdownStyle.standard.codeBackground }
+    public override func inlineCodeFillColor() -> PlatformColor { .labelColor.withAlphaComponent(0.05) }
+    public override func inlineCodeStrokeColor() -> PlatformColor { .labelColor.withAlphaComponent(0.05) }
     public override func quoteBarColor() -> PlatformColor { MarkdownStyle.standard.quoteBarColor }
     public override func ruleColor() -> PlatformColor { MarkdownStyle.standard.ruleColor }
 }

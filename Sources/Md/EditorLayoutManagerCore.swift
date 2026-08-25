@@ -1,12 +1,14 @@
 import Foundation
 #if canImport(AppKit)
 import AppKit
+import CoreText
 public typealias PlatformImage = NSImage
 public typealias PlatformFont = NSFont
 public typealias PlatformColor = NSColor
 public typealias PlatformBezierPath = NSBezierPath
 #elseif canImport(UIKit)
 import UIKit
+import CoreText
 public typealias PlatformImage = UIImage
 public typealias PlatformFont = UIFont
 public typealias PlatformColor = UIColor
@@ -331,14 +333,42 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     }
 
     private func drawCodeBackground(forCharacterRange r: NSRange, at origin: CGPoint) -> CGRect? {
+        guard let storage = textStorage else { return nil }
+        // The background must hug the code font's ACTUAL GLYPH INK per line
+        // (CTLine path bounds), not the full line fragment (measured ~17pt for
+        // 14pt SF Mono) nor a cap+descender estimate (which adds descender depth
+        // below lines that have no descenders — the "bottom too big" complaint).
+        let codeFont = (storage.attribute(.font, at: r.location, effectiveRange: nil) as? PlatformFont) ?? codeFontFallback()
+        let asc = codeFont.ascender
+        let desc = codeFont.descender   // negative
+        let ascDesc = asc - desc        // typographic line height
         var rects: [CGRect] = []
-        enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil)) { rect, _, _, _, _ in
-            rects.append(rect.offsetBy(dx: origin.x, dy: origin.y))
+        enumerateLineFragments(forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil)) { rect, _, _, glyphRange, _ in
+            // TextKit baseline within the fragment (fragment may be taller than the
+            // font's line height due to spacing): baseline = top + asc/ascDesc * H.
+            let baseline = rect.minY + (asc / ascDesc) * rect.height
+            // Glyph ink of this line's text, relative to the baseline.
+            var inkTop: CGFloat = asc        // fallback: typographic box
+            var inkBottom: CGFloat = desc
+            if let storage = self.textStorage {
+                let charRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+                if charRange.length > 0, charRange.location < storage.length {
+                    let sub = storage.attributedSubstring(from: charRange)
+                    let line = CTLineCreateWithAttributedString(sub)
+                    let bounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
+                    if !bounds.isNull, bounds.height > 0 {
+                        inkTop = bounds.maxY
+                        inkBottom = bounds.minY
+                    }
+                }
+            }
+            let lineRect = CGRect(x: rect.minX, y: baseline - inkTop, width: rect.width, height: inkTop - inkBottom)
+            rects.append(lineRect.offsetBy(dx: origin.x, dy: origin.y))
         }
         guard let first = rects.first, let last = rects.last else { return nil }
-        // One block per fence: the union spans the FIRST line's top through the
-        // LAST line's bottom at full line height (no per-line inset) and full
-        // content width. A single rounded rect rounds only the block's own corners.
+        // One block per fence: the union spans the FIRST line's ink top through the
+        // LAST line's ink bottom at full content width. A single rounded rect rounds
+        // only the block's own corners.
         let union = CGRect(x: first.minX, y: first.minY, width: first.width, height: last.maxY - first.minY)
         drawCodeBlockBackground(union: union, at: origin)
         return union
@@ -362,10 +392,11 @@ open class EditorLayoutManagerCore: NSLayoutManager {
             maxY = max(maxY, rect.maxY)
         }
         guard minY <= maxY else { return }
-        let hPad: CGFloat = 5
-        let vInset: CGFloat = 1.5
+        let m = MarkdownMetrics.standard
+        let hPad: CGFloat = m.inlineCodeChipHPad
+        let vInset: CGFloat = m.inlineCodeChipVInset
         let height = maxY - minY
-        let radius = min(4, height / 2 - vInset)
+        let radius = min(m.inlineCodeChipMaxRadius, height / 2 - vInset)
         let chip = CGRect(x: origin.x + bounds.minX - hPad, y: origin.y + minY + vInset,
                           width: bounds.width + hPad * 2, height: height - vInset * 2)
         drawInlineCodeChipHook(chip: chip, radius: radius)
@@ -398,8 +429,9 @@ open class EditorLayoutManagerCore: NSLayoutManager {
                 }
             }
         }
-        let topBand = fenceTop + 2
-        let inset: CGFloat = 10
+        let m = MarkdownMetrics.standard
+        let topBand = fenceTop + m.codeChromeTopOffset
+        let inset: CGFloat = m.codeChromeInset
 
         // Hide the chrome while the caret is on the ``` fence line (editing the
         // fence marker itself) — language and Copy both disappear.
@@ -427,7 +459,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
                               width: copyTextSize.width, height: copyTextSize.height)
         drawChromeLabel(copyLabel, in: copyRect, font: langFont, color: codeTextColor())
 
-        let hitFrame = copyRect.insetBy(dx: -6, dy: -4)
+        let hitFrame = copyRect.insetBy(dx: -MarkdownMetrics.standard.copyHitPaddingX, dy: -MarkdownMetrics.standard.copyHitPaddingY)
         recordCopyButton(frame: hitFrame, blockRange: r, language: language, copied: copiedBlockRange == r)
     }
 
@@ -462,7 +494,8 @@ open class EditorLayoutManagerCore: NSLayoutManager {
             minY = min(minY, rect.minY)
             maxY = max(maxY, rect.maxY)
         }
-        let bar = CGRect(x: origin.x, y: origin.y + minY, width: 3, height: maxY - minY)
+        let m = MarkdownMetrics.standard
+        let bar = CGRect(x: origin.x, y: origin.y + minY, width: m.quoteBarWidth, height: maxY - minY)
         drawQuoteBarHook(bar: bar)
     }
 
@@ -523,9 +556,10 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
         let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
         let loc = location(forGlyphAt: glyphRange.location)
-        let size = max(11, fragRect.height * 0.62) * 1.2   // 20% larger checkbox
+        let m = MarkdownMetrics.standard
+        let size = max(m.checkboxMinSize, fragRect.height * 0.62) * m.checkboxScaleFactor   // 20% larger checkbox
         let rect = CGRect(x: origin.x + fragRect.minX + loc.x,
-                          y: origin.y + fragRect.minY + (fragRect.height - size) / 2,
+                          y: origin.y + fragRect.minY,
                           width: size, height: size)
         drawCheckboxHook(checked: checked, in: rect)
     }
@@ -541,7 +575,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         #else
         path.addLine(to: CGPoint(x: origin.x + fragRect.maxX, y: y))
         #endif
-        path.lineWidth = 1
+        path.lineWidth = MarkdownMetrics.standard.ruleStrokeWidth
         ruleColor().setStroke()
         path.stroke()
     }
@@ -553,7 +587,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
         let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
         let loc = location(forGlyphAt: glyphRange.location)
-        let height = fragRect.height * 1.05
+        let height = fragRect.height * MarkdownMetrics.standard.imageHeightScale
         let aspect = image.size.width / max(1, image.size.height)
         let rect = CGRect(x: origin.x + fragRect.minX + loc.x,
                           y: origin.y + fragRect.minY + (fragRect.height - height) / 2,
@@ -563,10 +597,22 @@ open class EditorLayoutManagerCore: NSLayoutManager {
 
     // MARK: - Platform hooks (overridden by Md / MdUIKit subclasses)
 
-    /// Fill the code block's rounded background union.
+    /// The code font used by fenced code blocks (14pt monospaced by default).
+    /// The background drawing reads the font off the storage; this is the fallback
+    /// when the attribute is missing (e.g. edge cases during editing).
+    open func codeFontFallback() -> PlatformFont {
+        let m = MarkdownMetrics.standard
+        return PlatformFont.monospacedSystemFont(ofSize: m.codeFontSize, weight: .regular)
+    }
+
+    /// Draw the code block's rounded background union.
     open func drawCodeBlockBackground(union: CGRect, at origin: CGPoint) {}
     /// Fill the inline-code chip.
     open func drawInlineCodeChipHook(chip: CGRect, radius: CGFloat) {}
+    /// Inline-code chip fill color (design: `primary.opacity(0.05)`).
+    open func inlineCodeFillColor() -> PlatformColor { PlatformColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 0.05) }
+    /// Inline-code chip stroke border color (design: `primary.opacity(0.05)`).
+    open func inlineCodeStrokeColor() -> PlatformColor { PlatformColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 0.05) }
     /// Draw the quote bar.
     open func drawQuoteBarHook(bar: CGRect) {}
     /// Draw the checkbox image.
@@ -582,7 +628,10 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     /// The cached inline image for a URL, if loaded.
     open func image(for url: URL) -> PlatformImage? { nil }
     /// The chrome label font (11pt semibold).
-    open func chromeFont() -> PlatformFont { PlatformFont.systemFont(ofSize: 11, weight: .semibold) }
+    open func chromeFont() -> PlatformFont {
+        let m = MarkdownMetrics.standard
+        return PlatformFont.systemFont(ofSize: m.chromeFontSize, weight: m.chromeFontWeight == .bold ? .bold : .semibold)
+    }
     /// Attribute dictionary for chrome labels.
     open func chromeAttributes(font: PlatformFont) -> [NSAttributedString.Key: Any] {
         [.font: font, .foregroundColor: codeTextColor()]

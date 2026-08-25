@@ -9,19 +9,27 @@ public final class EditorLayoutManager: EditorLayoutManagerCore {
     // MARK: - Drawing hooks (UIKit)
 
     public override func drawCodeBlockBackground(union: CGRect, at origin: CGPoint) {
-        let path = UIBezierPath(roundedRect: union, cornerRadius: 6)
+        let path = UIBezierPath(roundedRect: union, cornerRadius: MarkdownMetrics.standard.codeBlockCornerRadius)
         codeBlockBackgroundColor().setFill()
         path.fill()
     }
 
     public override func drawInlineCodeChipHook(chip: CGRect, radius: CGFloat) {
-        let path = UIBezierPath(roundedRect: chip, cornerRadius: radius)
-        codeBlockBackgroundColor().setFill()
-        path.fill()
+        // Fill: primary @ 5% opacity (the SwiftUI `fill(.primary.opacity(0.05))`).
+        inlineCodeFillColor().setFill()
+        UIBezierPath(roundedRect: chip, cornerRadius: radius).fill()
+        // Border: 0.5pt stroke at primary @ 5% — strokeBorder insets by half the
+        // line width so the stroke sits inside the chip's edge.
+        let stroke = MarkdownMetrics.standard.inlineCodeChipStrokeWidth
+        let inset = chip.insetBy(dx: stroke / 2, dy: stroke / 2)
+        let path = UIBezierPath(roundedRect: inset, cornerRadius: max(0, radius - stroke / 2))
+        path.lineWidth = stroke
+        inlineCodeStrokeColor().setStroke()
+        path.stroke()
     }
 
     public override func drawQuoteBarHook(bar: CGRect) {
-        let path = UIBezierPath(roundedRect: bar, cornerRadius: 1.5)
+        let path = UIBezierPath(roundedRect: bar, cornerRadius: MarkdownMetrics.standard.quoteBarCornerRadius)
         quoteBarColor().setFill()
         path.fill()
     }
@@ -43,7 +51,7 @@ public final class EditorLayoutManager: EditorLayoutManagerCore {
     }
 
     public override func chromeFont() -> PlatformFont {
-        UIFont.systemFont(ofSize: 11, weight: .semibold)
+        UIFont.systemFont(ofSize: MarkdownMetrics.standard.chromeFontSize, weight: .semibold)
     }
 
     public override func chromeAttributes(font: PlatformFont) -> [NSAttributedString.Key: Any] {
@@ -54,6 +62,8 @@ public final class EditorLayoutManager: EditorLayoutManagerCore {
 
     public override func codeTextColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.secondaryLabel) }
     public override func codeBlockBackgroundColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.quaternarySystemFill) }
+    public override func inlineCodeFillColor() -> PlatformColor { .label.withAlphaComponent(0.05) }
+    public override func inlineCodeStrokeColor() -> PlatformColor { .label.withAlphaComponent(0.05) }
     public override func quoteBarColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.systemRed) }
     public override func ruleColor() -> PlatformColor { MarkdownUIKitStyle.standard.color(.separator) }
 }

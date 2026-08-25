@@ -6,7 +6,12 @@ import UIKit
 /// dynamic `UIColor` system roles (automatic dark/light support), fonts to
 /// `UIFont`, paragraphs to `NSParagraphStyle` — all via `MarkdownRenderer`.
 public struct MarkdownUIKitStyle: MarkdownStyling {
-    public init() {}
+    /// Metrics this style reads from — the single source of truth.
+    public var metrics: MarkdownMetrics
+
+    public init(metrics: MarkdownMetrics = .standard) {
+        self.metrics = metrics
+    }
 
     // MARK: - Colors (same semantic roles as MarkdownStyle on macOS)
 
@@ -19,24 +24,20 @@ public struct MarkdownUIKitStyle: MarkdownStyling {
     public var quoteBarColor: MarkdownColor { .systemRed }
     public var ruleColor: MarkdownColor { .separator }
     public var checkedTextColor: MarkdownColor { .secondaryLabel }
+    public var listMarkerColor: MarkdownColor { .systemBlue }
 
     // MARK: - Fonts
 
-    /// h1…h6 point sizes, mirroring `MarkdownStyle.headingSizes`.
-    public let headingSizes: [CGFloat] = [28, 24, 20, 17, 15, 13]
-
     public func bodyFont() -> MarkdownFont {
-        MarkdownFont(kind: .body, size: 15, weight: .regular)
+        metrics.bodyFont()
     }
 
     public func codeFont() -> MarkdownFont {
-        MarkdownFont(kind: .code, size: 14, weight: .regular)
+        metrics.codeFont()
     }
 
     public func headingFont(level: Int) -> MarkdownFont {
-        let size = headingSizes[max(0, min(5, level - 1))]
-        let weight: MarkdownFontWeight = level <= 3 ? .bold : .semibold
-        return MarkdownFont(kind: .heading(level: level), size: size, weight: weight)
+        metrics.headingFont(level: level)
     }
 
     /// Bold/italic emphasis on top of a base font — traits are ADDED to the
@@ -51,35 +52,27 @@ public struct MarkdownUIKitStyle: MarkdownStyling {
     // MARK: - Paragraphs
 
     public func bodyParagraph() -> MarkdownParagraph {
-        MarkdownParagraph(lineSpacing: 2, paragraphSpacing: 6)
+        metrics.bodyParagraph()
     }
 
     public func headingParagraph(level: Int) -> MarkdownParagraph {
-        MarkdownParagraph(
-            paragraphSpacing: level <= 2 ? 8 : 6,
-            paragraphSpacingBefore: level <= 2 ? 12 : 8
-        )
+        metrics.headingParagraph(level: level)
     }
 
     public func listParagraph(level: Int, markerWidth: CGFloat) -> MarkdownParagraph {
-        let indent = 24 * CGFloat(level)
-        return MarkdownParagraph(
-            paragraphSpacing: 3,
-            firstLineHeadIndent: indent,
-            headIndent: indent + markerWidth
-        )
+        metrics.listParagraph(level: level, markerWidth: markerWidth)
     }
 
     public func quoteParagraph() -> MarkdownParagraph {
-        MarkdownParagraph(paragraphSpacing: 6, firstLineHeadIndent: 12, headIndent: 12)
+        metrics.quoteParagraph()
     }
 
     public func codeParagraph() -> MarkdownParagraph {
-        MarkdownParagraph()
+        metrics.codeParagraph()
     }
 
     public func tableParagraph() -> MarkdownParagraph {
-        MarkdownParagraph()
+        metrics.tableParagraph()
     }
 
     /// The default style. Computed (not a stored global) so the value type stays

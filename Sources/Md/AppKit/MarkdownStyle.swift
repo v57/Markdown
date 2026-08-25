@@ -2,6 +2,13 @@
 import AppKit
 
 public struct MarkdownStyle {
+    /// Metrics this style reads from — the single source of truth.
+    public var metrics: MarkdownMetrics
+
+    public init(metrics: MarkdownMetrics = .standard) {
+        self.metrics = metrics
+    }
+
     // Colors — all dynamic system colors → automatic dark/light support
     public let textColor: NSColor = .labelColor
     public let syntaxColor: NSColor = .tertiaryLabelColor   // ★ "commands in tertiary color"
@@ -18,9 +25,9 @@ public struct MarkdownStyle {
     /// fenced code with the matching palette on the next edit/restyle pass.
     public var codeScheme: CodeColorScheme { .systemAware }
     // Fonts
-    public let bodyFont = NSFont.systemFont(ofSize: 15)
-    public let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    public let headingSizes: [CGFloat] = [28, 24, 20, 17, 15, 13]   // h1…h6
+    public var bodyFont: NSFont { .systemFont(ofSize: metrics.bodyFontSize) }
+    public var codeFont: NSFont { .monospacedSystemFont(ofSize: metrics.codeFontSize, weight: .regular) }
+    public var headingSizes: [CGFloat] { metrics.headingSizes }
     public func headingFont(level: Int) -> NSFont {
         let size = headingSizes[max(0, min(5, level - 1))]
         let weight: NSFont.Weight = level <= 3 ? .bold : .semibold
@@ -37,29 +44,29 @@ public struct MarkdownStyle {
     // Paragraph styles
     public func bodyParagraph() -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
-        p.lineSpacing = 2
-        p.paragraphSpacing = 6
+        p.lineSpacing = metrics.bodyLineSpacing
+        p.paragraphSpacing = metrics.bodyParagraphSpacing
         return p
     }
     public func headingParagraph(level: Int) -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
-        p.paragraphSpacingBefore = level <= 2 ? 12 : 8
-        p.paragraphSpacing = level <= 2 ? 8 : 6
+        p.paragraphSpacingBefore = metrics.headingSpacingBefore(level: level)
+        p.paragraphSpacing = metrics.headingSpacingAfter(level: level)
         return p
     }
     public func listParagraph(level: Int, markerWidth: CGFloat) -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
-        let indent = 24 * CGFloat(level)
+        let indent = metrics.listIndentPerLevel * CGFloat(level)
         p.firstLineHeadIndent = indent
         p.headIndent = indent + markerWidth
-        p.paragraphSpacing = 3
+        p.paragraphSpacing = metrics.listParagraphSpacing
         return p
     }
     public func quoteParagraph() -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
-        p.firstLineHeadIndent = 12
-        p.headIndent = 12
-        p.paragraphSpacing = 6
+        p.firstLineHeadIndent = metrics.quoteIndent
+        p.headIndent = metrics.quoteIndent
+        p.paragraphSpacing = metrics.quoteParagraphSpacing
         return p
     }
 

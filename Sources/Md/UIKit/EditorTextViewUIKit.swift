@@ -10,12 +10,15 @@ import UIKit
 public final class EditorTextView: UITextView, UITextViewDelegate, NSLayoutManagerDelegate {
     /// Weak handle for the smoke/probe harness to drive the live editor.
     public static weak var live: EditorTextView?
+    /// The metrics this editor instance renders with.
+    public let metrics: MarkdownMetrics
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
     private var lastSyntaxRangeCount = 0
 
-    public init() {
+    public init(metrics: MarkdownMetrics = .standard) {
+        self.metrics = metrics
         markdownStorage = NSTextStorage()
         markdownLayout = EditorLayoutManager()
         markdownStorage.addLayoutManager(markdownLayout)
@@ -38,8 +41,9 @@ public final class EditorTextView: UITextView, UITextViewDelegate, NSLayoutManag
         isSelectable = true
         // Obsidian-like margins. UITextView scrolls natively; no min/max frame
         // games needed (unlike NSTextView in an NSScrollView).
-        textContainerInset = UIEdgeInsets(top: 28, left: 48, bottom: 28, right: 48)
-        font = MarkdownUIKitStyle.standard.bodyUIFont
+        textContainerInset = UIEdgeInsets(top: metrics.textContainerInsetHeight, left: metrics.textContainerInsetWidth,
+                                          bottom: metrics.textContainerInsetHeight, right: metrics.textContainerInsetWidth)
+        font = MarkdownUIKitStyle(metrics: metrics).bodyUIFont
         textColor = .label
         // Plain-text editing: disable the smart substitutions that would corrupt
         // the verbatim markdown source (quotes/dashes/replacement).
@@ -76,11 +80,11 @@ public final class EditorTextView: UITextView, UITextViewDelegate, NSLayoutManag
 
     public func textViewDidChange(_ textView: UITextView) {
         reapplyMarkdown()
-        typingAttributes = MarkdownUIKitStyle.standard.typingAttributes
+        typingAttributes = MarkdownUIKitStyle(metrics: metrics).typingAttributes
     }
 
     private func reapplyMarkdown() {
-        let parsed = MarkdownParser.parse(text)
+        let parsed = MarkdownParser.parse(text, style: MarkdownStyleSpec(metrics: metrics))
         lastSyntaxRangeCount = parsed.syntaxRanges.count
         // Apply attributes only (characters are identical — verbatim invariant), so
         // the storage reports .editedAttributes and textViewDidChange doesn't recurse.

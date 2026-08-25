@@ -5,12 +5,15 @@ import AppKit
 public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManagerDelegate {
     /// Weak handle for the smoke/probe harness to drive the live editor.
     public static weak var live: EditorTextView?
+    /// The metrics this editor instance renders with.
+    public let metrics: MarkdownMetrics
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
     private var lastSyntaxRangeCount = 0
 
-    public init() {
+    public init(metrics: MarkdownMetrics = .standard) {
+        self.metrics = metrics
         markdownStorage = NSTextStorage()
         markdownLayout = EditorLayoutManager()
         markdownStorage.addLayoutManager(markdownLayout)
@@ -38,8 +41,8 @@ public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManag
         minSize = NSSize(width: 0, height: 0)
         maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         autoresizingMask = [.width]
-        textContainerInset = NSSize(width: 48, height: 28)   // Obsidian-like margins
-        font = MarkdownStyle.standard.bodyFont
+        textContainerInset = NSSize(width: metrics.textContainerInsetWidth, height: metrics.textContainerInsetHeight)   // Obsidian-like margins
+        font = MarkdownStyle(metrics: metrics).bodyFont
         textColor = .labelColor
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
@@ -82,11 +85,11 @@ public final class EditorTextView: NSTextView, NSTextViewDelegate, NSLayoutManag
 
     public func textDidChange(_ notification: Notification) {
         reapplyMarkdown()
-        typingAttributes = MarkdownStyle.standard.typingAttributes
+        typingAttributes = MarkdownStyle(metrics: metrics).typingAttributes
     }
 
     private func reapplyMarkdown() {
-        let parsed = MarkdownParser.parse(string)
+        let parsed = MarkdownParser.parse(string, style: MarkdownStyleSpec(metrics: metrics))
         lastSyntaxRangeCount = parsed.syntaxRanges.count
         // Apply attributes only (characters are identical — verbatim invariant), so the
         // storage reports .editedAttributes and the guard above stops the loop.

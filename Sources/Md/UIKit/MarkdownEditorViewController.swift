@@ -8,8 +8,19 @@ import UIKit
 /// (UIViewControllerRepresentable) or present it directly.
 @MainActor
 open class MarkdownEditorViewController: UIViewController {
+    /// The metrics this editor instance renders with.
+    public let metrics: MarkdownMetrics
     /// The markdown editor text view (full-bleed in the controller's view).
-    public let textView = EditorTextView()
+    public let textView: EditorTextView
+
+    public init(metrics: MarkdownMetrics = .standard) {
+        self.metrics = metrics
+        self.textView = EditorTextView(metrics: metrics)
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    public required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     open override func viewDidLoad() {
         super.viewDidLoad()

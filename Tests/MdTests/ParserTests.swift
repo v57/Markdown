@@ -45,7 +45,7 @@ import AppKit
         #expect(MarkdownParser.parse("## Hi").blocks == [.heading(level: 2, text: "Hi")])
         let h = MarkdownParser.parse("# Hi").attributed
         #expect(h.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil)
-        #expect((h.attribute(.font, at: 3, effectiveRange: nil) as? NSFont)?.pointSize == 28)
+        #expect((h.attribute(.font, at: 3, effectiveRange: nil) as? NSFont)?.pointSize == 26)
         #expect(MarkdownParser.parse("Title\n===").blocks == [.heading(level: 1, text: "Title")])
         #expect(MarkdownParser.parse("Title\n---").blocks == [.heading(level: 2, text: "Title")])
     }
@@ -96,6 +96,9 @@ import AppKit
     @Test func inlineCodeChips() {
         let code = MarkdownParser.parse("`x`").attributed
         #expect((code.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)?.fontName.contains("Mono") == true)
+        // Chip design spec: inline code is container-size − 1 — 13−1 = 12pt in body
+        // (fenced code stays 14pt).
+        #expect((code.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)?.pointSize == 12)
         // Inline code content is marked .markdownInlineCode (the layout manager draws
         // a rounded chip) — NOT .backgroundColor (a flat rect can't round corners).
         #expect(code.attribute(.markdownInlineCode, at: 1, effectiveRange: nil) != nil)
@@ -105,6 +108,26 @@ import AppKit
         // caret is outside the span (only the backtick delimiters collapse). Regression
         // for: cmark leaves have no children, so markGaps used to mark the whole span.
         #expect(code.attribute(.markdownSyntax, at: 1, effectiveRange: nil) == nil)
+    }
+
+    @Test func inlineCodeScalesWithContainer() {
+        // Inline code is container-size − 1: larger inside headings, so code stays
+        // readable next to big heading text.
+        let h1 = MarkdownParser.parse("# `x`").attributed
+        let h1Size = (h1.attribute(.font, at: 3, effectiveRange: nil) as? NSFont)?.pointSize
+        #expect(h1Size == 25)  // h1 = 26pt → 26 − 1
+
+        let h6 = MarkdownParser.parse("###### `x`").attributed
+        let h6Size = (h6.attribute(.font, at: 8, effectiveRange: nil) as? NSFont)?.pointSize
+        #expect(h6Size == 11)  // h6 = 12pt → 12 − 1
+
+        // Body stays 13 − 1 = 12.
+        let body = MarkdownParser.parse("`x`").attributed
+        #expect((body.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)?.pointSize == 12)
+
+        // The heading's own text keeps its full size (only code shrinks by 1).
+        let headingText = (h1.attribute(.font, at: 2, effectiveRange: nil) as? NSFont)?.pointSize
+        #expect(headingText == 26)
     }
 
     @Test func doubleBacktickSpans() {
@@ -211,7 +234,7 @@ import AppKit
     @Test func sampleDocument() {
         let sd = MarkdownParser.parse(SampleDocument.text)
         #expect(sd.attributed.string == SampleDocument.text)
-        #expect(sd.blocks.filter { if case .heading = $0 { return true } else { return false } }.count == 4)
+        #expect(sd.blocks.filter { if case .heading = $0 { return true } else { return false } }.count == 2)
         #expect(sd.blocks.contains { if case .taskList = $0 { return true } else { return false } })
         #expect(sd.blocks.contains { if case .codeFence = $0 { return true } else { return false } })
         #expect(sd.blocks.contains { if case .table = $0 { return true } else { return false } })
@@ -306,6 +329,12 @@ import AppKit
         #expect(lmDoc.attributed.attribute(.markdownListMarker, at: 0, effectiveRange: nil) != nil)
         #expect(lmDoc.attributed.attribute(.markdownListMarker, at: 4, effectiveRange: nil) != nil)
         #expect(lmDoc.attributed.attribute(.markdownListMarker, at: 9, effectiveRange: nil) != nil)
+        // Markers render systemBlue (both `-` and `1.`), overriding the syntax gray.
+        #expect(lmDoc.attributed.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == .systemBlue)
+        #expect(lmDoc.attributed.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor == .systemBlue)
+        #expect(lmDoc.attributed.attribute(.foregroundColor, at: 9, effectiveRange: nil) as? NSColor == .systemBlue)
+        // The item text keeps the body color, not the marker blue.
+        #expect(lmDoc.attributed.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor == .labelColor)
         let lmDoc2 = MarkdownParser.parse("- a").attributed
         let lmStorage2 = NSTextStorage(attributedString: lmDoc2)
         let lmLM2 = EditorLayoutManager()

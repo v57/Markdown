@@ -63,6 +63,7 @@ public enum MarkdownRenderer {
         case .link: return .linkColor
         case .separator: return .separatorColor
         case .systemRed: return .systemRed
+        case .systemBlue: return .systemBlue
         case .controlAccent: return .controlAccentColor
         case .systemBackground: return .windowBackgroundColor
         case .quaternarySystemFill: return .quaternarySystemFill
@@ -70,19 +71,20 @@ public enum MarkdownRenderer {
     }
 
     private static func resolveAppKit(_ font: MarkdownFont) -> NSFont {
+        let m = MarkdownMetrics.standard
         switch font.kind {
         case .body:
-            return base(font, default: .systemFont(ofSize: 15))
+            return base(font, default: .systemFont(ofSize: m.bodyFontSize))
         case .code:
-            return base(font, default: .monospacedSystemFont(ofSize: 14, weight: .regular))
+            return base(font, default: .monospacedSystemFont(ofSize: m.codeFontSize, weight: .regular))
         case .heading(let level):
-            let sizes: [CGFloat] = [28, 24, 20, 17, 15, 13]
-            let size = sizes[max(0, min(5, level - 1))]
+            let size = m.headingSizes[max(0, min(5, level - 1))]
             let weight: NSFont.Weight = level <= 3 ? .bold : .semibold
             let f = NSFont.systemFont(ofSize: size, weight: weight)
             return withTraits(font, on: f)
         case .chrome:
-            return base(font, default: .systemFont(ofSize: 11, weight: .semibold))
+            let w: NSFont.Weight = m.chromeFontWeight == .bold ? .bold : .semibold
+            return base(font, default: .systemFont(ofSize: m.chromeFontSize, weight: w))
         }
     }
 
@@ -127,6 +129,7 @@ public enum MarkdownRenderer {
         case .link: return .link
         case .separator: return .separator
         case .systemRed: return .systemRed
+        case .systemBlue: return .systemBlue
         case .controlAccent: return .tintColor
         case .systemBackground: return .systemBackground
         case .quaternarySystemFill: return .quaternarySystemFill
@@ -134,6 +137,7 @@ public enum MarkdownRenderer {
     }
 
     private static func resolveUIKit(_ font: MarkdownFont) -> UIFont {
+        let m = MarkdownMetrics.standard
         let weight: UIFont.Weight = {
             switch font.weight {
             case .regular: return .regular
@@ -146,8 +150,7 @@ public enum MarkdownRenderer {
         case .code:
             f = .monospacedSystemFont(ofSize: font.size, weight: weight)
         case .heading(let level):
-            let sizes: [CGFloat] = [28, 24, 20, 17, 15, 13]
-            let size = sizes[max(0, min(5, level - 1))]
+            let size = m.headingSizes[max(0, min(5, level - 1))]
             let w: UIFont.Weight = level <= 3 ? .bold : .semibold
             f = .systemFont(ofSize: size, weight: w)
         default:

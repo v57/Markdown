@@ -13,6 +13,7 @@ struct MarkdownStyleSpecTests {
         #expect(style.linkColor == .link)
         #expect(style.quoteTextColor == .secondaryLabel)
         #expect(style.quoteBarColor == .systemRed)
+        #expect(style.listMarkerColor == .systemBlue)
         #expect(style.ruleColor == .separator)
         #expect(style.checkedTextColor == .secondaryLabel)
     }
@@ -21,7 +22,7 @@ struct MarkdownStyleSpecTests {
         let style = MarkdownStyleSpec.standard
         let body = style.bodyFont()
         #expect(body.kind == .body)
-        #expect(body.size == 15)
+        #expect(body.size == 13)
         #expect(body.weight == .regular)
         #expect(body.traits.isEmpty)
         let code = style.codeFont()
@@ -34,37 +35,37 @@ struct MarkdownStyleSpecTests {
     @Test func headingFontsMatchMacOSDefaults() {
         let style = MarkdownStyleSpec.standard
         let h1 = style.headingFont(level: 1)
-        #expect(h1.size == 28)
+        #expect(h1.size == 26)
         #expect(h1.weight == .bold)
         let h2 = style.headingFont(level: 2)
-        #expect(h2.size == 24)
+        #expect(h2.size == 20)
         #expect(h2.weight == .bold)
         let h3 = style.headingFont(level: 3)
-        #expect(h3.size == 20)
+        #expect(h3.size == 16)
         #expect(h3.weight == .bold)
         let h4 = style.headingFont(level: 4)
-        #expect(h4.size == 17)
+        #expect(h4.size == 14)
         #expect(h4.weight == .semibold)
         let h6 = style.headingFont(level: 6)
-        #expect(h6.size == 13)
+        #expect(h6.size == 12)
         #expect(h6.weight == .semibold)
         // Out-of-range levels clamp like the macOS implementation.
-        #expect(style.headingFont(level: 0).size == 28)
-        #expect(style.headingFont(level: 99).size == 13)
+        #expect(style.headingFont(level: 0).size == 26)
+        #expect(style.headingFont(level: 99).size == 12)
     }
 
     @Test func paragraphsMatchMacOSDefaults() {
         let style = MarkdownStyleSpec.standard
         let body = style.bodyParagraph()
-        #expect(body.lineSpacing == 2)
+        #expect(body.lineSpacing == 5)
         #expect(body.paragraphSpacing == 6)
 
         let h1 = style.headingParagraph(level: 1)
-        #expect(h1.paragraphSpacingBefore == 12)
-        #expect(h1.paragraphSpacing == 8)
+        #expect(h1.paragraphSpacingBefore == 18)
+        #expect(h1.paragraphSpacing == 15)
         let h3 = style.headingParagraph(level: 3)
-        #expect(h3.paragraphSpacingBefore == 8)
-        #expect(h3.paragraphSpacing == 6)
+        #expect(h3.paragraphSpacingBefore == 14)
+        #expect(h3.paragraphSpacing == 13)
 
         let list = style.listParagraph(level: 1, markerWidth: 18)
         #expect(list.firstLineHeadIndent == 24)
@@ -119,5 +120,82 @@ struct MarkdownStyleSpecTests {
         #expect(MarkdownColor.label == MarkdownColor.label)
         #expect(MarkdownColor.label != MarkdownColor.secondaryLabel)
         #expect(MarkdownColor.rgb(0x24292E) != MarkdownColor.label)
+    }
+
+    // MARK: - MarkdownMetrics (single source of truth)
+
+    @Test func standardMetricsMatchOriginalDefaults() {
+        let m = MarkdownMetrics.standard
+        // Fonts
+        #expect(m.bodyFontSize == 13)
+        #expect(m.codeFontSize == 14)
+        #expect(m.headingSizes == [26, 20, 16, 14, 13, 12])
+        #expect(m.chromeFontSize == 11)
+        #expect(m.chromeFontWeight == .semibold)
+        #expect(m.checkboxImageSize == 13)
+        // Paragraphs
+        #expect(m.bodyLineSpacing == 5)
+        #expect(m.bodyParagraphSpacing == 6)
+        #expect(m.headingParagraphSpacingBefore == 18)
+        #expect(m.headingParagraphSpacingBeforeMinor == 8)
+        #expect(m.headingParagraphSpacing == 15)
+        #expect(m.headingParagraphSpacingMinor == 15)
+        #expect(m.listIndentPerLevel == 24)
+        #expect(m.listParagraphSpacing == 3)
+        #expect(m.listMarkerWidthBullet == 18)
+        #expect(m.listMarkerWidthOrdered == 30)
+        #expect(m.listMarkerWidthTask == 24)
+        #expect(m.quoteIndent == 12)
+        #expect(m.quoteParagraphSpacing == 6)
+        // Layout / drawing
+        #expect(m.textContainerInsetWidth == 48)
+        #expect(m.textContainerInsetHeight == 28)
+        #expect(m.codeBlockCornerRadius == 6)
+        #expect(m.inlineCodeChipHPad == 3)
+        #expect(m.inlineCodeChipVInset == 2)
+        #expect(m.inlineCodeChipMaxRadius == 5)
+        #expect(m.inlineCodeChipStrokeWidth == 0.5)
+        #expect(m.inlineCodeFontSize == 12)
+        #expect(m.quoteBarWidth == 3)
+        #expect(m.quoteBarCornerRadius == 1.5)
+        #expect(m.ruleStrokeWidth == 1)
+        #expect(m.codeChromeTopOffset == 2)
+        #expect(m.codeChromeInset == 10)
+        #expect(m.copyHitPaddingX == 6)
+        #expect(m.copyHitPaddingY == 4)
+        #expect(m.checkboxScaleFactor == 1.2)
+        #expect(m.checkboxMinSize == 14)
+        #expect(m.imageHeightScale == 1.05)
+        #expect(m.checkboxCornerRadius == 3)
+        #expect(m.checkboxStrokeWidth == 1.2)
+        #expect(m.checkboxCheckStrokeWidth == 1.6)
+    }
+
+    @Test func metricsDriveStyleSpec() {
+        var custom = MarkdownMetrics.standard
+        custom.bodyFontSize = 20
+        custom.bodyLineSpacing = 4
+        custom.bodyParagraphSpacing = 10
+        custom.headingSizes = [40, 32, 26, 20, 16, 14]
+        custom.listIndentPerLevel = 30
+        custom.quoteIndent = 18
+        let style = MarkdownStyleSpec(metrics: custom)
+        #expect(style.bodyFont().size == 20)
+        #expect(style.bodyParagraph().lineSpacing == 4)
+        #expect(style.bodyParagraph().paragraphSpacing == 10)
+        #expect(style.headingFont(level: 1).size == 40)
+        #expect(style.headingFont(level: 6).size == 14)
+        #expect(MarkdownMetrics.standard.inlineCodeFont().size == 12)
+        #expect(MarkdownMetrics.standard.inlineCodeFont().kind == .code)
+        #expect(style.listParagraph(level: 1, markerWidth: 10).firstLineHeadIndent == 30)
+        #expect(style.quoteParagraph().firstLineHeadIndent == 18)
+        #expect(style.listMarkerWidth(task: false, ordered: false) == 18)
+    }
+
+    @Test func metricsMarkerWidths() {
+        let m = MarkdownMetrics.standard
+        #expect(m.listMarkerWidth(task: true, ordered: false) == 24)
+        #expect(m.listMarkerWidth(task: false, ordered: true) == 30)
+        #expect(m.listMarkerWidth(task: false, ordered: false) == 18)
     }
 }
