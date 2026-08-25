@@ -1,17 +1,15 @@
 #if canImport(UIKit)
-import UIKit
+  import UIKit
 
-/// UIKit implementation of the platform-neutral `MarkdownStyling` contract.
-/// Mirrors the AppKit `MarkdownStyle` numeric values EXACTLY: colors resolve to
-/// dynamic `UIColor` system roles (automatic dark/light support), fonts to
-/// `UIFont`, paragraphs to `NSParagraphStyle` — all via `MarkdownRenderer`.
-public struct MarkdownUIKitStyle: MarkdownStyling {
+  /// UIKit implementation of the platform-neutral `MarkdownStyling` contract.
+  /// Mirrors the AppKit `MarkdownStyle` numeric values EXACTLY: colors resolve to
+  /// dynamic `UIColor` system roles (automatic dark/light support), fonts to
+  /// `UIFont`, paragraphs to `NSParagraphStyle` — all via `MarkdownRenderer`.
+  public struct MarkdownUIKitStyle: MarkdownStyling {
     /// Metrics this style reads from — the single source of truth.
     public var metrics: MarkdownMetrics
 
-    public init(metrics: MarkdownMetrics = .standard) {
-        self.metrics = metrics
-    }
+    public init(metrics: MarkdownMetrics = .standard) { self.metrics = metrics }
 
     // MARK: - Colors (same semantic roles as MarkdownStyle on macOS)
 
@@ -28,52 +26,38 @@ public struct MarkdownUIKitStyle: MarkdownStyling {
 
     // MARK: - Fonts
 
-    public func bodyFont() -> MarkdownFont {
-        metrics.bodyFont()
-    }
+    public func bodyFont() -> MarkdownFont { metrics.bodyFont() }
 
-    public func codeFont() -> MarkdownFont {
-        metrics.codeFont()
-    }
+    public func codeFont() -> MarkdownFont { metrics.codeFont() }
 
-    public func headingFont(level: Int) -> MarkdownFont {
-        metrics.headingFont(level: level)
-    }
+    public func headingFont(level: Int) -> MarkdownFont { metrics.headingFont(level: level) }
 
     /// Bold/italic emphasis on top of a base font — traits are ADDED to the
     /// base's traits (matches the macOS `emphasisFont` behavior).
     public func emphasisFont(base: MarkdownFont, bold: Bool, italic: Bool) -> MarkdownFont {
-        var traits = base.traits
-        if bold { traits.insert(.bold) }
-        if italic { traits.insert(.italic) }
-        return base.addingTraits(traits)
+      var traits = base.traits
+      if bold { traits.insert(.bold) }
+      if italic { traits.insert(.italic) }
+      return base.addingTraits(traits)
     }
 
     // MARK: - Paragraphs
 
-    public func bodyParagraph() -> MarkdownParagraph {
-        metrics.bodyParagraph()
-    }
+    public func bodyParagraph() -> MarkdownParagraph { metrics.bodyParagraph() }
 
     public func headingParagraph(level: Int) -> MarkdownParagraph {
-        metrics.headingParagraph(level: level)
+      metrics.headingParagraph(level: level)
     }
 
     public func listParagraph(level: Int, markerWidth: CGFloat) -> MarkdownParagraph {
-        metrics.listParagraph(level: level, markerWidth: markerWidth)
+      metrics.listParagraph(level: level, markerWidth: markerWidth)
     }
 
-    public func quoteParagraph() -> MarkdownParagraph {
-        metrics.quoteParagraph()
-    }
+    public func quoteParagraph() -> MarkdownParagraph { metrics.quoteParagraph() }
 
-    public func codeParagraph() -> MarkdownParagraph {
-        metrics.codeParagraph()
-    }
+    public func codeParagraph() -> MarkdownParagraph { metrics.codeParagraph() }
 
-    public func tableParagraph() -> MarkdownParagraph {
-        metrics.tableParagraph()
-    }
+    public func tableParagraph() -> MarkdownParagraph { metrics.tableParagraph() }
 
     /// The default style. Computed (not a stored global) so the value type stays
     /// trivially Sendable under Swift 6.
@@ -83,10 +67,15 @@ public struct MarkdownUIKitStyle: MarkdownStyling {
 
     public var bodyUIFont: UIFont { MarkdownRenderer.resolve(bodyFont()) as! UIFont }
     public var codeUIFont: UIFont { MarkdownRenderer.resolve(codeFont()) as! UIFont }
-    public func headingUIFont(level: Int) -> UIFont { MarkdownRenderer.resolve(headingFont(level: level)) as! UIFont }
+    public func headingUIFont(level: Int) -> UIFont {
+      MarkdownRenderer.resolve(headingFont(level: level)) as! UIFont
+    }
     public func color(_ c: MarkdownColor) -> UIColor { MarkdownRenderer.resolve(c) as! UIColor }
     public var typingAttributes: [NSAttributedString.Key: Any] {
-        [.font: bodyUIFont, .foregroundColor: color(textColor), .paragraphStyle: MarkdownRenderer.resolve(bodyParagraph())]
+      [
+        .font: bodyUIFont, .foregroundColor: color(textColor),
+        .paragraphStyle: MarkdownRenderer.resolve(bodyParagraph()),
+      ]
     }
-}
+  }
 #endif
