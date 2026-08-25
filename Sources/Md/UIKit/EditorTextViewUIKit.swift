@@ -12,6 +12,11 @@
     public static weak var live: EditorTextView?
     /// The metrics this editor instance renders with.
     public let metrics: MarkdownMetrics
+    /// Called with the full text after every user edit (NOT for programmatic
+    /// `setText`). Lets a host (e.g. a note editor) observe the document text.
+    /// `@MainActor` because edits fire on the main thread and hosts will call
+    /// back into MainActor code (e.g. a note store).
+    public var onChange: (@MainActor (String) -> Void)?
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
@@ -67,6 +72,15 @@
       addGestureRecognizer(tap)
     }
 
+    /// Replaces the document with `newText` and re-applies styling. Programmatic,
+    /// so it does NOT fire `textViewDidChange` — `onChange` is not called (a host
+    /// that wants to observe edits still gets them via the normal edit path). Used
+    /// by hosts that inflate the editor with existing content (e.g. a note editor).
+    public func setText(_ newText: String) {
+      text = newText
+      reapplyMarkdown()
+    }
+
     // MARK: - Derived styling (re-parse on every character edit)
 
     /// Re-styling runs in `textViewDidChange`, which fires AFTER the edit settles
@@ -83,6 +97,7 @@
     public func textViewDidChange(_ textView: UITextView) {
       reapplyMarkdown()
       typingAttributes = MarkdownUIKitStyle(metrics: metrics).typingAttributes
+      onChange?(text)
     }
 
     private func reapplyMarkdown() {

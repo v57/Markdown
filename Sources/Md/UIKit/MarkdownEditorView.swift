@@ -10,11 +10,27 @@
     /// Metrics used for this editor instance. Defaults to `MarkdownMetrics.standard`;
     /// pass a customized `MarkdownMetrics` to re-theme spacing/fonts/geometry.
     public var metrics: MarkdownMetrics
+    /// Inflates the editor with this text on creation. `nil` (default) keeps the
+    /// built-in sample document — a host that owns the content passes it explicitly.
+    public var text: String?
+    /// Called with the full document text after every user edit.
+    public var onChange: @MainActor (String) -> Void
 
-    public init(metrics: MarkdownMetrics = .standard) { self.metrics = metrics }
+    public init(
+      metrics: MarkdownMetrics = .standard,
+      text: String? = nil,
+      onChange: @escaping @MainActor (String) -> Void = { _ in }
+    ) {
+      self.metrics = metrics
+      self.text = text
+      self.onChange = onChange
+    }
 
     public func makeUIViewController(context: Context) -> MarkdownEditorViewController {
-      MarkdownEditorViewController(metrics: metrics)
+      let controller = MarkdownEditorViewController(metrics: metrics)
+      if let text { controller.textView.setText(text) }
+      controller.textView.onChange = onChange
+      return controller
     }
 
     public func updateUIViewController(
