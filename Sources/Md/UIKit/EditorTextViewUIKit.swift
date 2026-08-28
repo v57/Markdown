@@ -7,7 +7,7 @@
   /// checkbox tap-to-toggle, code-block copy buttons, smart list/quote
   /// continuation on Return, and link handling.
   @MainActor
-  public final class EditorTextView: UITextView, UITextViewDelegate, NSLayoutManagerDelegate {
+  public final class EditorTextView: UITextView, UITextViewDelegate, NSLayoutManagerDelegate, UIGestureRecognizerDelegate {
     /// Weak handle for the smoke/probe harness to drive the live editor.
     public static weak var live: EditorTextView?
     /// The metrics this editor instance renders with.
@@ -67,8 +67,16 @@
       markdownLayout.delegate = self
       // Link interaction (tappable links in the rendered text).
       isSelectable = true
-      // Tap-to-toggle checkboxes and copy buttons.
+      // Tap-to-toggle checkboxes and copy buttons. This custom tap recognizer
+      // MUST allow SIMULTANEOUS recognition with the text view's own private
+      // tap gesture that makes it first responder: by default a developer
+      // UITapGestureRecognizer forces the built-in tap-to-edit recognizer to
+      // fail, so tapping a note never summons the keyboard (documented UIKit
+      // behaviour). Allow simultaneous + keep touches in view so a tap on
+      // non-interactive content still falls through to editing.
       let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+      tap.delegate = self
+      tap.cancelsTouchesInView = false
       addGestureRecognizer(tap)
     }
 
@@ -226,6 +234,21 @@
       return layoutManager.characterIndex(
         for: pointInContainer, in: textContainer,
         fractionOfDistanceBetweenInsertionPoints: &fraction)
+    }
+
+    // MARK: - UIGestureRecognizerDelegate
+
+    /// Let the checkbox/copy tap recognizer run TOGETHER with the text view's
+    /// internal tap-to-edit recognizer, so tapping the editor both toggles
+    /// interactive content AND raises the keyboard. Without this the custom
+    /// recognizer forces the built-in one to fail and the keyboard never shows
+    /// on tap (see configure()). Other recognizers (scroll pan, link tap) may
+    /// also run simultaneously — that is the standard editing behaviour.
+    public func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      true
     }
 
     // MARK: - Smart list continuation on Return (Obsidian-style)
