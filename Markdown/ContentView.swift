@@ -23,7 +23,8 @@ import SwiftUI
 
   var body: some Scene {
     WindowGroup("Markdown") { MarkdownEditorView().frame(minWidth: 480, minHeight: 360) }
-      .defaultSize(width: 900, height: 700)#if os(macOS)
+      .defaultSize(width: 900, height: 700)
+      #if os(macOS)
         .commands { TextEditingCommands() }  // standard Edit menu so ⌘C/V/X/Z work
       #endif
   }
