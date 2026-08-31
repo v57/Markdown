@@ -9,12 +9,10 @@
 /* Begin PBXBuildFile section */
 		267577A53037283100FB9989 /* Md in Frameworks */ = {isa = PBXBuildFile; productRef = 267577A43037283100FB9989 /* Md */; };
 		269C449B303192220055AD81 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 269C449A303192220055AD81 /* Markdown */; };
-		26B6F287303441E5003711C9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 26B6F286303441E5003711C9 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* Markdown.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Markdown.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		26B6F286303441E5003711C9 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -39,7 +37,6 @@
 		000000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				26B6F286303441E5003711C9 /* AppIcon.icon */,
 				000000000000000000000010 /* Markdown */,
 				000000000000000000000020 /* Products */,
 			);
@@ -120,7 +117,6 @@
 		000000000000000140000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
-				26B6F287303441E5003711C9 /* AppIcon.icon in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
