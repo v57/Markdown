@@ -307,6 +307,65 @@
       }
     }
 
+    // MARK: - Trailing empty line (Select/Down past the last line)
+
+    /// True when the document has text and does NOT end in a newline — i.e. its
+    /// LAST line is non-empty. TextKit 1 lays out no line fragment for a trailing
+    /// empty line, so the caret/selection cannot move past a non-empty last line.
+    /// Other editors behave as if there is always one more (empty) line after the
+    /// last line of text. When the user navigates / extends a selection past such a
+    /// line, we append a trailing "\n" so the empty line becomes real & selectable.
+    private var hasNonEmptyLastLine: Bool {
+      let ns = string as NSString
+      return ns.length > 0 && !string.hasSuffix("\n")
+    }
+
+    /// Appends a "\n" at the end (creating an empty final line). Keeps the caret at
+    /// the new end, or extends the current selection's focus to it when
+    /// `extendingSelection`. Uses the standard edit path so reapply + undo fire.
+    private func appendTrailingNewline(extendingSelection: Bool) {
+      let ns = string as NSString
+      let end = ns.length
+      let prior = selectedRange()
+      guard shouldChangeText(in: NSRange(location: end, length: 0), replacementString: "\n")
+      else { return }
+      textStorage?.replaceCharacters(in: NSRange(location: end, length: 0), with: "\n")
+      didChangeText()
+      if extendingSelection {
+        // The anchor is the selection's start; extend the focus to the new (empty)
+        // final line. newLen == oldLen + 1, so this range is always valid.
+        let anchor = prior.location
+        let newLen = (string as NSString).length
+        setSelectedRange(NSRange(location: anchor, length: newLen - anchor))
+      } else {
+        setSelectedRange(NSRange(location: (string as NSString).length, length: 0))
+      }
+    }
+
+    /// Shift+Down / Down at the very end of a non-empty last line: `super` does
+    /// nothing (there is no line fragment to move to). Creating the empty line and
+    /// moving onto it matches standard editor behavior.
+    public override func moveDown(_ sender: Any?) {
+      let ns = string as NSString
+      if selectedRange().length == 0, ns.length > 0, selectedRange().location == ns.length,
+        hasNonEmptyLastLine {
+        appendTrailingNewline(extendingSelection: false)
+        return
+      }
+      super.moveDown(sender)
+    }
+
+    /// Shift+Down extend-selection past a non-empty last line: produce the empty
+    /// line so the selection can keep growing (like other editors).
+    public override func moveDownAndModifySelection(_ sender: Any?) {
+      let ns = string as NSString
+      if ns.length > 0, NSMaxRange(selectedRange()) >= ns.length, hasNonEmptyLastLine {
+        appendTrailingNewline(extendingSelection: true)
+        return
+      }
+      super.moveDownAndModifySelection(sender)
+    }
+
     public override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
       if window != nil {
