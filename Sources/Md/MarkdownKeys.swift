@@ -9,15 +9,27 @@ extension NSAttributedString.Key {
   /// Marks inline image ranges ("![alt](url)"); the layout manager draws a cached image
   /// in place of the range once loaded (keeps the source string verbatim).
   public static let markdownImage = NSAttributedString.Key("MarkdownImage")
-  /// Marks fenced-code content ranges; the layout manager draws the continuous
-  /// full-width background block (per-line backgrounds would show seams).
+  /// Marks fenced-code CONTENT ranges; the layout manager draws the continuous
+  /// full-width background block (per-line backgrounds would show seams). This
+  /// span covers the code-content lines only (NOT the ``` fence lines) — it drives
+  /// chrome anchoring, the language label, and what Copy copies.
   public static let markdownCodeBlock = NSAttributedString.Key("MarkdownCodeBlock")
+  /// Marks the FULL fenced-code block (content PLUS the ``` open/close fence lines)
+  /// for the continuous background FILL only. Value is an NSValue-wrapped NSRange
+  /// of the whole block. `.markdownCodeBlock` stays content-only so chrome/Copy are
+  /// unaffected; this key lets the background cover the fence lines too.
+  public static let markdownCodeBlockFill = NSAttributedString.Key("MarkdownCodeBlockFill")
   /// Marks horizontal-rule ranges; the layout manager draws a full-width line
   /// instead of the literal dashes.
   public static let markdownRule = NSAttributedString.Key("MarkdownRule")
   /// Marks list markers ("- ", "* ", "1. ") that are ALWAYS shown (never hidden or
   /// collapsed), even on inactive lines — Obsidian-style persistent bullets.
   public static let markdownListMarker = NSAttributedString.Key("MarkdownListMarker")
+  /// Marks the actual bullet character of a plain UNORDERED list marker ("-", "*",
+  /// "+"). The layout manager substitutes its glyph with "•" (U+2022) so a hyphen
+  /// renders as a bullet while the source keeps the literal "-". Ordered markers
+  /// ("1.") and task list "-" do NOT carry this.
+  public static let markdownBullet = NSAttributedString.Key("MarkdownBullet")
   /// Marks BLOCK-level syntax (heading prefix, blockquote '>', code fences, table
   /// pipes, setext underline, rule): shown while the caret is anywhere on the line.
   public static let markdownLineCommand = NSAttributedString.Key("MarkdownLineCommand")

@@ -140,7 +140,12 @@ open class EditorLayoutManagerCore: NSLayoutManager {
 
   // TextKit 1 layout runs on the main thread; these caches are only touched from
   // setGlyphs/drawGlyphs (main-thread callbacks), so they are safe to treat as
-  // nonisolated shared state under Swift 6.
+  // nonisolated shared state under Swift 6. Under Swift Testing, however, the
+  // headless probes run layout on CONCURRENT test threads, so a bare Dictionary is
+  // a data race (a corrupted cache crashed the suite with "unrecognized selector").
+  // Guard ALL glyph caches with one lock. setGlyphs/drawGlyphs callers hold it only
+  // briefly, and the cache is a small constant-size dictionary, so contention is nil.
+  private static nonisolated(unsafe) let glyphCacheLock = NSLock()
   private static nonisolated(unsafe) var zeroGlyphCache: [String: CGGlyph] = [:]
 
   /// A real glyph with zero advancement for the given font. NSNullGlyph + .null property
@@ -150,7 +155,12 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   /// the run intact. Fonts without a zero-width glyph (SF Mono) fall back to space.
   private static func zeroGlyph(for font: PlatformFont) -> CGGlyph {
     let key = font.fontName
-    if let cached = zeroGlyphCache[key] { return cached }
+    glyphCacheLock.lock()
+    if let cached = zeroGlyphCache[key] {
+      glyphCacheLock.unlock()
+      return cached
+    }
+    glyphCacheLock.unlock()
     var glyph = CGGlyph(0)
     for char: UniChar in [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF] {
       var ch: [UniChar] = [char]
@@ -171,7 +181,9 @@ open class EditorLayoutManagerCore: NSLayoutManager {
       CTFontGetGlyphsForCharacters(font as CTFont, &sp, &spg, 1)
       glyph = spg[0]
     }
+    glyphCacheLock.lock()
     zeroGlyphCache[key] = glyph
+    glyphCacheLock.unlock()
     return glyph
   }
 
@@ -183,7 +195,12 @@ open class EditorLayoutManagerCore: NSLayoutManager {
 
   private static func checkboxSlotGlyph(for font: PlatformFont) -> CGGlyph {
     let key = font.fontName
-    if let cached = checkboxSlotGlyphCache[key] { return cached }
+    glyphCacheLock.lock()
+    if let cached = checkboxSlotGlyphCache[key] {
+      glyphCacheLock.unlock()
+      return cached
+    }
+    glyphCacheLock.unlock()
     var glyph = CGGlyph(0)
     for char: UniChar in [0x2002, 0x2000] {  // EN SPACE, EN QUAD — both 0.5 em
       var ch: [UniChar] = [char]
@@ -200,8 +217,51 @@ open class EditorLayoutManagerCore: NSLayoutManager {
       CTFontGetGlyphsForCharacters(font as CTFont, &sp, &spg, 1)
       glyph = spg[0]
     }
+    glyphCacheLock.lock()
     checkboxSlotGlyphCache[key] = glyph
+    glyphCacheLock.unlock()
     return glyph
+  }
+
+  /// Substitutes the plain unordered marker character ("-", "*", "+") with the
+  /// BULLET glyph "•" (U+2022) so a hyphen renders as a bullet while the source
+  /// keeps the literal "-" (the verbatim invariant survives: glyph substitution
+  /// never touches the attributed string). Ordered markers ("1.") and task-list
+  /// "-" do NOT carry .markdownBullet and are left alone. Falls back to the plain
+  /// marker glyph if the font has no bullet.
+  private static nonisolated(unsafe) var bulletGlyphCache: [String: CGGlyph] = [:]
+
+  private static func bulletGlyph(for font: PlatformFont) -> CGGlyph {
+    let key = font.fontName
+    glyphCacheLock.lock()
+    if let cached = bulletGlyphCache[key] {
+      glyphCacheLock.unlock()
+      return cached
+    }
+    glyphCacheLock.unlock()
+    var glyph = CGGlyph(0)
+    var ch: [UniChar] = [0x2022]  // •
+    var gl = [CGGlyph](repeating: 0, count: 1)
+    CTFontGetGlyphsForCharacters(font as CTFont, &ch, &gl, 1)
+    if gl[0] != 0 {
+      glyph = gl[0]
+    } else {
+      var m: [UniChar] = [0x2D]  // hyphen fallback
+      var mg = [CGGlyph](repeating: 0, count: 1)
+      CTFontGetGlyphsForCharacters(font as CTFont, &m, &mg, 1)
+      glyph = mg[0]
+    }
+    glyphCacheLock.lock()
+    bulletGlyphCache[key] = glyph
+    glyphCacheLock.unlock()
+    return glyph
+  }
+
+  /// True when the char is the actual bullet character of a plain unordered list
+  /// marker ("-", "*", "+"). Its glyph is substituted with "•" in setGlyphs.
+  private func isBulletChar(_ charIndex: Int, in storage: NSTextStorage) -> Bool {
+    guard charIndex >= 0, charIndex < storage.length else { return false }
+    return storage.attribute(.markdownBullet, at: charIndex, effectiveRange: nil) != nil
   }
   public override func setGlyphs(
     _ glyphs: UnsafePointer<CGGlyph>,
@@ -217,7 +277,9 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     }
     var zeroed = [Bool](repeating: false, count: glyphRange.length)
     var middleSlot = [Bool](repeating: false, count: glyphRange.length)
+    var bullet = [Bool](repeating: false, count: glyphRange.length)
     var slotGlyph: CGGlyph? = nil
+    var bulletGlyph: CGGlyph? = nil
     var anyChange = false
     for i in 0..<glyphRange.length {
       let charIndex = charIndexes[i]
@@ -227,6 +289,10 @@ open class EditorLayoutManagerCore: NSLayoutManager {
       } else if isCheckboxMiddle(charIndex, in: storage) {
         middleSlot[i] = true
         if slotGlyph == nil { slotGlyph = Self.checkboxSlotGlyph(for: font) }
+        anyChange = true
+      } else if isBulletChar(charIndex, in: storage) {
+        bullet[i] = true
+        if bulletGlyph == nil { bulletGlyph = Self.bulletGlyph(for: font) }
         anyChange = true
       }
     }
@@ -244,6 +310,9 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         newProps[i] = []  // real glyph, normal property — keeps the line fragment intact
       } else if middleSlot[i], let slotGlyph {
         newGlyphs[i] = slotGlyph
+        newProps[i] = props[i]
+      } else if bullet[i], let bulletGlyph {
+        newGlyphs[i] = bulletGlyph
         newProps[i] = props[i]
       } else {
         newGlyphs[i] = glyphs[i]
@@ -325,10 +394,16 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     let codeBlocks = EditorLayoutManagerCore.mergedCodeRuns(runs.codeRuns)
     copyButtons.removeAll(keepingCapacity: true)
     for r in codeBlocks {
-      guard let union = drawCodeBackground(forCharacterRange: r, at: origin) else { continue }
-      // super draws selection highlights and any background attributes over the code
+      // The background FILL covers the whole fenced block (content PLUS the ```
+      // open/close fence lines) — that's the `.markdownCodeBlockFill` attribute
+      // (NSValue(range:)) attached at the content start. The content-only run `r`
+      // still drives chrome anchoring, the language label, and what Copy copies.
+      let fillRange = codeBlockFillRange(for: r) ?? r
+      guard let union = drawCodeBackground(forCharacterRange: fillRange, at: origin) else { continue }
+      // super draws selection highlights and any background attributes over the
+      // whole block (fences included) so selection shows over every line.
       super.drawBackground(
-        forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil), at: origin)
+        forGlyphRange: glyphRange(forCharacterRange: fillRange, actualCharacterRange: nil), at: origin)
       drawCodeChrome(forCharacterRange: r, union: union, at: origin)
     }
     for r in runs.quoteRuns {
@@ -506,6 +581,20 @@ open class EditorLayoutManagerCore: NSLayoutManager {
       }
     }
     return out
+  }
+
+  /// The full fenced-block range for a content `.markdownCodeBlock` run `r`, read
+  /// from the `.markdownCodeBlockFill` attribute attached at the content start
+  /// (NSValue-wrapped NSRange covering the content PLUS the ``` fence lines). This
+  /// is what the background fill is drawn over. Returns nil when absent (e.g. an
+  /// unclosed fence, or content built without the fill attribute), so callers fall
+  /// back to the content run.
+  private func codeBlockFillRange(for run: NSRange) -> NSRange? {
+    guard let storage = textStorage, run.location < storage.length else { return nil }
+    let v =
+      storage.attribute(
+        .markdownCodeBlockFill, at: run.location, effectiveRange: nil) as? NSValue
+    return v?.rangeValue
   }
 
   /// Vertical bar at the container's left edge for a blockquote (Obsidian-style).

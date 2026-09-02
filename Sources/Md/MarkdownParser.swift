@@ -323,6 +323,12 @@ public enum MarkdownParser {
         // List markers (`-`, `1.`) render systemBlue, overriding the syntax gray.
         out.addAttribute(.foregroundColor, value: style.listMarkerColor, range: lmr)
       }
+      if let br = plan.bulletRange {
+        // Plain unordered marker character ("-", "*", "+") renders as "•" via
+        // glyph substitution — source keeps the literal "-", so the verbatim
+        // invariant holds. The marker stays listMarkerColor/always-visible.
+        out.addAttribute(.markdownBullet, value: true, range: br)
+      }
       if let cr = plan.checkboxRange, let checked = plan.checked {
         out.addAttribute(.markdownCheckbox, value: checked, range: cr)
         out.addAttribute(.markdownSyntax, value: true, range: cr)
@@ -370,6 +376,22 @@ public enum MarkdownParser {
     // plain runs and each line drew its own small rounded rect. Unioning the
     // span yields a single contiguous run → one full-height rounded block.
     for span in codeSpans { out.addAttribute(.markdownCodeBlock, value: true, range: span.range) }
+
+    // --- Full-block background (content + ``` fence lines) ---
+    // The background FILL should cover the fence lines too. The enclosing
+    // CodeBlock's AST range spans the opening ``` line through the closing ```
+    // line (line 1..4 of "```swift\nlet a\nlet b\n```"). For each content span,
+    // compute the full block range and attach it as `.markdownCodeBlockFill` over
+    // the WHOLE block (content + fences), so the fill draws over every line.
+    // `.markdownCodeBlock` stays content-only — it drives chrome anchor / language
+    // label / Copy, which must NOT include the fence lines.
+    for span in codeSpans {
+      guard
+        let fill = fullCodeRange(
+          for: span.range, lines: lines, topBlocks: planner.topBlocks)
+      else { continue }
+      out.addAttribute(.markdownCodeBlockFill, value: NSValue(range: fill), range: fill)
+    }
 
     // --- Code syntax highlighting (Xcode-style categories, GitHub palette) ---
     // Lex each fenced-code span with its language; per-token foreground colors
@@ -598,6 +620,7 @@ public enum MarkdownParser {
     var paragraphStyle: MarkdownParagraph
     var markerRange: NSRange?
     var listMarkerRange: NSRange?
+    var bulletRange: NSRange?
     var checkboxRange: NSRange?
     var checked: Bool?
   }
@@ -779,16 +802,26 @@ public enum MarkdownParser {
             let m2 = (tm[2] as NSString).length
             let m3 = (tm[3] as NSString).length
             let markerEnd = li.start + m1 + m2 + m3
+            // The task "‑" is a LINE COMMAND (hidden/collapsed until the caret
+            // is on the line), like heading '#'. It is NOT a persistent list
+            // marker and NOT a bullet, so listMarkerRange/bulletRange stay nil
+            // here — the checkbox keeps its slot (image drawn), the "-" reveals
+            // only when the line is active.
             plan.markerRange = NSRange(location: li.start, length: m1 + m2 + m3)
             plan.checkboxRange = NSRange(location: markerEnd, length: (tm[4] as NSString).length)
             plan.checked = checked
           } else {
-            plan.markerRange = NSRange(
-              location: li.start,
-              length: (m[1] as NSString).length + (m[2] as NSString).length
-                + (m[3] as NSString).length)
+            let m1Len = (m[1] as NSString).length
+            let m2Len = (m[2] as NSString).length
+            let m3Len = (m[3] as NSString).length
+            plan.markerRange = NSRange(location: li.start, length: m1Len + m2Len + m3Len)
+            plan.listMarkerRange = plan.markerRange
+            if !ordered {
+              // Plain unordered bullet "-"/"*"/"+": the marker CHARACTER renders
+              // as "•" via glyph substitution (source keeps the literal "-").
+              plan.bulletRange = NSRange(location: li.start + m1Len, length: m2Len)
+            }
           }
-          plan.listMarkerRange = plan.markerRange
           return plan
         }
         // Line inside a list that has no marker (lazy continuation): plain body.
@@ -846,6 +879,32 @@ public enum MarkdownParser {
     private func codeParagraph() -> MarkdownParagraph { style.codeParagraph() }
 
     private func tableParagraph() -> MarkdownParagraph { style.tableParagraph() }
+  }
+
+  /// The FULL fenced-code block range for a content `.markdownCodeBlock` span:
+  /// extends the content span up to include the enclosing CodeBlock's ``` open
+  /// fence line and closing ``` fence line. Returns the union of the content span
+  /// and the enclosing block's AST line range (converted to UTF-16 offsets). This
+  /// is used only to drive the background fill so fence lines get the fill too,
+  /// while the content-only `.markdownCodeBlock` span keeps chrome/Copy correct.
+  private static func fullCodeRange(
+    for contentRange: NSRange, lines: [LineInfo], topBlocks: [TopBlock]
+  ) -> NSRange? {
+    // Which top-level block contains the content span's first line?
+    let startLine = lines.firstIndex { $0.start == contentRange.location }.map { $0 + 1 } ?? 1
+    guard
+      let top = topBlocks.first(where: { $0.startLine <= startLine && startLine <= $0.endLine }),
+      top.node is CodeBlock
+    else { return contentRange }
+    let openLine = top.startLine - 1  // 0-based index of the opening ``` line
+    let closeLine = top.endLine - 1  // 0-based index of the closing ``` line (or last content)
+    guard openLine >= 0, openLine < lines.count else { return contentRange }
+    let openStart = lines[openLine].start
+    let closeLineIndex = min(closeLine, lines.count - 1)
+    let closeEnd =
+      lines[closeLineIndex].start + (lines[closeLineIndex].text as NSString).length
+      + (lines[closeLineIndex].hasNewline ? 1 : 0)
+    return NSRange(location: min(openStart, contentRange.location), length: closeEnd - openStart)
   }
 
   /// Byte offset (cmark column - 1) within a line → UTF-16 offset. cmark advances

@@ -402,13 +402,24 @@
       #expect(abs(hInactive - hActiveLineOnly) < 0.5)
     }
 
-    // MARK: - Task 14: list markers always visible
+    // MARK: - Task 14: list markers always visible + task "-" is a line command
 
     @Test func listMarkers() {
       let lmDoc = MarkdownParser.parse("- a\n1. b\n- [x] c")
+      // Plain unordered bullet and ordered marker are ALWAYS shown (persistent).
       #expect(lmDoc.attributed.attribute(.markdownListMarker, at: 0, effectiveRange: nil) != nil)
       #expect(lmDoc.attributed.attribute(.markdownListMarker, at: 4, effectiveRange: nil) != nil)
-      #expect(lmDoc.attributed.attribute(.markdownListMarker, at: 9, effectiveRange: nil) != nil)
+      // The task-list "-" is NOT a persistent marker — it's a caret-hidden LINE
+      // command (like heading '#'), so it collapses to zero width until the caret
+      // lands on the line. It has no .markdownListMarker and no .markdownBullet.
+      #expect(lmDoc.attributed.attribute(.markdownListMarker, at: 9, effectiveRange: nil) == nil)
+      #expect(lmDoc.attributed.attribute(.markdownBullet, at: 9, effectiveRange: nil) == nil)
+      #expect(lmDoc.attributed.attribute(.markdownSyntax, at: 9, effectiveRange: nil) != nil)
+      #expect(lmDoc.attributed.attribute(.markdownLineCommand, at: 9, effectiveRange: nil) != nil)
+      // The plain unordered marker char carries .markdownBullet (renders as "•").
+      #expect(lmDoc.attributed.attribute(.markdownBullet, at: 0, effectiveRange: nil) != nil)
+      // Ordered markers ("1.") do NOT become bullets.
+      #expect(lmDoc.attributed.attribute(.markdownBullet, at: 4, effectiveRange: nil) == nil)
       // Markers render systemBlue (both `-` and `1.`), overriding the syntax gray.
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
@@ -416,9 +427,11 @@
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor
           == .systemBlue)
+      // The task "-" is a line command → shown in the syntax gray (tertiaryLabel),
+      // NOT the persistent marker blue; it only appears once the caret is on the line.
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 9, effectiveRange: nil) as? NSColor
-          == .systemBlue)
+          == .tertiaryLabelColor)
       // The item text keeps the body color, not the marker blue.
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor
@@ -433,6 +446,93 @@
       lmLM2.ensureLayout(for: lmC2)
       let wMarker = lmLM2.usedRect(for: lmC2).width
       #expect(wMarker > 14)
+    }
+
+    /// Glyph advance (pt) of the character at `charIdx` in the current layout.
+    /// NSGlyph is UInt32; CGGlyph is UInt16 — cast via truncatingIfNeeded.
+    private func advance(ofChar charIdx: Int, lm: NSLayoutManager, storage: NSTextStorage) -> CGFloat {
+      let gIdx = lm.glyphIndexForCharacter(at: charIdx)
+      var valid = ObjCBool(false)
+      let g = lm.glyph(at: gIdx, isValidIndex: &valid)
+      var adv = CGSize.zero
+      let font = storage.attribute(.font, at: gIdx, effectiveRange: nil) as! NSFont
+      let cg = CGGlyph(truncatingIfNeeded: g)
+      CTFontGetAdvancesForGlyphs(font as CTFont, .horizontal, [cg], &adv, 1)
+      return adv.width
+    }
+
+    private func relayout(_ lm: EditorLayoutManager, caret: Int, storage: NSTextStorage) {
+      lm.activeCharacterRange = NSRange(location: caret, length: 0)
+      lm.invalidateGlyphs(
+        forCharacterRange: NSRange(location: 0, length: storage.length), changeInLength: 0,
+        actualCharacterRange: nil)
+      lm.invalidateLayout(
+        forCharacterRange: NSRange(location: 0, length: storage.length), actualCharacterRange: nil)
+      lm.ensureLayout(for: lm.textContainers.first!)
+    }
+
+    // MARK: - Task 19: task "-" is a caret-hidden line command; unordered "-" is a bullet
+
+    @Test func taskDashCollapsesOnInactiveLine() {
+      // The task-list "-" (index 0 of "- [x] c") is a LINE COMMAND: its glyph has
+      // ZERO advance when the caret is NOT on its line (collapsed, like heading '#'),
+      // and its normal hyphen advance when the caret IS on the line.
+      let docText = "- [x] c\n- d"
+      let doc = MarkdownParser.parse(docText)
+      let storage = NSTextStorage(attributedString: doc.attributed)
+      let lm = EditorLayoutManager()
+      storage.addLayoutManager(lm)
+      let c = NSTextContainer(size: NSSize(width: 600, height: 2000))
+      lm.addTextContainer(c)
+      let ns = doc.attributed.string as NSString
+      let taskDashIdx = ns.range(of: "-").location  // index 0
+      relayout(lm, caret: 9, storage: storage)  // caret on line 2 → task "-" hidden
+      let advInactive = advance(ofChar: taskDashIdx, lm: lm, storage: storage)
+      relayout(lm, caret: 2, storage: storage)  // caret on line 1 → task "-" visible
+      let advActive = advance(ofChar: taskDashIdx, lm: lm, storage: storage)
+      #expect(advInactive < 0.5)  // collapsed to zero width
+      #expect(advActive > 3)  // full hyphen advance
+    }
+
+    @Test func unorderedDashIsAlwaysVisibleBullet() {
+      // The plain unordered "-" (index 8 of "- [x] c\n- d", line 2) is ALWAYS a
+      // bullet with a nonzero advance even with the caret far from its line — it is
+      // NOT a caret-hidden command.
+      let docText = "- [x] c\n- d"
+      let doc = MarkdownParser.parse(docText)
+      let storage = NSTextStorage(attributedString: doc.attributed)
+      let lm = EditorLayoutManager()
+      storage.addLayoutManager(lm)
+      let c = NSTextContainer(size: NSSize(width: 600, height: 2000))
+      lm.addTextContainer(c)
+      let ns = doc.attributed.string as NSString
+      let bulletIdx = ns.range(of: "-", options: .backwards).location
+      relayout(lm, caret: 999, storage: storage)  // caret nowhere near the bullet line
+      let adv = advance(ofChar: bulletIdx, lm: lm, storage: storage)
+      #expect(adv > 3)
+    }
+
+    @Test func unorderedDashRendersAsBulletGlyph() {
+      // The unordered "-" marker glyph is SUBSTITUTED with the literal "•" (U+2022)
+      // glyph: parsing "- a\n• b" yields the SAME glyph for the "-" marker and the
+      // real "•" character (in the same font).
+      let docText = "- a\n• b"
+      let doc = MarkdownParser.parse(docText)
+      let storage = NSTextStorage(attributedString: doc.attributed)
+      let lm = EditorLayoutManager()
+      storage.addLayoutManager(lm)
+      let c = NSTextContainer(size: NSSize(width: 600, height: 2000))
+      lm.addTextContainer(c)
+      lm.ensureLayout(for: c)
+      let ns = doc.attributed.string as NSString
+      let dashIdx = ns.range(of: "-").location
+      let bulletIdx = ns.range(of: "•").location
+      var dashValid = ObjCBool(false)
+      var bulletValid = ObjCBool(false)
+      let dashGlyph = lm.glyph(at: lm.glyphIndexForCharacter(at: dashIdx), isValidIndex: &dashValid)
+      let bulletGlyph =
+        lm.glyph(at: lm.glyphIndexForCharacter(at: bulletIdx), isValidIndex: &bulletValid)
+      #expect(dashGlyph == bulletGlyph)  // '-' renders as the '•' glyph
     }
 
     // MARK: - Task 15: caret-range command visibility
@@ -727,7 +827,7 @@
     @Test func multiLineFenceBackground() {
       // The whole fence content is ONE .markdownCodeBlock run — the interior newline
       // between code lines carries the marker, so the layout manager draws a single
-      // rounded block instead of per-line tiles. Fence marker lines are background-free.
+      // rounded block instead of per-line tiles.
       let multiFence = "```swift\nlet a = 1\nlet b = 2\n```"
       let mf = MarkdownParser.parse(multiFence)
       let mfNs = multiFence as NSString
@@ -737,14 +837,56 @@
           && mf.attributed.attribute(.markdownCodeBlock, at: interiorNL + 1, effectiveRange: nil)
             != nil
       )
+      // .markdownCodeBlock stays CONTENT-ONLY (drives chrome/Copy): no marker on the
+      // ``` fence lines (line 0 and the last line).
       #expect(
         mf.attributed.attribute(.markdownCodeBlock, at: 0, effectiveRange: nil) == nil
           && mf.attributed.attribute(.markdownCodeBlock, at: mfNs.length - 2, effectiveRange: nil)
             == nil
       )
+      // .markdownCodeBlockFill covers the WHOLE block (fences included) — the FILL
+      // background is drawn over the ``` open and close lines too.
+      let fillV =
+        mf.attributed.attribute(
+          .markdownCodeBlockFill, at: mfNs.range(of: "let a").location, effectiveRange: nil)
+        as? NSValue
+      #expect(fillV != nil)
+      let fill = fillV!.rangeValue
+      #expect(fill.location == 0)  // starts at the opening ```
+      #expect(NSMaxRange(fill) == mfNs.length)  // ends at the closing ```
+      // Fill attribute rides on the fence chars themselves.
+      #expect(
+        mf.attributed.attribute(.markdownCodeBlockFill, at: 0, effectiveRange: nil) != nil
+          && mf.attributed.attribute(
+            .markdownCodeBlockFill, at: mfNs.length - 1, effectiveRange: nil) != nil)
       #expect(
         MarkdownParser.parse("```x\na\n```").attributed.attribute(
           .markdownCodeBlock, at: 5, effectiveRange: nil) != nil)
+    }
+
+    @Test func codeBlockFillDoesNotAffectCopyRange() {
+      // The background FILL covers the ``` fence lines, but what Copy copies must
+      // stay the CONTENT ONLY (no ``` lines). The copy path uses the
+      // `.markdownCodeBlock` content span as its blockRange — assert that span
+      // (the only run the attribute forms) is exactly the content, excluding both
+      // fence lines. `.markdownCodeBlockFill` is a separate attribute so the fill
+      // can widen without touching the copy range.
+      let src = "```swift\nlet a = 1\nlet b = 2\n```"
+      let doc = MarkdownParser.parse(src)
+      let ns = src as NSString
+      var contentRanges: [NSRange] = []
+      doc.attributed.enumerateAttribute(
+        .markdownCodeBlock, in: NSRange(location: 0, length: ns.length), options: []
+      ) { value, range, _ in
+        if value != nil { contentRanges.append(range) }
+      }
+      #expect(contentRanges.count == 1)
+      let content = contentRanges[0]
+      // Starts on the first content line ("let a"), NOT the opening ``` line.
+      #expect(ns.substring(with: NSRange(location: content.location, length: 1)) == "l")
+      // Ends right before the closing ``` line (no ``` in the copied source).
+      let closingFenceLoc = ns.range(of: "```", options: .backwards).location
+      #expect(NSMaxRange(content) <= closingFenceLoc)
     }
 
     @Test func codeLanguageLabel() {
