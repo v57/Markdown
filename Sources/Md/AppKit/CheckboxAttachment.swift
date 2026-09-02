@@ -9,11 +9,11 @@
         NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "check")!
           .withSymbolConfiguration(
             .init(pointSize: size, weight: .semibold).applying(
-              .init(paletteColors: [.white, .systemBlue])))!
+              .init(paletteColors: [.white, .systemRed])))!
       } else {
         NSImage(systemSymbolName: "circle", accessibilityDescription: "uncheck")!
           .withSymbolConfiguration(
-            .init(pointSize: size, weight: .regular).applying(.init(paletteColors: [.systemBlue])))!
+            .init(pointSize: size, weight: .regular).applying(.init(paletteColors: [.systemRed])))!
       }
     }
   }

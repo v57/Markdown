@@ -13,7 +13,7 @@ import Testing
     #expect(style.linkColor == .link)
     #expect(style.quoteTextColor == .secondaryLabel)
     #expect(style.quoteBarColor == .systemRed)
-    #expect(style.listMarkerColor == .systemBlue)
+    #expect(style.listMarkerColor == .systemRed)
     #expect(style.ruleColor == .separator)
     #expect(style.checkedTextColor == .secondaryLabel)
   }

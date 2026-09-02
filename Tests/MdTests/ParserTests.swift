@@ -420,19 +420,19 @@
       #expect(lmDoc.attributed.attribute(.markdownBullet, at: 0, effectiveRange: nil) != nil)
       // Ordered markers ("1.") do NOT become bullets.
       #expect(lmDoc.attributed.attribute(.markdownBullet, at: 4, effectiveRange: nil) == nil)
-      // Markers render systemBlue (both `-` and `1.`), overriding the syntax gray.
+      // Markers render systemRed (both `-` and `1.`), overriding the syntax gray.
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-          == .systemBlue)
+          == .systemRed)
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor
-          == .systemBlue)
+          == .systemRed)
       // The task "-" is a line command → shown in the syntax gray (tertiaryLabel),
-      // NOT the persistent marker blue; it only appears once the caret is on the line.
+      // NOT the persistent marker red; it only appears once the caret is on the line.
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 9, effectiveRange: nil) as? NSColor
           == .tertiaryLabelColor)
-      // The item text keeps the body color, not the marker blue.
+      // The item text keeps the body color, not the marker red.
       #expect(
         lmDoc.attributed.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor
           == .labelColor)

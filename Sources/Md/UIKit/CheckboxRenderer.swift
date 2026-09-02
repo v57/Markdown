@@ -18,11 +18,11 @@
       if checked {
         UIImage(systemName: "checkmark.circle.fill")!.applyingSymbolConfiguration(
           UIImage.SymbolConfiguration(pointSize: size, weight: .semibold).applying(
-            UIImage.SymbolConfiguration(paletteColors: [.white, .systemBlue])))!
+            UIImage.SymbolConfiguration(paletteColors: [.white, .systemRed])))!
       } else {
         UIImage(systemName: "circle")!.applyingSymbolConfiguration(
           UIImage.SymbolConfiguration(pointSize: size, weight: .regular).applying(
-            UIImage.SymbolConfiguration(paletteColors: [.systemBlue])))!
+            UIImage.SymbolConfiguration(paletteColors: [.systemRed])))!
       }
     }
   }

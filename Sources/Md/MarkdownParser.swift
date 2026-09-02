@@ -320,7 +320,7 @@ public enum MarkdownParser {
       if let mr = plan.markerRange { blockMarkSyntax(mr) }
       if let lmr = plan.listMarkerRange {
         out.addAttribute(.markdownListMarker, value: true, range: lmr)
-        // List markers (`-`, `1.`) render systemBlue, overriding the syntax gray.
+        // List markers (`-`, `1.`) render systemRed, overriding the syntax gray.
         out.addAttribute(.foregroundColor, value: style.listMarkerColor, range: lmr)
       }
       if let br = plan.bulletRange {

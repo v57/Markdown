@@ -97,7 +97,7 @@ public protocol MarkdownStyling {
   var quoteBarColor: MarkdownColor { get }
   var ruleColor: MarkdownColor { get }
   var checkedTextColor: MarkdownColor { get }
-  /// List marker (`-`, `1.`) color — systemBlue by default.
+  /// List marker (`-`, `1.`) color — systemRed by default.
   var listMarkerColor: MarkdownColor { get }
   func bodyFont() -> MarkdownFont
   func codeFont() -> MarkdownFont
@@ -142,7 +142,7 @@ public struct MarkdownStyleSpec: MarkdownStyling {
   public var quoteBarColor: MarkdownColor { .systemRed }
   public var ruleColor: MarkdownColor { .separator }
   public var checkedTextColor: MarkdownColor { .secondaryLabel }
-  public var listMarkerColor: MarkdownColor { .systemBlue }
+  public var listMarkerColor: MarkdownColor { .systemRed }
 
   // MARK: Fonts
 

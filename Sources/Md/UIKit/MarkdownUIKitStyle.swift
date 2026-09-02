@@ -22,7 +22,7 @@
     public var quoteBarColor: MarkdownColor { .systemRed }
     public var ruleColor: MarkdownColor { .separator }
     public var checkedTextColor: MarkdownColor { .secondaryLabel }
-    public var listMarkerColor: MarkdownColor { .systemBlue }
+    public var listMarkerColor: MarkdownColor { .systemRed }
 
     // MARK: - Fonts
 
