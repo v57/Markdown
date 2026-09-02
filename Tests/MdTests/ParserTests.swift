@@ -228,6 +228,8 @@
       #expect(l.attribute(.foregroundColor, at: 1, effectiveRange: nil) as? NSColor == .linkColor)
       #expect(
         (l.attribute(.link, at: 1, effectiveRange: nil) as? URL)?.absoluteString == "https://a.b")
+      // Links are NO LONGER underlined (the link color distinguishes them).
+      #expect(l.attribute(.underlineStyle, at: 1, effectiveRange: nil) == nil)
       #expect(
         l.attribute(.markdownSyntax, at: 0, effectiveRange: nil) != nil
           && l.attribute(.markdownSyntax, at: 6, effectiveRange: nil) != nil)

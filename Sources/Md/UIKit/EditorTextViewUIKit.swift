@@ -67,6 +67,13 @@
       markdownLayout.delegate = self
       // Link interaction (tappable links in the rendered text).
       isSelectable = true
+      // Links should NOT be underlined. UITextView applies its own DEFAULT link
+      // styling (underline + color) to `.link`-carrying ranges via
+      // `linkTextAttributes`. Override it to keep the link color (from our own
+      // styling) but drop the underline.
+      linkTextAttributes = [
+        .foregroundColor: MarkdownUIKitStyle(metrics: metrics).color(.link),
+      ]
       // Tap-to-toggle checkboxes and copy buttons. This custom tap recognizer
       // MUST allow SIMULTANEOUS recognition with the text view's own private
       // tap gesture that makes it first responder: by default a developer

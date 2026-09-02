@@ -242,7 +242,6 @@ public enum MarkdownParser {
           if let r = nsRange(l.range) {
             if let content = unionChildrenRanges(l) {
               out.addAttribute(.foregroundColor, value: style.linkColor, range: content)
-              out.addAttribute(.underlineStyle, value: 1, range: content)
               if let dest = l.destination, let url = URL(string: dest) {
                 out.addAttribute(.link, value: url, range: content)
               }

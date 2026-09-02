@@ -65,6 +65,15 @@
       // itself when the layout manager completes a layout pass (didCompleteLayoutFor),
       // which requires the text view to be the layout manager's delegate.
       markdownLayout.delegate = self
+      // Links should NOT be underlined. We still set `.link` (URL) on link ranges so
+      // they're clickable, but NSTextView applies its own DEFAULT link styling
+      // (underline + color) to `.link`-carrying ranges via `linkTextAttributes`.
+      // Override that dictionary to keep the link color (from our own styling) but
+      // drop the underline — otherwise links stay underlined no matter what the
+      // parser emits.
+      linkTextAttributes = [
+        .foregroundColor: MarkdownStyle(metrics: metrics).linkColor,
+      ]
     }
 
     /// Replaces the document with `newText` and re-applies styling. Programmatic,
