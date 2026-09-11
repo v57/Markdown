@@ -52,6 +52,18 @@ public enum MarkdownRenderer {
     return p
   }
 
+  /// A copy of an already-resolved paragraph style with `extra` added to its first-line
+  /// indent. Used by the table grid pass for a row written without an outer pipe: there is
+  /// no character before column 0's content to kern, so the line is shifted instead.
+  /// Returns nil when `value` is not a paragraph style (or `extra` is negligible).
+  public static func addingFirstLineIndent(_ value: Any?, by extra: CGFloat) -> Any? {
+    guard abs(extra) > 0.01, let existing = value as? NSParagraphStyle,
+      let copy = existing.mutableCopy() as? NSMutableParagraphStyle
+    else { return nil }
+    copy.firstLineHeadIndent += extra
+    return copy
+  }
+
   // MARK: - AppKit resolution
 
   #if canImport(AppKit)

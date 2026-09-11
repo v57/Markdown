@@ -52,6 +52,17 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   /// Flash state: which block most recently showed "Copied".
   public private(set) var copiedBlockRange: NSRange?
 
+  /// A grid-mode table's corner button: grid ⇄ source. Frames are in the layout manager's
+  /// drawing coordinates (== the text view's space after `origin`), so the editor
+  /// hit-tests them with a converted click point — the same contract as `copyButtons`.
+  public struct TableToggle {
+    public let frame: CGRect
+    /// Which table (0-based, document order) this button belongs to.
+    public let tableOrdinal: Int
+  }
+  /// Grid/source toggles for the visible tables, rebuilt each draw pass.
+  public private(set) var tableToggles: [TableToggle] = []
+
   /// Marks this block's button as "Copied" (flash). The editor schedules the
   /// matching `clearCopied` after a delay and redraws.
   public func markCopied(_ blockRange: NSRange) { copiedBlockRange = blockRange }
@@ -337,6 +348,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     public var codeRuns: [NSRange] = []
     public var quoteRuns: [NSRange] = []
     public var inlineCodeRuns: [NSRange] = []
+    public var tableRuns: [NSRange] = []
     public var plainRuns: [NSRange] = []
   }
 
@@ -370,6 +382,14 @@ open class EditorLayoutManagerCore: NSLayoutManager {
           } else {
             runs.inlineCodeRuns.append(clamped)
           }
+        } else if attrs[.markdownTableGrid] != nil {
+          // A grid-mode table: its lines (and their newlines) form one run so the grid is
+          // drawn over the whole table, not per line.
+          if let last = runs.tableRuns.last, NSMaxRange(last) == clamped.location {
+            runs.tableRuns[runs.tableRuns.count - 1] = NSUnionRange(last, clamped)
+          } else {
+            runs.tableRuns.append(clamped)
+          }
         } else {
           runs.plainRuns.append(clamped)
         }
@@ -391,8 +411,9 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     // effective ranges; drawing a rounded rect per run would tile the block with
     // per-token chips. Runs that tile contiguously belong to the same block; a
     // gap (a non-code line between fences) starts a new block.
-    let codeBlocks = EditorLayoutManagerCore.mergedCodeRuns(runs.codeRuns)
+    let codeBlocks = EditorLayoutManagerCore.mergedRuns(runs.codeRuns)
     copyButtons.removeAll(keepingCapacity: true)
+    tableToggles.removeAll(keepingCapacity: true)
     for r in codeBlocks {
       // The background FILL covers the whole fenced block (content PLUS the ```
       // open/close fence lines) — that's the `.markdownCodeBlockFill` attribute
@@ -417,6 +438,12 @@ open class EditorLayoutManagerCore: NSLayoutManager {
       super.drawBackground(
         forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil), at: origin)
       drawInlineCodeChip(forCharacterRange: r, at: origin)
+    }
+    for r in EditorLayoutManagerCore.mergedRuns(runs.tableRuns) {
+      // super first so the selection highlight stays visible on top of the grid
+      super.drawBackground(
+        forGlyphRange: glyphRange(forCharacterRange: r, actualCharacterRange: nil), at: origin)
+      drawTableGrid(forCharacterRange: r, at: origin)
     }
     for r in runs.plainRuns {
       super.drawBackground(
@@ -470,6 +497,56 @@ open class EditorLayoutManagerCore: NSLayoutManager {
       x: first.minX, y: first.minY, width: first.width, height: last.maxY - first.minY)
     drawCodeBlockBackground(union: union, at: origin)
     return union
+  }
+
+  private func drawTableGrid(forCharacterRange r: NSRange, at origin: CGPoint) {
+    guard let storage = textStorage, r.location < storage.length else { return }
+    guard
+      let values = storage.attribute(.markdownTableGrid, at: r.location, effectiveRange: nil)
+        as? [NSNumber], !values.isEmpty
+    else { return }
+    let glyphs = glyphRange(forCharacterRange: r, actualCharacterRange: nil)
+    guard glyphs.length > 0 else { return }
+    var minY = CGFloat.greatestFiniteMagnitude
+    var maxY = -CGFloat.greatestFiniteMagnitude
+    var headerTop = CGFloat.greatestFiniteMagnitude
+    var headerHeight: CGFloat = 0
+    var isFirstFragment = true
+    enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, _, _ in
+      minY = min(minY, rect.minY)
+      maxY = max(maxY, rect.maxY)
+      if isFirstFragment {
+        headerTop = rect.minY
+        headerHeight = rect.height
+        isFirstFragment = false
+      }
+    }
+    guard minY <= maxY else { return }
+    // The table's x values are relative to the container's left edge, while glyphs and
+    // line fragments start one `lineFragmentPadding` further right — without this the
+    // whole grid would be drawn one padding left of its text.
+    let padding = textContainers.first?.lineFragmentPadding ?? 0
+    let lines = values.map { origin.x + padding + CGFloat($0.doubleValue) }
+    drawTableGridHook(verticalLines: lines, fromY: origin.y + minY, toY: origin.y + maxY)
+
+    // Corner toggle (grid ⇄ source) at the top-right of the header row. Mirrors the
+    // code-chrome rules: only when the block's true top is on screen (so a scrolled tall
+    // table doesn't float its toggle mid-block), and hidden while the caret edits the
+    // header line.
+    let isBlockTop =
+      r.location == 0
+      || storage.attribute(.markdownTableGrid, at: r.location - 1, effectiveRange: nil) == nil
+    guard isBlockTop, !lineContainsCaret(r.location), let tableWidth = lines.last else { return }
+    let m = MarkdownMetrics.standard
+    let size = m.tableToggleSize
+    let frame = CGRect(
+      x: tableWidth - m.tableToggleInset - size,
+      y: origin.y + headerTop + (headerHeight - size) / 2, width: size, height: size)
+    let ordinal =
+      (storage.attribute(.markdownTableOrdinal, at: r.location, effectiveRange: nil) as? NSNumber)?
+      .intValue ?? 0
+    drawTableToggleHook(frame: frame, gridMode: true)
+    recordTableToggle(frame: frame, tableOrdinal: ordinal)
   }
 
   /// Rounded chip behind inline code (`` `code` ``), GitHub-style: the fill spans
@@ -569,9 +646,10 @@ open class EditorLayoutManagerCore: NSLayoutManager {
 
   /// Collapses input character ranges into blocks by merging runs that tile
   /// contiguously (NSMaxRange == next.location). Used to turn the many per-token
-  /// `.markdownCodeBlock` sub-runs of one fence into a single block. Runs are
-  /// assumed sorted and tiling within each contiguous region.
-  public static func mergedCodeRuns(_ runs: [NSRange]) -> [NSRange] {
+  /// `.markdownCodeBlock` sub-runs of one fence into a single block, and the per-line
+  /// `.markdownTableGrid` sub-runs of one table into a single grid. Runs are assumed
+  /// sorted and tiling within each contiguous region.
+  public static func mergedRuns(_ runs: [NSRange]) -> [NSRange] {
     var out: [NSRange] = []
     for r in runs {
       if let last = out.last, NSMaxRange(last) == r.location {
@@ -628,6 +706,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     var drawRanges: [NSRange] = []
     var checkboxRanges: [NSRange] = []
     var ruleRanges: [NSRange] = []
+    var tableRuleRanges: [(range: NSRange, width: CGFloat)] = []
     var imageRanges: [NSRange] = []
     var i = charRange.location
     let end = NSMaxRange(charRange)
@@ -641,6 +720,9 @@ open class EditorLayoutManagerCore: NSLayoutManager {
           checkboxRanges.append(clamped)  // never drawn as text
         } else if attrs[.markdownRule] != nil {
           ruleRanges.append(clamped)  // drawn as a line
+        } else if let width = attrs[.markdownTableRule] as? NSNumber {
+          // A table's hidden `|---|` row: its characters are not drawn; a rule is.
+          tableRuleRanges.append((clamped, CGFloat(truncating: width)))
         } else if attrs[.markdownImage] != nil, let url = attrs[.markdownImage] as? URL,
           image(for: url) != nil
         {
@@ -663,6 +745,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     }
     for r in checkboxRanges { drawCheckbox(in: r, at: origin) }
     for r in ruleRanges { drawRule(in: r, at: origin) }
+    for r in tableRuleRanges { drawTableRule(in: r.range, tableWidth: r.width, at: origin) }
     for r in imageRanges { drawImage(in: r, at: origin) }
   }
 
@@ -687,15 +770,39 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
     let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
     let y = origin.y + fragRect.minY + fragRect.height / 2 - 0.5
+    drawLine(
+      from: CGPoint(x: origin.x + fragRect.minX, y: y),
+      to: CGPoint(x: origin.x + fragRect.maxX, y: y),
+      width: MarkdownMetrics.standard.ruleStrokeWidth, color: ruleColor())
+  }
+
+  /// The table's header rule, drawn on the hidden `|---|` separator row at the table's
+  /// measured width (that row's characters are invisible in grid mode; the drawn rule is
+  /// their visible stand-in).
+  private func drawTableRule(in charRange: NSRange, tableWidth: CGFloat, at origin: CGPoint) {
+    let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
+    guard glyphRange.length > 0 else { return }
+    let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+    let y = origin.y + fragRect.minY + fragRect.height / 2 - 0.5
+    let padding = textContainers.first?.lineFragmentPadding ?? 0
+    drawLine(
+      from: CGPoint(x: origin.x + padding, y: y),
+      to: CGPoint(x: origin.x + padding + tableWidth, y: y),
+      width: MarkdownMetrics.standard.tableRuleStrokeWidth, color: ruleColor())
+  }
+
+  /// One stroke, shared by the markdown rule and the table's header rule (AppKit and
+  /// UIKit name the path builder's line method differently).
+  private func drawLine(from: CGPoint, to: CGPoint, width: CGFloat, color: PlatformColor) {
     let path = PlatformBezierPath()
-    path.move(to: CGPoint(x: origin.x + fragRect.minX, y: y))
+    path.move(to: from)
     #if canImport(AppKit)
-      path.line(to: CGPoint(x: origin.x + fragRect.maxX, y: y))
+      path.line(to: to)
     #else
-      path.addLine(to: CGPoint(x: origin.x + fragRect.maxX, y: y))
+      path.addLine(to: to)
     #endif
-    path.lineWidth = MarkdownMetrics.standard.ruleStrokeWidth
-    ruleColor().setStroke()
+    path.lineWidth = width
+    color.setStroke()
     path.stroke()
   }
 
@@ -737,6 +844,19 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   /// Inline-code chip stroke border color (design: `primary.opacity(0.05)`).
   open func inlineCodeStrokeColor() -> PlatformColor {
     PlatformColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 0.05)
+  }
+  /// Draw a table's vertical grid lines (x values already include the container padding,
+  /// and are in the layout manager's drawing coordinates).
+  open func drawTableGridHook(verticalLines: [CGFloat], fromY: CGFloat, toY: CGFloat) {}
+  /// Draw a table's corner grid/source toggle button.
+  open func drawTableToggleHook(frame: CGRect, gridMode: Bool) {}
+  /// Record a table toggle's frame for the editor's hit test.
+  open func recordTableToggle(frame: CGRect, tableOrdinal: Int) {
+    tableToggles.append(TableToggle(frame: frame, tableOrdinal: tableOrdinal))
+  }
+  /// Table grid + header-rule color.
+  open func tableGridColor() -> PlatformColor {
+    PlatformColor(red: 0.75, green: 0.75, blue: 0.75, alpha: 1)
   }
   /// Draw the quote bar.
   open func drawQuoteBarHook(bar: CGRect) {}

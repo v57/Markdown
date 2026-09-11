@@ -36,6 +36,35 @@
       path.fill()
     }
 
+    public override func drawTableGridHook(
+      verticalLines: [CGFloat], fromY: CGFloat, toY: CGFloat
+    ) {
+      let path = UIBezierPath()
+      path.lineWidth = MarkdownMetrics.standard.tableGridStrokeWidth
+      for x in verticalLines {
+        path.move(to: CGPoint(x: x, y: fromY))
+        path.addLine(to: CGPoint(x: x, y: toY))
+      }
+      tableGridColor().setStroke()
+      path.stroke()
+    }
+
+    public override func drawTableToggleHook(frame: CGRect, gridMode: Bool) {
+      // `tablecells` reads as "this is a table" (tap for the markdown), while
+      // `square.and.pencil` reads as "editing the source" (tap for the table).
+      let name = gridMode ? "tablecells" : "square.and.pencil"
+      guard
+        let image = UIImage(systemName: name)?.applyingSymbolConfiguration(
+          UIImage.SymbolConfiguration(pointSize: frame.height, weight: .regular).applying(
+            UIImage.SymbolConfiguration(paletteColors: [tableGridColor()])))
+      else { return }
+      image.draw(in: frame)
+    }
+
+    public override func tableGridColor() -> PlatformColor {
+      MarkdownUIKitStyle.standard.color(.separator)
+    }
+
     public override func drawCheckboxHook(checked: Bool, in rect: CGRect) {
       CheckboxRenderer.image(checked: checked, size: rect.width).draw(in: rect)
     }

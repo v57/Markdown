@@ -358,6 +358,9 @@
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
         SelfTest.scrollGeometryProbe()  // runs first: editPathProbe empties the doc
       }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        TableToggleProbe.run()  // before editPathProbe (which empties the document)
+      }
       DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
         SelfTest.editPathProbe()  // after the scroll probe's async measurements
       }
@@ -368,6 +371,84 @@
         print("SMOKE OK")
         NSApp.terminate(nil)
       }
+    }
+  }
+
+  /// Grid ⇄ source table toggle, driven through the REAL click path: synthesize a click on
+  /// the table's corner button and assert the mode flipped, that not one character changed,
+  /// and that the flip never reached `onChange` (mode is view state, not document state).
+  /// Then move the caret out of the table and assert it returns to the grid.
+  @MainActor public enum TableToggleProbe {
+    public static func run() {
+      guard let tv = EditorTextView.live else {
+        print("TABLEPROBE FAIL no live text view")
+        return
+      }
+      guard let lm = tv.layoutManager as? EditorLayoutManager else {
+        print("TABLEPROBE FAIL no layout manager")
+        return
+      }
+      let text = tv.string
+      let ns = text as NSString
+      // The sample document starts with plain paragraphs, so find an index INSIDE the
+      // table: the ordinal attribute is attached over every table's whole range.
+      let tableIndex = (0..<ns.length).first {
+        tv.textStorage?.attribute(.markdownTableOrdinal, at: $0, effectiveRange: nil) != nil
+      }
+      guard let tableIndex else {
+        print("TABLEPROBE FAIL no table in the live document")
+        return
+      }
+      let hasGrid =
+        tv.textStorage?.attribute(.markdownTableGrid, at: tableIndex, effectiveRange: nil) != nil
+      print("TABLEPROBE grid=\(hasGrid) toggles=\(lm.tableToggles.count) atIndex=\(tableIndex)")
+
+      var changes = 0
+      let priorOnChange = tv.onChange
+      tv.onChange = { _ in changes += 1 }
+
+      guard let toggle = lm.tableToggles.first else {
+        print("TABLEPROBE FAIL no toggle frame recorded")
+        tv.onChange = priorOnChange
+        return
+      }
+      let pointInWindow = tv.convert(toggle.frame.origin, to: nil)
+      guard
+        let event = NSEvent.mouseEvent(
+          with: .leftMouseDown, location: pointInWindow, modifierFlags: [],
+          timestamp: ProcessInfo.processInfo.systemUptime,
+          windowNumber: tv.window?.windowNumber ?? 0, context: nil, eventNumber: 0,
+          clickCount: 1, pressure: 1)
+      else {
+        print("TABLEPROBE FAIL could not synthesize a click")
+        tv.onChange = priorOnChange
+        return
+      }
+      tv.mouseDown(with: event)
+
+      let textUnchanged = tv.string == text
+      let wentToSource =
+        tv.textStorage?.attribute(.markdownTableGrid, at: tableIndex, effectiveRange: nil) == nil
+      let pipesRevealed =
+        tv.textStorage?.attribute(.markdownLineCommand, at: tableIndex, effectiveRange: nil) != nil
+      print(
+        "TABLEPROBE flip textUnchanged=\(textUnchanged) source=\(wentToSource) pipes=\(pipesRevealed) onChange=\(changes)")
+
+      // Caret out of the table → back to the grid (source mode has no button of its own).
+      // Move it to the FIRST paragraph: the launch caret already sits at the document end,
+      // and a selection change to the same position fires nothing (by design — the unpin
+      // runs on an actual selection change).
+      tv.setSelectedRange(NSRange(location: 0, length: 0))
+      let backToGrid =
+        tv.textStorage?.attribute(.markdownTableGrid, at: tableIndex, effectiveRange: nil) != nil
+      print("TABLEPROBE return gridRestored=\(backToGrid) caret=\(tv.selectedRange.location)")
+
+      print(
+        "TABLEPROBE "
+          + (hasGrid && textUnchanged && wentToSource && pipesRevealed && changes == 0
+            && backToGrid ? "PASS" : "FAIL")
+          + " toggle flips view state only")
+      tv.onChange = priorOnChange
     }
   }
 

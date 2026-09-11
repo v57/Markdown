@@ -909,16 +909,16 @@
           && unknownLangDoc.attributed.string == "```xyz\nabc\n```")
     }
 
-    @Test func mergedCodeRuns() {
+    @Test func mergedRuns() {
       // Draw-time merge: token-color sub-runs within one fence must collapse into a
       // single block (not a rounded rect per token), while a real gap starts a new block.
       #expect(
-        EditorLayoutManager.mergedCodeRuns([
+        EditorLayoutManager.mergedRuns([
           NSRange(location: 0, length: 3), NSRange(location: 3, length: 2),
           NSRange(location: 5, length: 1),
         ]) == [NSRange(location: 0, length: 6)])
       #expect(
-        EditorLayoutManager.mergedCodeRuns([
+        EditorLayoutManager.mergedRuns([
           NSRange(location: 0, length: 2), NSRange(location: 3, length: 2),
         ]) == [NSRange(location: 0, length: 2), NSRange(location: 3, length: 2)])
     }

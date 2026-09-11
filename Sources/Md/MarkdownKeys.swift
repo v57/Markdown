@@ -49,4 +49,17 @@ extension NSAttributedString.Key {
   /// the layout manager draws a rounded chip behind it instead of the flat
   /// `.backgroundColor` rect (which can't round corners).
   public static let markdownInlineCode = NSAttributedString.Key("MarkdownInlineCode")
+  /// Marks a table rendered in GRID mode, over the whole block range (header through
+  /// the last body line, newlines included). Value is an `[NSNumber]` of ascending
+  /// container-relative x positions — one per vertical grid line — so the layout
+  /// manager draws the grid without re-measuring anything.
+  public static let markdownTableGrid = NSAttributedString.Key("MarkdownTableGrid")
+  /// A table's ordinal among the document's tables (0-based, document order) over the
+  /// whole grid block. The editor reads it at the click/caret index to know WHICH
+  /// table's grid/source mode to flip.
+  public static let markdownTableOrdinal = NSAttributedString.Key("MarkdownTableOrdinal")
+  /// Marks a table's header-separator row (the `|---|` line) in grid mode. Its literal
+  /// characters are hidden syntax; the layout manager draws a rule across the table
+  /// instead. Value is an `NSNumber`: the table's width in points.
+  public static let markdownTableRule = NSAttributedString.Key("MarkdownTableRule")
 }

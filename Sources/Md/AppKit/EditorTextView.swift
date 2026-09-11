@@ -16,6 +16,10 @@
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
     private var lastSyntaxRangeCount = 0
+    /// Tables pinned to SOURCE mode (0-based document order). Everything else renders as a
+    /// grid. VIEW state, not document state: it never reaches `onChange`, and flipping it
+    /// re-parses (the alignment kerns depend on whether the pipes are visible).
+    private var sourceModeTables: Set<Int> = []
 
     public init(metrics: MarkdownMetrics = .standard) {
       self.metrics = metrics
@@ -116,7 +120,8 @@
     }
 
     private func reapplyMarkdown() {
-      let parsed = MarkdownParser.parse(string, style: MarkdownStyleSpec(metrics: metrics))
+      let parsed = MarkdownParser.parse(
+        string, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables)
       lastSyntaxRangeCount = parsed.syntaxRanges.count
       // Apply attributes only (characters are identical — verbatim invariant), so the
       // storage reports .editedAttributes and the guard above stops the loop.
@@ -156,10 +161,40 @@
 
     // MARK: - Selection / active line (drives syntax show/hide)
 
+    /// Flips one table between the grid and its raw markdown source. VIEW state only:
+    /// the characters never change and `onChange` is not called — a host sees the same
+    /// document either way.
+    private func setTableMode(source: Bool, ordinal: Int) {
+      let changed = source ? sourceModeTables.insert(ordinal).inserted : (sourceModeTables.remove(ordinal) != nil)
+      guard changed else { return }
+      reapplyMarkdown()
+      needsDisplay = true
+    }
+
+    /// The table (0-based, document order) whose block covers `index`, if any. Both modes
+    /// carry `.markdownTableOrdinal` over the table's whole range, so this is a pure
+    /// attribute lookup.
+    private func tableOrdinal(at index: Int) -> Int? {
+      guard let storage = textStorage, index >= 0, index < storage.length else { return nil }
+      return (storage.attribute(.markdownTableOrdinal, at: index, effectiveRange: nil) as? NSNumber)?
+        .intValue
+    }
+
     public func textViewDidChangeSelection(_ notification: Notification) {
       guard let lm = layoutManager as? EditorLayoutManager else { return }
       let newSelection = selectedRange()
       guard newSelection != lm.activeCharacterRange else { return }
+      // Leaving a source-mode table returns it to the grid: the grid is the reading state,
+      // and source mode has no toggle of its own. Done BEFORE the visibility pass because
+      // a re-parse replaces the attributes wholesale.
+      if !sourceModeTables.isEmpty {
+        let ordinal = tableOrdinal(at: newSelection.location)
+        if ordinal == nil || !sourceModeTables.contains(ordinal!) {
+          sourceModeTables.removeAll()
+          reapplyMarkdown()
+          return
+        }
+      }
       // Visibility changes for BOTH the old and new caret positions: an inline
       // command's delimiters show/hide as the caret enters/leaves its span, and
       // line-level commands as the caret moves between lines.
@@ -210,7 +245,7 @@
       return true
     }
 
-    // MARK: - Checkbox click-to-toggle (Obsidian-style)
+    // MARK: - Interactive content (copy button, table toggle, checkbox)
 
     public override func mouseDown(with event: NSEvent) {
       let point = convert(event.locationInWindow, from: nil)
@@ -232,8 +267,24 @@
         }
         return
       }
+      // Table corner toggle: flip the table between the grid and its source text. The
+      // click is consumed (like the copy button) so the caret does not jump.
+      if let lm = layoutManager as? EditorLayoutManager,
+        let toggle = lm.tableToggles.first(where: { $0.frame.contains(point) })
+      {
+        setTableMode(
+          source: !sourceModeTables.contains(toggle.tableOrdinal),
+          ordinal: toggle.tableOrdinal)
+        return
+      }
       let index = characterIndexForInsertion(at: point)
       let ns = string as NSString
+      // Clicking INTO a grid-mode table switches it to source: a grid cell has hidden
+      // pipes and alignment kerns, so typing there would be blind. The click still falls
+      // through so it also places the caret.
+      if let ordinal = tableOrdinal(at: index), !sourceModeTables.contains(ordinal) {
+        setTableMode(source: true, ordinal: ordinal)
+      }
       guard index < ns.length, let storage = textStorage,
         storage.attribute(.markdownCheckbox, at: index, effectiveRange: nil) != nil
       else {

@@ -99,6 +99,10 @@ public protocol MarkdownStyling {
   var checkedTextColor: MarkdownColor { get }
   /// List marker (`-`, `1.`) color — systemRed by default.
   var listMarkerColor: MarkdownColor { get }
+  /// The metrics this style reads from: fonts, paragraph spacing, drawing geometry.
+  /// The parser needs it for values it computes at parse time (e.g. table cell
+  /// padding and the hidden separator row's font size).
+  var metrics: MarkdownMetrics { get }
   func bodyFont() -> MarkdownFont
   func codeFont() -> MarkdownFont
   func headingFont(level: Int) -> MarkdownFont
@@ -119,6 +123,9 @@ extension MarkdownStyling {
   public func listMarkerWidth(task: Bool, ordered: Bool) -> CGFloat {
     MarkdownMetrics.standard.listMarkerWidth(task: task, ordered: ordered)
   }
+
+  /// Default metrics — the standard values. Concrete styles store their own.
+  public var metrics: MarkdownMetrics { MarkdownMetrics.standard }
 }
 
 /// The default platform-neutral style spec — values come from

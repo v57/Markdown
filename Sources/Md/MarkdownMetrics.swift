@@ -74,6 +74,19 @@ public struct MarkdownMetrics: Sendable {
   public var quoteBarCornerRadius: CGFloat = 1.5
   /// Horizontal rule stroke.
   public var ruleStrokeWidth: CGFloat = 1
+  /// Table: horizontal padding on EACH side of a cell's content (the alignment grid).
+  public var tableCellPadding: CGFloat = 8
+  /// Table: drawn header-rule stroke width.
+  public var tableRuleStrokeWidth: CGFloat = 1
+  /// Table: drawn vertical grid-line stroke width.
+  public var tableGridStrokeWidth: CGFloat = 1
+  /// Table: font size for the hidden `|---|` separator row. The row's characters are
+  /// invisible, so a small font only shortens the row — it pulls the drawn header rule
+  /// up against the header text instead of leaving a full blank line under it.
+  public var tableSeparatorFontSize: CGFloat = 6
+  /// Table: grid/source toggle button size and its inset from the table's top-right.
+  public var tableToggleSize: CGFloat = 16
+  public var tableToggleInset: CGFloat = 6
   /// Code chrome (language label + Copy) offset from the fence line top.
   public var codeChromeTopOffset: CGFloat = 2
   /// Code chrome horizontal inset from the block edges.

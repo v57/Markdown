@@ -64,7 +64,9 @@ public enum MarkdownParser {
   /// `MarkdownRenderer`, so callers (macOS `NSTextView`, iOS `UITextView`) consume
   /// a fully-native `NSAttributedString`.
   public static func parse(
-    _ markdown: String, style: any MarkdownStyling = MarkdownStyleSpec.standard
+    _ markdown: String,
+    style: any MarkdownStyling = MarkdownStyleSpec.standard,
+    sourceModeTables: Set<Int> = []
   ) -> ParsedMarkdown {
     let out = NSMutableAttributedString()
     var syntaxRanges: [NSRange] = []
@@ -87,7 +89,28 @@ public enum MarkdownParser {
     // --- AST (disable smart typography so source ranges stay byte-accurate) ---
     let doc = Document(parsing: markdown, options: .disableSmartOpts)
     let blocks = blocks(from: doc, source: markdown)
-    let planner = LinePlanner(doc: doc, lines: lines, style: style)
+
+    // --- Table modes ---
+    // Tables are numbered in document order. Every table renders as a GRID (aligned
+    // columns, hidden pipes, drawn separators) unless its ordinal is pinned to source
+    // mode, where it renders as its raw markdown text (today's look) so it can be edited.
+    var tables: [(table: Table, top: TopBlock, ordinal: Int, isGrid: Bool)] = []
+    var gridTableLines: Set<Int> = []
+    var tableOrdinal = 0
+    for child in doc.children {
+      guard let table = child as? Table, let r = table.range else { continue }
+      let isGrid = !sourceModeTables.contains(tableOrdinal)
+      if isGrid { gridTableLines.insert(r.lowerBound.line) }
+      tables.append(
+        (
+          table: table,
+          top: TopBlock(node: table, startLine: r.lowerBound.line, endLine: r.upperBound.line),
+          ordinal: tableOrdinal, isGrid: isGrid
+        ))
+      tableOrdinal += 1
+    }
+
+    let planner = LinePlanner(doc: doc, lines: lines, style: style, gridTables: gridTableLines)
     let plans = (0..<lines.count).map { planner.plan(for: $0) }
 
     // --- Attribute helpers (all ranges are UTF-16) ---
@@ -101,6 +124,25 @@ public enum MarkdownParser {
       syntaxRanges.append(range)
       out.addAttribute(.markdownSyntax, value: true, range: range)
       out.addAttribute(.foregroundColor, value: style.syntaxColor, range: range)
+    }
+    /// Marks a table row's pipe characters. GRID mode: hidden syntax with no line
+    /// command, so the caret never reveals them (the grid draws the separators; the
+    /// table pass also gives each pipe a nulling kern, because SF Mono has no
+    /// zero-width glyph to substitute). SOURCE mode: a line command like any other
+    /// block marker, i.e. today's behavior.
+    func markTablePipes(of li: LineInfo, grid: Bool) {
+      let lineNs = li.text as NSString
+      var idx = 0
+      while idx < lineNs.length {
+        if lineNs.character(at: idx) == 0x7C {  // |
+          let r = NSRange(location: li.start + idx, length: 1)
+          syntaxRanges.append(r)
+          out.addAttribute(.markdownSyntax, value: true, range: r)
+          if !grid { out.addAttribute(.markdownLineCommand, value: true, range: r) }
+          out.addAttribute(.foregroundColor, value: style.syntaxColor, range: r)
+        }
+        idx += 1
+      }
     }
     /// cmark source range (1-based line + byte column) → UTF-16 NSRange.
     func nsRange(_ r: SourceRange?) -> NSRange? {
@@ -318,6 +360,7 @@ public enum MarkdownParser {
 
       out.append(NSAttributedString(string: li.text, attributes: plan.base))
       if let mr = plan.markerRange { blockMarkSyntax(mr) }
+      if let hr = plan.hiddenRange { inlineSyntaxMark(hr) }
       if let lmr = plan.listMarkerRange {
         out.addAttribute(.markdownListMarker, value: true, range: lmr)
         // List markers (`-`, `1.`) render systemRed, overriding the syntax gray.
@@ -338,17 +381,9 @@ public enum MarkdownParser {
       case .rule:
         let r = NSRange(location: li.start, length: (li.text as NSString).length)
         out.addAttribute(.markdownRule, value: true, range: r)
-      case .tableHeader, .tableBody:
-        // Mark every pipe as block syntax (header + body rows).
-        let lineNs = li.text as NSString
-        var idx = 0
-        while idx < lineNs.length {
-          if lineNs.character(at: idx) == 0x7C {  // |
-            blockMarkSyntax(NSRange(location: li.start + idx, length: 1))
-          }
-          idx += 1
-        }
-      case .code, .fence, .headingUnderline, .tableSeparator: break  // codeBlock attr rides in base; whole-line syntax via markerRange
+      case .tableHeader, .tableBody, .tableSeparator:
+        markTablePipes(of: li, grid: plan.tableGrid)
+      case .code, .fence, .headingUnderline: break  // codeBlock attr rides in base; whole-line syntax via markerRange
       default: break
       }
 
@@ -434,8 +469,12 @@ public enum MarkdownParser {
     // --- Platform render pass ---
     // The parser stored platform-neutral attribute values (MarkdownColor,
     // MarkdownFont, MarkdownParagraph); resolve them to the native types
-    // (NSColor/NSFont/NSParagraphStyle on macOS, UIColor/UIFont on iOS).
-    let native = MarkdownRenderer.render(out)
+    // (NSColor/NSFont/NSParagraphStyle on macOS, UIColor/UIFont/NSParagraphStyle
+    // on iOS). The table grid pass runs AFTER this: it needs the real fonts to
+    // measure cell widths and to cancel each pipe's advance.
+    let native = NSMutableAttributedString(attributedString: MarkdownRenderer.render(out))
+    applyTableGrid(tables: tables, native: native, ns: ns, lines: lines, style: style)
+
     return ParsedMarkdown(attributed: native, syntaxRanges: syntaxRanges, blocks: blocks)
   }
 
@@ -623,6 +662,13 @@ public enum MarkdownParser {
     var bulletRange: NSRange?
     var checkboxRange: NSRange?
     var checked: Bool?
+    /// True when this line belongs to a table rendered as a GRID (pipes hidden, columns
+    /// aligned, separators drawn).
+    var tableGrid: Bool = false
+    /// A range to mark as hidden syntax WITHOUT a line command: revealed by nothing, not
+    /// even the caret. Used for a grid-mode table's `|---|` separator row, whose visible
+    /// stand-in is a drawn rule.
+    var hiddenRange: NSRange?
   }
 
   private struct TopBlock {
@@ -652,10 +698,13 @@ public enum MarkdownParser {
     let topBlocks: [TopBlock]
     let items: [ItemInfo]
     let containers: [ContainerInfo]
+    /// Start lines (1-based) of the tables rendered as a GRID.
+    let gridTables: Set<Int>
 
-    init(doc: Markup, lines: [LineInfo], style: any MarkdownStyling) {
+    init(doc: Markup, lines: [LineInfo], style: any MarkdownStyling, gridTables: Set<Int> = []) {
       self.lines = lines
       self.style = style
+      self.gridTables = gridTables
       topBlocks = doc.children.compactMap { node in
         guard let r = node.range else { return nil }
         return TopBlock(node: node, startLine: r.lowerBound.line, endLine: r.upperBound.line)
@@ -673,6 +722,15 @@ public enum MarkdownParser {
           containers.append(
             ContainerInfo(
               node: h, startLine: r.lowerBound.line, endLine: r.upperBound.line,
+              length: (r.upperBound.line - r.lowerBound.line) * 10000
+                + (r.upperBound.column - r.lowerBound.column)))
+        } else if let cell = node as? Table.Cell, let r = cell.range {
+          // A table cell is an INLINE container (BasicInlineContainer) — without this
+          // branch the paragraph/heading rules never matched it and inline markup inside
+          // a cell (bold/italic/code/links) rendered as its literal delimiters.
+          containers.append(
+            ContainerInfo(
+              node: cell, startLine: r.lowerBound.line, endLine: r.upperBound.line,
               length: (r.upperBound.line - r.lowerBound.line) * 10000
                 + (r.upperBound.column - r.lowerBound.column)))
         }
@@ -831,23 +889,37 @@ public enum MarkdownParser {
 
       case is Table:
         let tablePara = tableParagraph()
+        let isGrid = gridTables.contains(t.startLine)
         let offset = lineNo - t.startLine  // 0 = header row, 1 = separator row
         if offset == 0 {
           let base: [NSAttributedString.Key: Any] = [
             .font: style.emphasisFont(base: style.codeFont(), bold: true, italic: false),
             .foregroundColor: style.textColor, .paragraphStyle: tablePara,
           ]
-          return LinePlan(role: .tableHeader, base: base, paragraphStyle: tablePara)
+          return LinePlan(
+            role: .tableHeader, base: base, paragraphStyle: tablePara, tableGrid: isGrid)
         }
         let base: [NSAttributedString.Key: Any] = [
           .font: style.codeFont(), .foregroundColor: style.textColor, .paragraphStyle: tablePara,
         ]
         if offset == 1 {
           let full = NSRange(location: li.start, length: (li.text as NSString).length)
+          if isGrid {
+            // Grid mode: the `|---|` characters are invisible, so giving the row a tiny
+            // font only shortens it — which pulls the drawn header rule up against the
+            // header text instead of leaving a full blank line under it. Hidden with NO
+            // line command (the rule is the visible stand-in, revealed by nothing).
+            return LinePlan(
+              role: .tableSeparator,
+              base: [
+                .font: MarkdownFont(kind: .code, size: style.metrics.tableSeparatorFontSize),
+                .foregroundColor: style.textColor, .paragraphStyle: tablePara,
+              ], paragraphStyle: tablePara, tableGrid: true, hiddenRange: full)
+          }
           return LinePlan(
             role: .tableSeparator, base: base, paragraphStyle: tablePara, markerRange: full)
         }
-        return LinePlan(role: .tableBody, base: base, paragraphStyle: tablePara)
+        return LinePlan(role: .tableBody, base: base, paragraphStyle: tablePara, tableGrid: isGrid)
 
       case is Paragraph:
         var plan = LinePlan(
@@ -879,6 +951,229 @@ public enum MarkdownParser {
     private func codeParagraph() -> MarkdownParagraph { style.codeParagraph() }
 
     private func tableParagraph() -> MarkdownParagraph { style.tableParagraph() }
+  }
+
+  // MARK: - Table grid (column alignment; never touches characters)
+
+  /// cmark source range → UTF-16 NSRange against the parser's line table (the same math
+  /// as the local `nsRange` in `parse`, exposed for the table pass).
+  private static func nsRange(_ r: SourceRange?, lines: [LineInfo]) -> NSRange? {
+    guard let r else { return nil }
+    let l1 = r.lowerBound.line
+    let c1 = r.lowerBound.column
+    let l2 = r.upperBound.line
+    let c2 = r.upperBound.column
+    guard l1 >= 1, l2 >= 1, l1 <= lines.count, l2 <= lines.count else { return nil }
+    let start = lines[l1 - 1].start + byteToUTF16(c1 - 1, in: lines[l1 - 1].text)
+    let end = lines[l2 - 1].start + byteToUTF16(c2 - 1, in: lines[l2 - 1].text)
+    guard end >= start else { return nil }
+    return NSRange(location: start, length: end - start)
+  }
+
+  /// A cell range without its surrounding horizontal padding. cmark's cell range covers
+  /// the padded cell (`" bbb "` between two pipes), not the content.
+  private static func trimmedRange(_ r: NSRange, in ns: NSString) -> NSRange {
+    var start = r.location
+    var end = min(NSMaxRange(r), ns.length)
+    while start < end, isHorizontalSpace(ns.character(at: start)) { start += 1 }
+    while end > start, isHorizontalSpace(ns.character(at: end - 1)) { end -= 1 }
+    return NSRange(location: start, length: end - start)
+  }
+
+  private static func isHorizontalSpace(_ c: unichar) -> Bool { c == 0x20 || c == 0x09 }
+
+  /// Runs the table grid pass over the resolved attributed string.
+  ///
+  /// For every GRID-mode table: nulls each pipe's advance (attribute-only — the pipe
+  /// characters must stay in the string), measures the columns, aligns every row onto the
+  /// grid with `.kern` deltas, and attaches the grid / ordinal / header-rule attributes.
+  /// Source-mode tables are untouched (raw markdown, today's rendering).
+  private static func applyTableGrid(
+    tables: [(table: Table, top: TopBlock, ordinal: Int, isGrid: Bool)],
+    native: NSMutableAttributedString, ns: NSString, lines: [LineInfo],
+    style: any MarkdownStyling
+  ) {
+    for entry in tables where entry.isGrid {
+      let top = entry.top
+      func cellRanges(_ row: Markup) -> [NSRange] {
+        row.children.compactMap { ($0 as? Table.Cell)?.range }
+          .compactMap { nsRange($0, lines: lines) }
+      }
+      // Header first, then the body's data rows. The `|---|` separator is NOT an AST row,
+      // so data row n is source line `top.startLine + 2 + n`.
+      var rowCells: [[NSRange]] = [cellRanges(entry.table.head)]
+      for row in entry.table.body.children {
+        if let r = row as? Table.Row { rowCells.append(cellRanges(r)) }
+      }
+      let columnCount = rowCells.map(\.count).max() ?? 0
+      guard columnCount > 0, top.endLine > top.startLine else { continue }
+      let alignments = entry.table.columnAlignments
+
+      // Measure on a snapshot: the deltas written below would otherwise be measured back
+      // into the prefixes of the same row.
+      let snapshot = NSAttributedString(attributedString: native)
+
+      var widths = [CGFloat](repeating: 0, count: columnCount)
+      var cellWidths = [[CGFloat]](repeating: [], count: rowCells.count)
+      for (ri, cells) in rowCells.enumerated() {
+        for c in 0..<columnCount {
+          let content =
+            c < cells.count ? trimmedRange(cells[c], in: ns) : NSRange(location: 0, length: 0)
+          let w = content.length > 0 ? TableColumnLayout.measuredWidth(of: content, in: snapshot) : 0
+          cellWidths[ri].append(w)
+          widths[c] = max(widths[c], w)
+        }
+      }
+
+      let model = TableColumnLayout.model(
+        columnContentWidths: widths, padding: style.metrics.tableCellPadding)
+
+      // Whole-block range (every line of the table, newlines included) — carries the grid
+      // line positions and the ordinal the editor uses to flip this table's mode.
+      let blockStart = lines[top.startLine - 1].start
+      let lastIndex = min(top.endLine - 1, lines.count - 1)
+      let last = lines[lastIndex]
+      let blockEnd = min(
+        last.start + (last.text as NSString).length + (last.hasNewline ? 1 : 0), ns.length)
+      guard blockEnd > blockStart else { continue }
+      let blockRange = NSRange(location: blockStart, length: blockEnd - blockStart)
+      native.addAttribute(
+        .markdownTableGrid,
+        value: model.separatorTargets.map { NSNumber(value: Double($0)) }, range: blockRange)
+      native.addAttribute(
+        .markdownTableOrdinal, value: NSNumber(value: entry.ordinal), range: blockRange)
+
+      // Null every pipe in the block (header, separator and body rows alike): zero width,
+      // still present in the string. SF Mono has no zero-width glyph for the layout
+      // manager's substitution to use, so the advance is cancelled with a kern instead —
+      // the pipes keep their full advance and every row drifts.
+      var pipeIdx = blockRange.location
+      while pipeIdx < NSMaxRange(blockRange) {
+        if ns.character(at: pipeIdx) == 0x7C,
+          let font = snapshot.attribute(.font, at: pipeIdx, effectiveRange: nil) as? PlatformFont
+        {
+          native.addAttribute(
+            .kern, value: TableColumnLayout.nullingKern(of: 0x7C, in: font),
+            range: NSRange(location: pipeIdx, length: 1))
+        }
+        pipeIdx += 1
+      }
+
+      // The `|---|` row (source line `top.startLine + 1`): its characters are hidden, so
+      // the drawn rule gets the table's width instead.
+      let separatorIndex = top.startLine  // 0-based index of the separator line
+      if separatorIndex <= top.endLine - 1, separatorIndex < lines.count {
+        let li = lines[separatorIndex]
+        let length = min((li.text as NSString).length, max(0, ns.length - li.start))
+        if length > 0 {
+          native.addAttribute(
+            .markdownTableRule, value: NSNumber(value: Double(model.tableWidth)),
+            range: NSRange(location: li.start, length: length))
+        }
+      }
+
+      for (ri, cells) in rowCells.enumerated() {
+        let lineIndex = top.startLine - 1 + (ri == 0 ? 0 : ri + 1)
+        guard lineIndex < lines.count else { continue }
+        let rowStart = lines[lineIndex].start
+        let rowEnd = min(rowStart + (lines[lineIndex].text as NSString).length, ns.length)
+        guard rowEnd >= rowStart else { continue }
+
+        // One anchor per non-empty cell: the character BEFORE its content. Everything
+        // from that character onward is shifted by the delta, landing the content on the
+        // column's grid position.
+        var anchors: [(anchorCharIndex: Int, targetX: CGFloat, naturalEndX: CGFloat)] = []
+        var indentShift = false
+        var indentExtra: CGFloat = 0
+        for c in 0..<columnCount where c < cells.count {
+          let content = trimmedRange(cells[c], in: ns)
+          guard content.length > 0 else { continue }
+          // Column alignment (`|:---:|`, `|---:|`): instead of kerning the opening pipe
+          // (which would desynchronize the chain), the cell's target x is pushed right
+          // within its column.
+          var extra: CGFloat = 0
+          let alignment = c < alignments.count ? alignments[c] : nil
+          let slack = widths[c] - cellWidths[ri][c]
+          if alignment == .right {
+            extra = slack
+          } else if alignment == .center {
+            extra = slack / 2
+          }
+          let target = model.contentTargets[c] + extra
+          if content.location - 1 >= rowStart {
+            anchors.append(
+              (anchorCharIndex: content.location - 1, targetX: target, naturalEndX: 0))
+          } else if !indentShift {
+            // No outer pipe: nothing precedes column 0's content, so the row is shifted
+            // with a paragraph indent instead (still attributes only).
+            indentShift = true
+            indentExtra =
+              target
+              - TableColumnLayout.measuredWidth(
+                of: NSRange(location: rowStart, length: content.location - rowStart),
+                in: snapshot)
+          }
+        }
+        guard !anchors.isEmpty || indentShift else { continue }
+        if indentShift {
+          shiftRowIndent(
+            lineIndex: lineIndex, extra: indentExtra, lines: lines, native: native)
+        }
+        for k in anchors.indices {
+          anchors[k].naturalEndX = TableColumnLayout.measuredWidth(
+            of: NSRange(
+              location: rowStart, length: anchors[k].anchorCharIndex - rowStart + 1),
+            in: snapshot)
+        }
+        if indentShift, !anchors.isEmpty {
+          // The line's indent already moved every anchor right by `indentExtra`; folding it
+          // into the first target keeps the rest of the chain consistent.
+          anchors[0].targetX -= indentExtra
+        }
+        for d in TableColumnLayout.deltas(anchors: anchors)
+        where d.anchorCharIndex >= 0 && d.anchorCharIndex < native.length {
+          guard abs(d.delta) > 0.001 else { continue }
+          let existing =
+            (native.attribute(.kern, at: d.anchorCharIndex, effectiveRange: nil) as? CGFloat) ?? 0
+          native.addAttribute(
+            .kern, value: existing + d.delta,
+            range: NSRange(location: d.anchorCharIndex, length: 1))
+        }
+      }
+    }
+    // Source-mode tables still carry their ordinal: the editor reads it at the caret to
+    // know when the caret has left the table (which returns it to the grid).
+    for entry in tables where !entry.isGrid {
+      let top = entry.top
+      guard top.startLine >= 1, top.startLine <= lines.count else { continue }
+      let blockStart = lines[top.startLine - 1].start
+      let lastIndex = min(top.endLine - 1, lines.count - 1)
+      let last = lines[lastIndex]
+      let blockEnd = min(
+        last.start + (last.text as NSString).length + (last.hasNewline ? 1 : 0), ns.length)
+      guard blockEnd > blockStart else { continue }
+      native.addAttribute(
+        .markdownTableOrdinal, value: NSNumber(value: entry.ordinal),
+        range: NSRange(location: blockStart, length: blockEnd - blockStart))
+    }
+  }
+
+  /// Adds `extra` to a line's first-line indent — used for a table row with no outer pipe,
+  /// where there is no character before column 0's content to kern. Attributes only (the
+  /// platform-native paragraph copy comes from `MarkdownRenderer`).
+  private static func shiftRowIndent(
+    lineIndex: Int, extra: CGFloat, lines: [LineInfo], native: NSMutableAttributedString
+  ) {
+    guard lineIndex >= 0, lineIndex < lines.count, abs(extra) > 0.01 else { return }
+    let li = lines[lineIndex]
+    guard li.start < native.length,
+      let shifted = MarkdownRenderer.addingFirstLineIndent(
+        native.attribute(.paragraphStyle, at: li.start, effectiveRange: nil), by: extra)
+    else { return }
+    let length = min((li.text as NSString).length + (li.hasNewline ? 1 : 0), native.length - li.start)
+    guard length > 0 else { return }
+    native.addAttribute(
+      .paragraphStyle, value: shifted, range: NSRange(location: li.start, length: length))
   }
 
   /// The FULL fenced-code block range for a content `.markdownCodeBlock` span:
