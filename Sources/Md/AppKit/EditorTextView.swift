@@ -48,9 +48,7 @@
       // initial clip size as its maxSize and can never grow past the first viewport
       // (the scroll content then clips the document bottom). Autoresizing [.width]
       // keeps the text width tracking the window so text re-wraps on resize.
-      minSize = NSSize(width: 0, height: 0)
-      maxSize = NSSize(
-        width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+      unclampSize()
       autoresizingMask = [.width]
       textContainerInset = NSSize(
         width: metrics.textContainerInsetWidth, height: metrics.textContainerInsetHeight)  // Obsidian-like margins
@@ -213,10 +211,27 @@
     /// viewport size and break both scroll growth and shrinking for short documents.
     /// Re-assert before super so the text view stays free to track the layout height.
     public override func setFrameSize(_ newSize: NSSize) {
-      minSize = NSSize(width: 0, height: 0)
-      maxSize = NSSize(
-        width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+      // Setting minSize/maxSize resizes the view to fit them — which lands back
+      // here. Unclamp only from the outermost call, or opening a document
+      // recurses until the stack overflows.
+      if !isUnclampingSize { unclampSize() }
       super.setFrameSize(newSize)
+    }
+
+    /// Set while `unclampSize()` writes minSize/maxSize (see `setFrameSize`).
+    private var isUnclampingSize = false
+
+    /// Lifts the min/max clamp NSTextView derives from its frame, writing only the
+    /// bounds that changed: every write makes NSTextView resize itself.
+    private func unclampSize() {
+      let unclampedMin = NSSize(width: 0, height: 0)
+      let unclampedMax = NSSize(
+        width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+      guard minSize != unclampedMin || maxSize != unclampedMax else { return }
+      isUnclampingSize = true
+      defer { isUnclampingSize = false }
+      if minSize != unclampedMin { minSize = unclampedMin }
+      if maxSize != unclampedMax { maxSize = unclampedMax }
     }
 
     // MARK: - Scroll content sizing (document view tracks the layout)
@@ -423,9 +438,7 @@
         // Re-assert after the scroll view sized us: NSTextView can clamp min/max
         // back to the frame it received as documentView, which would block
         // shrinking below the first viewport / narrow windows.
-        minSize = NSSize(width: 0, height: 0)
-        maxSize = NSSize(
-          width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        unclampSize()
         EditorTextView.live = self
         print(
           "EDITOR READY textKit1=\(textLayoutManager == nil) syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)"
