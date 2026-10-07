@@ -6,12 +6,7 @@ import PackageDescription
 let package = Package(
   name: "Markdown",
   platforms: [
-    // Match the app target (MACOSX_DEPLOYMENT_TARGET = 27.0). The macOS 26+ SDK
-    // marks AppKit's NSLayoutManager/NSTextView methods @MainActor; targeting an
-    // older platform would compile them as nonisolated and break the overrides.
     .macOS(.v14),
-    // iOS support: the UIKit alternative editor stack (Sources/Md/UIKit) builds
-    // on iOS 17+.
     .iOS(.v17),
   ],
   products: [
