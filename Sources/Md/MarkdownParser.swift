@@ -5,6 +5,10 @@ public struct ParsedMarkdown {
   public let attributed: NSAttributedString
   public let syntaxRanges: [NSRange]
   public let blocks: [MarkdownParser.Block]
+  /// Natural grid width (pt, excluding the line-fragment padding) of every table the
+  /// grid pass measured, by ordinal. An editor compares these with its container width
+  /// to know when a resize changes which tables fit (see `maxTableWidth`).
+  public var tableWidths: [Int: CGFloat] = [:]
 }
 
 /// Markdown → styled attributed string, built on swift-markdown (CommonMark + GFM:
@@ -63,10 +67,38 @@ public enum MarkdownParser {
   /// string is rendered with the platform's native font/color/paragraph types via
   /// `MarkdownRenderer`, so callers (macOS `NSTextView`, iOS `UITextView`) consume
   /// a fully-native `NSAttributedString`.
+  ///
+  /// `maxTableWidth` is the width available to a table (the container width minus its
+  /// line-fragment padding). A grid table wider than that cannot be drawn — its rows
+  /// would wrap and tear the grid apart — so it renders as RAW markdown instead (pipes
+  /// visible, no grid). `nil` (the default) never falls back.
   public static func parse(
     _ markdown: String,
     style: any MarkdownStyling = MarkdownStyleSpec.standard,
-    sourceModeTables: Set<Int> = []
+    sourceModeTables: Set<Int> = [],
+    maxTableWidth: CGFloat? = nil
+  ) -> ParsedMarkdown {
+    let first = parse(markdown, style: style, sourceModeTables: sourceModeTables, rawTables: [])
+    guard let maxTableWidth else { return first }
+    let overflowing = Set(first.tableWidths.filter { $0.value > maxTableWidth + 0.5 }.keys)
+    guard !overflowing.isEmpty else { return first }
+    var fallback = parse(
+      markdown, style: style, sourceModeTables: sourceModeTables, rawTables: overflowing)
+    fallback.tableWidths = first.tableWidths
+    return fallback
+  }
+
+  /// The tables (by ordinal) whose natural grid width does not fit `availableWidth`.
+  public static func overflowingTables(_ widths: [Int: CGFloat], availableWidth: CGFloat?)
+    -> Set<Int>
+  {
+    guard let availableWidth else { return [] }
+    return Set(widths.filter { $0.value > availableWidth + 0.5 }.keys)
+  }
+
+  private static func parse(
+    _ markdown: String, style: any MarkdownStyling, sourceModeTables: Set<Int>,
+    rawTables: Set<Int>
   ) -> ParsedMarkdown {
     let out = NSMutableAttributedString()
     var syntaxRanges: [NSRange] = []
@@ -96,11 +128,17 @@ public enum MarkdownParser {
     // mode, where it renders as its raw markdown text (today's look) so it can be edited.
     var tables: [(table: Table, top: TopBlock, ordinal: Int, isGrid: Bool)] = []
     var gridTableLines: Set<Int> = []
+    var rawTableLines: Set<Int> = []
     var tableOrdinal = 0
     for child in doc.children {
       guard let table = child as? Table, let r = table.range else { continue }
-      let isGrid = !sourceModeTables.contains(tableOrdinal)
+      // A table the user is editing stays in source mode even when it is too wide; a
+      // too-wide table that is not being edited renders raw (see `maxTableWidth`).
+      let isSource = sourceModeTables.contains(tableOrdinal)
+      let isRaw = !isSource && rawTables.contains(tableOrdinal)
+      let isGrid = !isSource && !isRaw
       if isGrid { gridTableLines.insert(r.lowerBound.line) }
+      if isRaw { rawTableLines.insert(r.lowerBound.line) }
       tables.append(
         (
           table: table,
@@ -110,7 +148,8 @@ public enum MarkdownParser {
       tableOrdinal += 1
     }
 
-    let planner = LinePlanner(doc: doc, lines: lines, style: style, gridTables: gridTableLines)
+    let planner = LinePlanner(
+      doc: doc, lines: lines, style: style, gridTables: gridTableLines, rawTables: rawTableLines)
     let plans = (0..<lines.count).map { planner.plan(for: $0) }
 
     // --- Attribute helpers (all ranges are UTF-16) ---
@@ -130,12 +169,19 @@ public enum MarkdownParser {
     /// table pass also gives each pipe a nulling kern, because SF Mono has no
     /// zero-width glyph to substitute). SOURCE mode: a line command like any other
     /// block marker, i.e. today's behavior.
-    func markTablePipes(of li: LineInfo, grid: Bool) {
+    func markTablePipes(of li: LineInfo, grid: Bool, raw: Bool) {
       let lineNs = li.text as NSString
       var idx = 0
       while idx < lineNs.length {
         if lineNs.character(at: idx) == 0x7C {  // |
           let r = NSRange(location: li.start + idx, length: 1)
+          if raw {
+            // RAW (too wide for a grid): the pipes are the only column separators left,
+            // so they stay visible — syntax-colored, never hidden.
+            out.addAttribute(.foregroundColor, value: style.syntaxColor, range: r)
+            idx += 1
+            continue
+          }
           syntaxRanges.append(r)
           out.addAttribute(.markdownSyntax, value: true, range: r)
           if !grid { out.addAttribute(.markdownLineCommand, value: true, range: r) }
@@ -200,7 +246,7 @@ public enum MarkdownParser {
         if italic { traits.insert(.italic) }
         return base.addingTraits(traits)
       }
-      func walk(_ node: Markup) {
+      func walk(_ node: Markup, inLink: Bool = false) {
         switch node {
         case let s as Strong:
           if let r = nsRange(s.range) {
@@ -220,6 +266,16 @@ public enum MarkdownParser {
           // backslash as syntax (command symbol), like any other delimiter.
           if let r = nsRange(t.range) {
             let sourceSlice = (markdown as NSString).substring(with: r)
+            if !inLink {
+              // Bare URLs (GFM "extended autolinks"): swift-markdown does not enable
+              // cmark's autolink extension, so `https://…` / `www.…` in plain text
+              // would otherwise render as ordinary, unclickable text.
+              for (range, url) in bareURLs(in: sourceSlice) {
+                let linkRange = NSRange(location: r.location + range.location, length: range.length)
+                out.addAttribute(.foregroundColor, value: style.linkColor, range: linkRange)
+                out.addAttribute(.link, value: url, range: linkRange)
+              }
+            }
             if sourceSlice != t.plainText {
               let srcNs = sourceSlice as NSString
               let plainNs = t.plainText as NSString
@@ -313,7 +369,8 @@ public enum MarkdownParser {
           }
         default: break
         }
-        for c in node.children { walk(c) }
+        let childInLink = inLink || node is Link || node is Image
+        for c in node.children { walk(c, inLink: childInLink) }
       }
       walk(container)
     }
@@ -382,7 +439,7 @@ public enum MarkdownParser {
         let r = NSRange(location: li.start, length: (li.text as NSString).length)
         out.addAttribute(.markdownRule, value: true, range: r)
       case .tableHeader, .tableBody, .tableSeparator:
-        markTablePipes(of: li, grid: plan.tableGrid)
+        markTablePipes(of: li, grid: plan.tableGrid, raw: plan.tableRaw)
       case .code, .fence, .headingUnderline: break  // codeBlock attr rides in base; whole-line syntax via markerRange
       default: break
       }
@@ -396,10 +453,12 @@ public enum MarkdownParser {
 
       // Blockquote bar run: line content + its newline, applied AFTER the
       // newline exists (consecutive quote lines form one contiguous bar).
+      // The value is the nesting depth (`> > x` = 2): one bar is drawn per level.
       if case .quote = plan.role {
         let len = (li.text as NSString).length + (li.hasNewline ? 1 : 0)
         out.addAttribute(
-          .markdownBlockquote, value: true, range: NSRange(location: li.start, length: len))
+          .markdownBlockquote, value: NSNumber(value: plan.quoteDepth),
+          range: NSRange(location: li.start, length: len))
       }
     }
     if let c = currentCodeSpan { codeSpans.append(c) }
@@ -473,9 +532,12 @@ public enum MarkdownParser {
     // on iOS). The table grid pass runs AFTER this: it needs the real fonts to
     // measure cell widths and to cancel each pipe's advance.
     let native = NSMutableAttributedString(attributedString: MarkdownRenderer.render(out))
-    applyTableGrid(tables: tables, native: native, ns: ns, lines: lines, style: style)
+    let tableWidths = applyTableGrid(
+      tables: tables, native: native, ns: ns, lines: lines, style: style)
+    applyHangingIndents(plans: plans, lines: lines, native: native)
 
-    return ParsedMarkdown(attributed: native, syntaxRanges: syntaxRanges, blocks: blocks)
+    return ParsedMarkdown(
+      attributed: native, syntaxRanges: syntaxRanges, blocks: blocks, tableWidths: tableWidths)
   }
 
   // MARK: - AST → Block (test surface; nested lists flattened like the old parser)
@@ -667,8 +729,38 @@ public enum MarkdownParser {
     var tableGrid: Bool = false
     /// A range to mark as hidden syntax WITHOUT a line command: revealed by nothing, not
     /// even the caret. Used for a grid-mode table's `|---|` separator row, whose visible
-    /// stand-in is a drawn rule.
+    /// stand-in is a drawn rule, and for a nested list line's leading indentation (the
+    /// paragraph indent replaces it).
     var hiddenRange: NSRange?
+    /// True when this line belongs to a table too wide for a grid, rendered as RAW
+    /// markdown (pipes always visible).
+    var tableRaw: Bool = false
+    /// Blockquote nesting depth (`> > x` = 2).
+    var quoteDepth: Int = 0
+    /// Hanging-indent inputs for a list line, resolved after rendering (they need real
+    /// font metrics) by `applyHangingIndents`.
+    var hang: Hang?
+  }
+
+  /// A list line's indentation, measured from what is actually drawn.
+  ///
+  /// The first line starts at `parentItemLine`'s content x (so a nested item's marker
+  /// sits under its parent's text), else at `baseIndent`. Wrapped lines hang at the
+  /// first line's start plus the drawn width of `prefix` — the marker and the space after
+  /// it — so they line up with the item's text, whatever the marker ("•", "10.", a
+  /// checkbox) and font.
+  private struct Hang {
+    var baseIndent: CGFloat
+    /// 1-based line this line starts an item on (nil for a continuation line).
+    var itemLine: Int?
+    /// 1-based start line of the item whose content column this line hangs from.
+    var parentItemLine: Int?
+    /// The drawn marker characters before the content (empty for a continuation line).
+    var prefix: NSRange
+    /// The marker character drawn as "•" (glyph substitution).
+    var bulletIndex: Int?
+    /// The checkbox's middle character, drawn as an EN SPACE slot.
+    var checkboxMiddle: Int?
   }
 
   private struct TopBlock {
@@ -683,6 +775,8 @@ public enum MarkdownParser {
     let endLine: Int
     let checked: Bool?
     let ordered: Bool
+    /// Start line of the enclosing list item (nil for a top-level item).
+    let parentStartLine: Int?
   }
 
   private struct ContainerInfo {
@@ -700,11 +794,17 @@ public enum MarkdownParser {
     let containers: [ContainerInfo]
     /// Start lines (1-based) of the tables rendered as a GRID.
     let gridTables: Set<Int>
+    /// Start lines (1-based) of the tables too wide for a grid, rendered RAW.
+    let rawTables: Set<Int>
 
-    init(doc: Markup, lines: [LineInfo], style: any MarkdownStyling, gridTables: Set<Int> = []) {
+    init(
+      doc: Markup, lines: [LineInfo], style: any MarkdownStyling, gridTables: Set<Int> = [],
+      rawTables: Set<Int> = []
+    ) {
       self.lines = lines
       self.style = style
       self.gridTables = gridTables
+      self.rawTables = rawTables
       topBlocks = doc.children.compactMap { node in
         guard let r = node.range else { return nil }
         return TopBlock(node: node, startLine: r.lowerBound.line, endLine: r.upperBound.line)
@@ -736,10 +836,11 @@ public enum MarkdownParser {
         }
         if let item = node as? Markdown.ListItem, let r = item.range {
           let checked: Bool? = item.checkbox.map { $0 == .checked }
+          let parent = (item.parent?.parent as? Markdown.ListItem)?.range?.lowerBound.line
           items.append(
             ItemInfo(
               item: item, startLine: r.lowerBound.line, endLine: r.upperBound.line,
-              checked: checked, ordered: ordered))
+              checked: checked, ordered: ordered, parentStartLine: parent))
         }
         if let ol = node as? OrderedList {
           for c in ol.children { walk(c, ordered: true) }
@@ -797,17 +898,39 @@ public enum MarkdownParser {
       switch t.node {
       case let h as Heading:
         let para = style.headingParagraph(level: h.level)
-        let base: [NSAttributedString.Key: Any] = [
-          .font: style.headingFont(level: h.level), .foregroundColor: style.textColor,
-          .paragraphStyle: para,
-        ]
+        let isSetext = t.endLine > t.startLine
         // Setext underline: whole line is syntax (ATX marker regex won't match it).
-        if match(li.text, pattern: "^\\s*(=+|-+)\\s*$") != nil {
+        // Hidden, it would still be a full heading-sized line plus the heading's
+        // spacing on both sides — a large gap under the heading. So the underline gets
+        // a tiny font, no spacing before, and carries the heading's spacing AFTER
+        // (which the text line above drops).
+        // (cmark ends the heading's range at column 1 of the line AFTER the underline,
+        // so `endLine` cannot identify the underline; any later line matching it does.)
+        if isSetext, lineNo > t.startLine,
+          match(li.text, pattern: "^\\s*(=+|-+)\\s*$") != nil
+        {
           let full = NSRange(location: li.start, length: (li.text as NSString).length)
+          var underlinePara = para
+          underlinePara.paragraphSpacingBefore = 0
+          let underlineBase: [NSAttributedString.Key: Any] = [
+            .font: MarkdownFont(kind: .body, size: style.metrics.setextUnderlineFontSize),
+            .foregroundColor: style.textColor, .paragraphStyle: underlinePara,
+          ]
           return LinePlan(
-            role: .headingUnderline, base: base, paragraphStyle: para, markerRange: full)
+            role: .headingUnderline, base: underlineBase, paragraphStyle: underlinePara,
+            markerRange: full)
         }
-        var plan = LinePlan(role: .heading(level: h.level), base: base, paragraphStyle: para)
+        var textPara = para
+        if isSetext {
+          textPara.paragraphSpacing = 0
+          if lineNo > t.startLine { textPara.paragraphSpacingBefore = 0 }
+        }
+        let textBase: [NSAttributedString.Key: Any] = [
+          .font: style.headingFont(level: h.level), .foregroundColor: style.textColor,
+          .paragraphStyle: textPara,
+        ]
+        var plan = LinePlan(
+          role: .heading(level: h.level), base: textBase, paragraphStyle: textPara)
         if let m = match(li.text, pattern: "^([ \\t]*)(#{1,6})([ \\t]+)(.*)$") {
           let prefixLen =
             (m[1] as NSString).length + (m[2] as NSString).length + (m[3] as NSString).length
@@ -821,18 +944,26 @@ public enum MarkdownParser {
           role: .rule, base: bodyBase(), paragraphStyle: style.bodyParagraph(), markerRange: full)
 
       case is BlockQuote:
+        // Every leading `>` (with its optional space) is marker syntax, so a nested
+        // `> > x` hides both levels; the depth drives the indent and one bar per level.
+        let quoteMatch = match(li.text, pattern: "^([ \\t]*(?:>[ \\t]?)+)")
+        let markerLen = quoteMatch.map { ($0[1] as NSString).length } ?? 0
+        let depth = max(1, quoteMatch.map { $0[1].filter { $0 == ">" }.count } ?? 1)
+        var para = style.quoteParagraph()
+        para.firstLineHeadIndent *= CGFloat(depth)
+        para.headIndent *= CGFloat(depth)
         let base: [NSAttributedString.Key: Any] = [
-          .font: style.bodyFont(), .foregroundColor: style.quoteTextColor,
-          .paragraphStyle: style.quoteParagraph(),
+          .font: style.bodyFont(), .foregroundColor: style.quoteTextColor, .paragraphStyle: para,
         ]
-        var plan = LinePlan(role: .quote, base: base, paragraphStyle: style.quoteParagraph())
-        let trimmed = li.text.trimmingCharacters(in: .whitespaces)
-        let leadingWs = (li.text as NSString).length - (trimmed as NSString).length
-        let markerCount = trimmed.prefix(while: { $0 == ">" }).count
-        let rest = trimmed.dropFirst(markerCount)
-        let wsLen = rest.prefix(while: { $0 == " " || $0 == "\t" }).count
-        let markerLen = leadingWs + markerCount + wsLen
-        plan.markerRange = NSRange(location: li.start, length: markerLen)
+        var plan = LinePlan(role: .quote, base: base, paragraphStyle: para)
+        plan.quoteDepth = depth
+        if markerLen > 0 { plan.markerRange = NSRange(location: li.start, length: markerLen) }
+        // A list item inside the quote (`> - item`, `> 1. item`, `> - [ ] task`) gets the
+        // same marker rendering as a top-level item.
+        let rest = (li.text as NSString).substring(from: markerLen)
+        applyListMarker(
+          to: &plan, text: rest, start: li.start + markerLen, isTask: nil,
+          baseIndent: para.firstLineHeadIndent, itemLine: nil, parentItemLine: nil)
         return plan
 
       case is UnorderedList, is OrderedList:
@@ -843,7 +974,9 @@ public enum MarkdownParser {
           let isTask = item?.checked != nil
           let width = style.listMarkerWidth(task: isTask, ordered: ordered)
           let checked = item?.checked
-          let para = style.listParagraph(level: level, markerWidth: width)
+          // Indents here are placeholders: `applyHangingIndents` replaces them with ones
+          // measured from the drawn marker once real fonts exist.
+          let para = style.listParagraph(level: 0, markerWidth: width)
           let base: [NSAttributedString.Key: Any] = [
             .font: style.bodyFont(),
             .foregroundColor: checked == true ? style.checkedTextColor : style.textColor,
@@ -852,52 +985,48 @@ public enum MarkdownParser {
           var plan = LinePlan(
             role: .listItem(ordered: ordered, level: level, width: width, checked: checked),
             base: base, paragraphStyle: para)
-          if isTask,
-            let tm = match(
-              li.text, pattern: "^([ \\t]*)([-*+])([ \\t]+)(\\[[ xX]\\])([ \\t]+)(.*)$")
-          {
-            let m1 = (tm[1] as NSString).length
-            let m2 = (tm[2] as NSString).length
-            let m3 = (tm[3] as NSString).length
-            let markerEnd = li.start + m1 + m2 + m3
-            // The task "‑" is a LINE COMMAND (hidden/collapsed until the caret
-            // is on the line), like heading '#'. It is NOT a persistent list
-            // marker and NOT a bullet, so listMarkerRange/bulletRange stay nil
-            // here — the checkbox keeps its slot (image drawn), the "-" reveals
-            // only when the line is active.
-            plan.markerRange = NSRange(location: li.start, length: m1 + m2 + m3)
-            plan.checkboxRange = NSRange(location: markerEnd, length: (tm[4] as NSString).length)
-            plan.checked = checked
-          } else {
-            let m1Len = (m[1] as NSString).length
-            let m2Len = (m[2] as NSString).length
-            let m3Len = (m[3] as NSString).length
-            plan.markerRange = NSRange(location: li.start, length: m1Len + m2Len + m3Len)
-            plan.listMarkerRange = plan.markerRange
-            if !ordered {
-              // Plain unordered bullet "-"/"*"/"+": the marker CHARACTER renders
-              // as "•" via glyph substitution (source keeps the literal "-").
-              plan.bulletRange = NSRange(location: li.start + m1Len, length: m2Len)
-            }
-          }
+          // Leading indentation is ALWAYS hidden: the nesting indent comes from the
+          // paragraph style (aligned under the parent item's text). Drawing the literal
+          // spaces too indented nested items twice.
+          let leading = (m[1] as NSString).length
+          if leading > 0 { plan.hiddenRange = NSRange(location: li.start, length: leading) }
+          let rest = (li.text as NSString).substring(from: leading)
+          applyListMarker(
+            to: &plan, text: rest, start: li.start + leading, isTask: isTask, baseIndent: 0,
+            itemLine: item?.startLine == lineNo ? lineNo : nil,
+            parentItemLine: item?.parentStartLine)
+          plan.checked = checked
           return plan
         }
-        // Line inside a list that has no marker (lazy continuation): plain body.
+        // Line inside a list that has no marker (a continuation of an item's text):
+        // aligned with the item's content, its own leading indentation hidden.
         var plan = LinePlan(
           role: .listFallback, base: bodyBase(), paragraphStyle: style.bodyParagraph())
+        if let item = innermostItem(covering: lineNo) {
+          let leading = (li.text as NSString).length
+            - (String(li.text.drop(while: { $0 == " " || $0 == "\t" })) as NSString).length
+          let hide = min(leading, contentColumn(ofItemAt: item.startLine))
+          if hide > 0 { plan.hiddenRange = NSRange(location: li.start, length: hide) }
+          plan.hang = Hang(
+            baseIndent: 0, itemLine: nil, parentItemLine: item.startLine,
+            prefix: NSRange(location: li.start, length: 0))
+        }
         return plan
 
       case is Table:
         let tablePara = tableParagraph()
         let isGrid = gridTables.contains(t.startLine)
+        let isRaw = rawTables.contains(t.startLine)
         let offset = lineNo - t.startLine  // 0 = header row, 1 = separator row
         if offset == 0 {
           let base: [NSAttributedString.Key: Any] = [
             .font: style.emphasisFont(base: style.codeFont(), bold: true, italic: false),
             .foregroundColor: style.textColor, .paragraphStyle: tablePara,
           ]
-          return LinePlan(
+          var plan = LinePlan(
             role: .tableHeader, base: base, paragraphStyle: tablePara, tableGrid: isGrid)
+          plan.tableRaw = isRaw
+          return plan
         }
         let base: [NSAttributedString.Key: Any] = [
           .font: style.codeFont(), .foregroundColor: style.textColor, .paragraphStyle: tablePara,
@@ -916,10 +1045,21 @@ public enum MarkdownParser {
                 .foregroundColor: style.textColor, .paragraphStyle: tablePara,
               ], paragraphStyle: tablePara, tableGrid: true, hiddenRange: full)
           }
+          if isRaw {
+            // RAW: the `|---|` row stays visible (syntax-colored), like the pipes.
+            var rawBase = base
+            rawBase[.foregroundColor] = style.syntaxColor
+            var plan = LinePlan(role: .tableSeparator, base: rawBase, paragraphStyle: tablePara)
+            plan.tableRaw = true
+            return plan
+          }
           return LinePlan(
             role: .tableSeparator, base: base, paragraphStyle: tablePara, markerRange: full)
         }
-        return LinePlan(role: .tableBody, base: base, paragraphStyle: tablePara, tableGrid: isGrid)
+        var plan = LinePlan(
+          role: .tableBody, base: base, paragraphStyle: tablePara, tableGrid: isGrid)
+        plan.tableRaw = isRaw
+        return plan
 
       case is Paragraph:
         var plan = LinePlan(
@@ -946,6 +1086,65 @@ public enum MarkdownParser {
         }
       }
       return best
+    }
+
+    /// Marks a list marker at the start of `text` (which begins at document offset
+    /// `start`): a task's `-` is a line command and its `[ ]` a checkbox; a plain marker
+    /// is always shown (an unordered one drawn as "•"). Also records the hanging-indent
+    /// inputs. `isTask` nil means "detect from the text" (lists inside quotes, where the
+    /// AST lookup is not used). No-op when `text` does not start with a marker.
+    private func applyListMarker(
+      to plan: inout LinePlan, text: String, start: Int, isTask: Bool?, baseIndent: CGFloat,
+      itemLine: Int?, parentItemLine: Int?
+    ) {
+      if isTask ?? true,
+        let tm = match(text, pattern: "^([-*+])([ \\t]+)(\\[[ xX]\\])([ \\t]+)(.*)$")
+      {
+        let dashLen = (tm[1] as NSString).length + (tm[2] as NSString).length
+        let boxLen = (tm[3] as NSString).length
+        let boxStart = start + dashLen
+        // The task "-" is a LINE COMMAND (hidden/collapsed until the caret is on the
+        // line), like heading '#'. It is NOT a persistent list marker and NOT a bullet —
+        // the checkbox keeps its slot (image drawn), the "-" reveals only when active.
+        let dash = NSRange(location: start, length: dashLen)
+        plan.markerRange = plan.markerRange.map { NSUnionRange($0, dash) } ?? dash
+        plan.checkboxRange = NSRange(location: boxStart, length: boxLen)
+        if plan.checked == nil {
+          plan.checked = tm[3].contains("x") || tm[3].contains("X")
+        }
+        plan.hang = Hang(
+          baseIndent: baseIndent, itemLine: itemLine, parentItemLine: parentItemLine,
+          prefix: NSRange(location: boxStart, length: boxLen + (tm[4] as NSString).length),
+          checkboxMiddle: boxStart + 1)
+        return
+      }
+      guard let m = match(text, pattern: "^([-*+]|\\d+[.)])([ \\t]+)") else { return }
+      let markerLen = (m[1] as NSString).length
+      let marker = NSRange(location: start, length: markerLen + (m[2] as NSString).length)
+      if plan.markerRange == nil { plan.markerRange = marker }
+      plan.listMarkerRange = marker
+      let unordered = markerLen == 1 && "-*+".contains(m[1])
+      // Plain unordered bullet "-"/"*"/"+": the marker CHARACTER renders as "•" via
+      // glyph substitution (source keeps the literal "-").
+      if unordered { plan.bulletRange = NSRange(location: start, length: 1) }
+      plan.hang = Hang(
+        baseIndent: baseIndent, itemLine: itemLine, parentItemLine: parentItemLine,
+        prefix: marker, bulletIndex: unordered ? start : nil)
+    }
+
+    /// Characters before an item's content on its first line (indent + marker + space,
+    /// plus the checkbox and its space for a task) — how far a continuation line's own
+    /// indentation reaches into the item.
+    private func contentColumn(ofItemAt line: Int) -> Int {
+      guard line >= 1, line <= lines.count else { return 0 }
+      let text = lines[line - 1].text
+      if let m = match(text, pattern: "^([ \\t]*[-*+][ \\t]+\\[[ xX]\\][ \\t]+)") {
+        return (m[1] as NSString).length
+      }
+      if let m = match(text, pattern: "^([ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+)") {
+        return (m[1] as NSString).length
+      }
+      return 0
     }
 
     private func codeParagraph() -> MarkdownParagraph { style.codeParagraph() }
@@ -988,11 +1187,13 @@ public enum MarkdownParser {
   /// characters must stay in the string), measures the columns, aligns every row onto the
   /// grid with `.kern` deltas, and attaches the grid / ordinal / header-rule attributes.
   /// Source-mode tables are untouched (raw markdown, today's rendering).
+  @discardableResult
   private static func applyTableGrid(
     tables: [(table: Table, top: TopBlock, ordinal: Int, isGrid: Bool)],
     native: NSMutableAttributedString, ns: NSString, lines: [LineInfo],
     style: any MarkdownStyling
-  ) {
+  ) -> [Int: CGFloat] {
+    var tableWidths: [Int: CGFloat] = [:]
     for entry in tables where entry.isGrid {
       let top = entry.top
       func cellRanges(_ row: Markup) -> [NSRange] {
@@ -1027,6 +1228,7 @@ public enum MarkdownParser {
 
       let model = TableColumnLayout.model(
         columnContentWidths: widths, padding: style.metrics.tableCellPadding)
+      tableWidths[entry.ordinal] = model.tableWidth
 
       // Whole-block range (every line of the table, newlines included) — carries the grid
       // line positions and the ordinal the editor uses to flip this table's mode.
@@ -1156,6 +1358,88 @@ public enum MarkdownParser {
         .markdownTableOrdinal, value: NSNumber(value: entry.ordinal),
         range: NSRange(location: blockStart, length: blockEnd - blockStart))
     }
+    return tableWidths
+  }
+
+  // MARK: - List hanging indents (measured from the drawn marker)
+
+  /// Rewrites every list line's paragraph indents from real font metrics: the first line
+  /// starts under the parent item's text (or at the quote indent / 0), and wrapped lines
+  /// hang at the start of the item's own text. Attributes only.
+  private static func applyHangingIndents(
+    plans: [LinePlan], lines: [LineInfo], native: NSMutableAttributedString
+  ) {
+    let ns = native.string as NSString
+    var contentX: [Int: CGFloat] = [:]  // item start line → x where its text starts
+    for (index, plan) in plans.enumerated() {
+      guard let hang = plan.hang, index < lines.count else { continue }
+      let li = lines[index]
+      let first = hang.parentItemLine.flatMap { contentX[$0] } ?? hang.baseIndent
+      var width: CGFloat = 0
+      var i = hang.prefix.location
+      while i < NSMaxRange(hang.prefix), i < ns.length {
+        if let font = native.attribute(.font, at: i, effectiveRange: nil) as? PlatformFont {
+          let original = ns.character(at: i)
+          var advance: CGFloat = 0
+          if i == hang.bulletIndex {
+            advance = TableColumnLayout.advance(of: 0x2022, in: font)  // •
+          } else if i == hang.checkboxMiddle {
+            // The same slot glyph the layout manager substitutes: EN SPACE, EN QUAD.
+            advance = TableColumnLayout.advance(of: 0x2002, in: font)
+            if advance == 0 { advance = TableColumnLayout.advance(of: 0x2000, in: font) }
+          }
+          if advance == 0 { advance = TableColumnLayout.advance(of: original, in: font) }
+          width += advance
+        }
+        i += 1
+      }
+      let head = first + width
+      if let itemLine = hang.itemLine { contentX[itemLine] = head }
+      let length = min(
+        (li.text as NSString).length + (li.hasNewline ? 1 : 0), max(0, native.length - li.start))
+      guard length > 0,
+        let style = MarkdownRenderer.settingIndents(
+          native.attribute(.paragraphStyle, at: li.start, effectiveRange: nil),
+          firstLine: first, head: head)
+      else { continue }
+      native.addAttribute(
+        .paragraphStyle, value: style, range: NSRange(location: li.start, length: length))
+    }
+  }
+
+  // MARK: - Bare URLs
+
+  /// `https://…`, `http://…` and `www.…` runs in plain text, with trailing punctuation
+  /// (and an unbalanced closing parenthesis) trimmed the way GFM does.
+  static func bareURLs(in text: String) -> [(NSRange, URL)] {
+    guard text.contains("://") || text.contains("www.") else { return [] }
+    guard
+      let re = try? NSRegularExpression(
+        pattern: "(?<![\\w/@.])(?:https?://|www\\.)[^\\s<>]+", options: [.caseInsensitive])
+    else { return [] }
+    let ns = text as NSString
+    var out: [(NSRange, URL)] = []
+    for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+      var candidate = ns.substring(with: m.range)
+      while let last = candidate.last {
+        if ".,:;!?'\"*_~".contains(last) {
+          candidate.removeLast()
+        } else if last == ")",
+          candidate.filter({ $0 == ")" }).count > candidate.filter({ $0 == "(" }).count
+        {
+          candidate.removeLast()
+        } else {
+          break
+        }
+      }
+      let host = candidate.lowercased().hasPrefix("www.") ? "https://" + candidate : candidate
+      guard candidate.count > 8 || candidate.lowercased().hasPrefix("www."),
+        let url = URL(string: host), url.host != nil
+      else { continue }
+      out.append(
+        (NSRange(location: m.range.location, length: (candidate as NSString).length), url))
+    }
+    return out
   }
 
   /// Adds `extra` to a line's first-line indent — used for a table row with no outer pipe,

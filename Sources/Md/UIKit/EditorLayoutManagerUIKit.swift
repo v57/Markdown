@@ -10,7 +10,7 @@
 
     public override func drawCodeBlockBackground(union: CGRect, at origin: CGPoint) {
       let path = UIBezierPath(
-        roundedRect: union, cornerRadius: MarkdownMetrics.standard.codeBlockCornerRadius)
+        roundedRect: union, cornerRadius: metrics.codeBlockCornerRadius)
       codeBlockBackgroundColor().setFill()
       path.fill()
     }
@@ -21,7 +21,7 @@
       UIBezierPath(roundedRect: chip, cornerRadius: radius).fill()
       // Border: 0.5pt stroke at primary @ 5% — strokeBorder insets by half the
       // line width so the stroke sits inside the chip's edge.
-      let stroke = MarkdownMetrics.standard.inlineCodeChipStrokeWidth
+      let stroke = metrics.inlineCodeChipStrokeWidth
       let inset = chip.insetBy(dx: stroke / 2, dy: stroke / 2)
       let path = UIBezierPath(roundedRect: inset, cornerRadius: max(0, radius - stroke / 2))
       path.lineWidth = stroke
@@ -31,7 +31,7 @@
 
     public override func drawQuoteBarHook(bar: CGRect) {
       let path = UIBezierPath(
-        roundedRect: bar, cornerRadius: MarkdownMetrics.standard.quoteBarCornerRadius)
+        roundedRect: bar, cornerRadius: metrics.quoteBarCornerRadius)
       quoteBarColor().setFill()
       path.fill()
     }
@@ -40,7 +40,7 @@
       verticalLines: [CGFloat], fromY: CGFloat, toY: CGFloat
     ) {
       let path = UIBezierPath()
-      path.lineWidth = MarkdownMetrics.standard.tableGridStrokeWidth
+      path.lineWidth = metrics.tableGridStrokeWidth
       for x in verticalLines {
         path.move(to: CGPoint(x: x, y: fromY))
         path.addLine(to: CGPoint(x: x, y: toY))
@@ -79,10 +79,6 @@
 
     public override func image(for url: URL) -> PlatformImage? {
       InlineImageCache.shared.image(for: url)
-    }
-
-    public override func chromeFont() -> PlatformFont {
-      UIFont.systemFont(ofSize: MarkdownMetrics.standard.chromeFontSize, weight: .semibold)
     }
 
     public override func chromeAttributes(font: PlatformFont) -> [NSAttributedString.Key: Any] {

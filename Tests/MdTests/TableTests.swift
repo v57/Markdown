@@ -463,8 +463,9 @@
 
       // The toggle sits at the table's top-right, on the header row — and is recorded for
       // the editor's hit test.
-      #expect(lm.tableToggles.count == 1)
-      guard let toggle = lm.tableToggles.first else { return }
+      let toggles = lm.tableToggles(origin: .zero)
+      #expect(toggles.count == 1)
+      guard let toggle = toggles.first else { return }
       #expect(toggle.tableOrdinal == 0)
       let m = MarkdownMetrics.standard
       let expectedMaxX = grid.last! + container.lineFragmentPadding - m.tableToggleInset

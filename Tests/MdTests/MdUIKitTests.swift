@@ -138,12 +138,12 @@
 
     @Test func mergedCodeRuns() {
       #expect(
-        EditorLayoutManager.mergedCodeRuns([
+        EditorLayoutManager.mergedRuns([
           NSRange(location: 0, length: 3), NSRange(location: 3, length: 2),
           NSRange(location: 5, length: 1),
         ]) == [NSRange(location: 0, length: 6)])
       #expect(
-        EditorLayoutManager.mergedCodeRuns([
+        EditorLayoutManager.mergedRuns([
           NSRange(location: 0, length: 2), NSRange(location: 3, length: 2),
         ]) == [NSRange(location: 0, length: 2), NSRange(location: 3, length: 2)])
     }

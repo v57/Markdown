@@ -401,13 +401,13 @@
       }
       let hasGrid =
         tv.textStorage?.attribute(.markdownTableGrid, at: tableIndex, effectiveRange: nil) != nil
-      print("TABLEPROBE grid=\(hasGrid) toggles=\(lm.tableToggles.count) atIndex=\(tableIndex)")
+      print("TABLEPROBE grid=\(hasGrid) toggles=\(lm.tableToggles(origin: tv.textContainerOrigin).count) atIndex=\(tableIndex)")
 
       var changes = 0
       let priorOnChange = tv.onChange
       tv.onChange = { _ in changes += 1 }
 
-      guard let toggle = lm.tableToggles.first else {
+      guard let toggle = lm.tableToggles(origin: tv.textContainerOrigin).first else {
         print("TABLEPROBE FAIL no toggle frame recorded")
         tv.onChange = priorOnChange
         return

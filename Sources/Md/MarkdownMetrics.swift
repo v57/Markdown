@@ -41,6 +41,9 @@ public struct MarkdownMetrics: Sendable {
   public var headingParagraphSpacingBeforeMinor: CGFloat = 8
   public var headingParagraphSpacing: CGFloat = 15
   public var headingParagraphSpacingMinor: CGFloat = 15
+  /// Font size of a setext heading's `===`/`---` underline line. The line is hidden
+  /// syntax, so a small font keeps it from leaving a heading-sized gap under the text.
+  public var setextUnderlineFontSize: CGFloat = 6
   /// List: indent grows by this per nesting level.
   public var listIndentPerLevel: CGFloat = 24
   public var listParagraphSpacing: CGFloat = 3
@@ -63,8 +66,8 @@ public struct MarkdownMetrics: Sendable {
   public var codeBlockCornerRadius: CGFloat = 6
   /// Inline-code chip: horizontal padding around the code glyphs.
   public var inlineCodeChipHPad: CGFloat = 3
-  /// Inline-code chip: vertical inset from the line fragment.
-  public var inlineCodeChipVInset: CGFloat = 2
+  /// Inline-code chip: vertical padding around the code font's ascender/descender box.
+  public var inlineCodeChipVInset: CGFloat = 1
   /// Inline-code chip: max corner radius (scaled by line height).
   public var inlineCodeChipMaxRadius: CGFloat = 5
   /// Inline-code chip: stroke border width (design spec: 0.5pt).

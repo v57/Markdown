@@ -15,16 +15,20 @@
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
-    private var lastSyntaxRangeCount = 0
     /// Tables pinned to SOURCE mode (0-based document order). Everything else renders as a
     /// grid. VIEW state, not document state: it never reaches `onChange`, and flipping it
     /// re-parses (the alignment kerns depend on whether the pipes are visible).
     private var sourceModeTables: Set<Int> = []
+    /// Natural grid widths of the tables from the last parse, and which of them did not
+    /// fit — a resize re-parses only when that set changes.
+    private var tableWidths: [Int: CGFloat] = [:]
+    private var overflowingTables: Set<Int> = []
 
     public init(metrics: MarkdownMetrics = .standard) {
       self.metrics = metrics
       markdownStorage = NSTextStorage()
       markdownLayout = EditorLayoutManager()
+      markdownLayout.metrics = metrics
       markdownStorage.addLayoutManager(markdownLayout)
       markdownContainer = NSTextContainer(
         size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -109,8 +113,6 @@
     /// caret range. setTypingAttributes also lives here: inside didProcessEditing it
     /// crashed (→ updateFontPanel → ensureAttributesAreFixedInRange with the stale
     /// selection, e.g. Select-All → Delete); here the selection is valid.
-    private var lastLoggedSyntaxCount = -1
-
     public func textDidChange(_ notification: Notification) {
       reapplyMarkdown()
       typingAttributes = MarkdownStyle(metrics: metrics).typingAttributes
@@ -118,9 +120,18 @@
     }
 
     private func reapplyMarkdown() {
-      let parsed = MarkdownParser.parse(
-        string, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables)
-      lastSyntaxRangeCount = parsed.syntaxRanges.count
+      // Parse under THIS view's appearance: the code palette is resolved from the current
+      // drawing appearance, which outside a draw pass is the app's — wrong whenever the
+      // window or view overrides it (e.g. a light window in dark mode).
+      var parsed: ParsedMarkdown!
+      effectiveAppearance.performAsCurrentDrawingAppearance {
+        parsed = MarkdownParser.parse(
+          string, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables,
+          maxTableWidth: availableTableWidth)
+      }
+      tableWidths = parsed.tableWidths
+      overflowingTables = MarkdownParser.overflowingTables(
+        tableWidths, availableWidth: availableTableWidth)
       // Apply attributes only (characters are identical — verbatim invariant), so the
       // storage reports .editedAttributes and the guard above stops the loop.
       // NOTE: no explicit invalidateDisplay here — the attribute edits fire their own
@@ -136,12 +147,29 @@
       if let lm = layoutManager as? EditorLayoutManager {
         lm.activeCharacterRange = selectedRange()
       }
-      if lastSyntaxRangeCount != lastLoggedSyntaxCount {
-        print("STYLE APPLIED syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)")
-        lastLoggedSyntaxCount = lastSyntaxRangeCount
-      }
       loadImages(from: parsed.attributed)
     }
+
+    /// Width a table grid may occupy: the container minus its line-fragment padding. nil
+    /// until the view has been sized (a zero-width container would fit no table).
+    private var availableTableWidth: CGFloat? {
+      guard let container = textContainer else { return nil }
+      let width = container.size.width - container.lineFragmentPadding * 2
+      return width > 0 ? width : nil
+    }
+
+    /// After a width change: re-parse when the set of tables too wide for a grid changed,
+    /// so a table falls back to raw markdown instead of wrapping (and returns to the grid
+    /// once it fits again).
+    private func reflowTablesIfNeeded() {
+      guard !tableWidths.isEmpty, !isReflowingTables else { return }
+      let now = MarkdownParser.overflowingTables(tableWidths, availableWidth: availableTableWidth)
+      guard now != overflowingTables else { return }
+      isReflowingTables = true
+      defer { isReflowingTables = false }
+      reapplyMarkdown()
+    }
+    private var isReflowingTables = false
 
     private func loadImages(from attributed: NSAttributedString) {
       attributed.enumerateAttribute(
@@ -215,7 +243,9 @@
       // here. Unclamp only from the outermost call, or opening a document
       // recurses until the stack overflows.
       if !isUnclampingSize { unclampSize() }
+      let widthChanged = abs(newSize.width - frame.width) > 0.5
       super.setFrameSize(newSize)
+      if widthChanged { reflowTablesIfNeeded() }
     }
 
     /// Set while `unclampSize()` writes minSize/maxSize (see `setFrameSize`).
@@ -266,7 +296,9 @@
       let point = convert(event.locationInWindow, from: nil)
       // Code-block copy button: copy the block's code to the clipboard.
       if let lm = layoutManager as? EditorLayoutManager,
-        let chrome = lm.copyButtons.first(where: { $0.copyFrame.contains(point) })
+        let chrome = lm.copyButtons(origin: textContainerOrigin).first(where: {
+          $0.copyFrame.contains(point)
+        })
       {
         let code = (string as NSString).substring(with: chrome.blockRange)
         let pb = NSPasteboard.general
@@ -285,7 +317,9 @@
       // Table corner toggle: flip the table between the grid and its source text. The
       // click is consumed (like the copy button) so the caret does not jump.
       if let lm = layoutManager as? EditorLayoutManager,
-        let toggle = lm.tableToggles.first(where: { $0.frame.contains(point) })
+        let toggle = lm.tableToggles(origin: textContainerOrigin).first(where: {
+          $0.frame.contains(point)
+        })
       {
         setTableMode(
           source: !sourceModeTables.contains(toggle.tableOrdinal),
@@ -315,7 +349,7 @@
       let inner = NSRange(location: eff.location + 1, length: eff.length - 2)
       let current = ns.substring(with: inner)
       let replacement = (current == "x" || current == "X") ? " " : "x"
-      if shouldChangeText(in: eff, replacementString: ns.substring(with: eff)) {
+      if shouldChangeText(in: inner, replacementString: replacement) {
         textStorage?.replaceCharacters(in: inner, with: replacement)
         didChangeText()
       }
@@ -440,10 +474,11 @@
         // shrinking below the first viewport / narrow windows.
         unclampSize()
         EditorTextView.live = self
-        print(
-          "EDITOR READY textKit1=\(textLayoutManager == nil) syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)"
-        )
-        window?.makeFirstResponder(self)
+        // Take focus only when nothing else in the window has it — never steal it from
+        // a host's own fields.
+        if let window, window.firstResponder == nil || window.firstResponder === window {
+          window.makeFirstResponder(self)
+        }
       }
     }
 

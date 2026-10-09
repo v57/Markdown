@@ -184,6 +184,12 @@ public struct MarkdownStyleSpec: MarkdownStyling {
 
   public func tableParagraph() -> MarkdownParagraph { metrics.tableParagraph() }
 
+  /// Marker column width from this style's own metrics (the protocol default reads the
+  /// standard metrics).
+  public func listMarkerWidth(task: Bool, ordered: Bool) -> CGFloat {
+    metrics.listMarkerWidth(task: task, ordered: ordered)
+  }
+
   /// The default style. Computed (not a stored global) so the value type stays
   /// trivially Sendable under Swift 6.
   public static var standard: MarkdownStyleSpec { MarkdownStyleSpec() }

@@ -18,6 +18,7 @@ Layout
     MarkdownStyleSpec.swift     MarkdownColor/Font/Paragraph + MarkdownStyling
     EditorLayoutManagerCore.swift  shared TextKit layout logic + draw hooks
     MarkdownKeys.swift          NSAttributedString.Key extensions
+    TableColumnLayout.swift     table grid geometry (column targets, kerns)
     CodeColorScheme.swift       hex-based code palette (platform-neutral)
     CodeHighlighter.swift       code syntax highlighting engine
     ...                         scanner/catalog/spec/kind, SampleDocument
@@ -95,20 +96,28 @@ App (Markdown.xcodeproj)
 Features (both stacks)
 
   - Live re-styling on every edit; the source text is kept verbatim.
-  - Headings, lists (incl. task lists), blockquotes, fenced code (highlighted
-    with the GitHub palette), tables, horizontal rules, links, inline images,
+  - Headings (ATX and setext), lists (incl. task lists and nesting, with
+    wrapped lines hanging under the item text), blockquotes (nested, with lists
+    inside), fenced code (highlighted with the GitHub palette), tables,
+    horizontal rules, links and bare URLs, inline images,
     bold/italic/strikethrough/inline code.
+  - Tables render as an aligned grid (pipes hidden, separators drawn); click
+    into a table or its corner toggle to edit the source. A table wider than
+    the editor falls back to raw markdown until the editor is wide enough.
   - Syntax symbols hidden on inactive lines, shown on the active line
     (Obsidian-style live preview).
   - Checkbox click-to-toggle, code-block copy button, smart list/quote
     continuation on Return.
   - Dynamic dark/light support (system colors + GitHub Light/Dark code
-    palette).
+    palette, resolved from the editor view's own appearance).
+  - Every metric (fonts, spacing, drawn geometry) comes from the
+    `MarkdownMetrics` passed to the editor.
 
 Verification
 
   macOS:  swift build && swift test
-          (48 tests: parser, style spec, layout probes, highlighter, schemes)
+          (86 tests: parser, style spec, layout probes, highlighter, schemes,
+          tables, rendering regressions)
           xcodebuild -project Markdown.xcodeproj -scheme Markdown build
   iOS:    swift build --triple arm64-apple-ios17.0-simulator --build-tests
           xcodebuild -project Markdown.xcodeproj -scheme Markdown

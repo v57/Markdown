@@ -36,6 +36,10 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   /// the caret lands on/inside a command).
   public var activeCharacterRange: NSRange = NSRange(location: 0, length: 0)
 
+  /// The metrics this layout manager draws with. The editor sets it to its own
+  /// metrics, so a customized `MarkdownMetrics` reaches the drawn geometry too.
+  public var metrics: MarkdownMetrics = .standard
+
   /// One code block's reusable "chrome": the copy-button frame plus the block's
   /// document range (to read the code for copying) and language name (for the
   /// label). Frames are in the layout manager's drawing coordinates (== the text
@@ -47,8 +51,24 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     public let language: String?
     public var copied: Bool
   }
-  /// Copy buttons for the currently visible code blocks, rebuilt each draw pass.
-  public private(set) var copyButtons: [CodeBlockChrome] = []
+  /// Copy buttons for every code block in the document, in drawing coordinates for
+  /// `origin` (the text view's `textContainerOrigin`). Computed from the current layout,
+  /// not cached by the last draw pass: a partial redraw elsewhere (typing in another
+  /// paragraph) must not leave a visible button dead.
+  public func copyButtons(origin: CGPoint) -> [CodeBlockChrome] {
+    var out: [CodeBlockChrome] = []
+    for r in EditorLayoutManagerCore.mergedRuns(documentBackgroundRuns().codeRuns) {
+      let fillRange = codeBlockFillRange(for: r) ?? r
+      guard let union = codeBlockUnion(forCharacterRange: fillRange, at: origin),
+        let chrome = codeChromeLayout(forCharacterRange: r, union: union, at: origin)
+      else { continue }
+      out.append(
+        CodeBlockChrome(
+          copyFrame: chrome.hitFrame, blockRange: r, language: chrome.language,
+          copied: copiedBlockRange == r))
+    }
+    return out
+  }
   /// Flash state: which block most recently showed "Copied".
   public private(set) var copiedBlockRange: NSRange?
 
@@ -60,8 +80,21 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     /// Which table (0-based, document order) this button belongs to.
     public let tableOrdinal: Int
   }
-  /// Grid/source toggles for the visible tables, rebuilt each draw pass.
-  public private(set) var tableToggles: [TableToggle] = []
+  /// Grid/source toggles for every grid-mode table in the document, in drawing
+  /// coordinates for `origin` — computed on demand, like `copyButtons(origin:)`.
+  public func tableToggles(origin: CGPoint) -> [TableToggle] {
+    EditorLayoutManagerCore.mergedRuns(documentBackgroundRuns().tableRuns).compactMap {
+      tableGridGeometry(forCharacterRange: $0, at: origin)?.toggle
+    }
+  }
+
+  /// Background runs over the whole document (used by the on-demand hit tests).
+  private func documentBackgroundRuns() -> BackgroundRuns {
+    guard let storage = textStorage, storage.length > 0 else { return BackgroundRuns() }
+    let glyphs = glyphRange(
+      forCharacterRange: NSRange(location: 0, length: storage.length), actualCharacterRange: nil)
+    return classifyBackgroundRuns(forGlyphRange: glyphs)
+  }
 
   /// Marks this block's button as "Copied" (flash). The editor schedules the
   /// matching `clearCopied` after a delay and redraws.
@@ -412,15 +445,14 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     // per-token chips. Runs that tile contiguously belong to the same block; a
     // gap (a non-code line between fences) starts a new block.
     let codeBlocks = EditorLayoutManagerCore.mergedRuns(runs.codeRuns)
-    copyButtons.removeAll(keepingCapacity: true)
-    tableToggles.removeAll(keepingCapacity: true)
     for r in codeBlocks {
       // The background FILL covers the whole fenced block (content PLUS the ```
       // open/close fence lines) — that's the `.markdownCodeBlockFill` attribute
       // (NSValue(range:)) attached at the content start. The content-only run `r`
       // still drives chrome anchoring, the language label, and what Copy copies.
       let fillRange = codeBlockFillRange(for: r) ?? r
-      guard let union = drawCodeBackground(forCharacterRange: fillRange, at: origin) else { continue }
+      guard let union = codeBlockUnion(forCharacterRange: fillRange, at: origin) else { continue }
+      drawCodeBlockBackground(union: union, at: origin)
       // super draws selection highlights and any background attributes over the
       // whole block (fences included) so selection shows over every line.
       super.drawBackground(
@@ -451,7 +483,9 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     }
   }
 
-  private func drawCodeBackground(forCharacterRange r: NSRange, at origin: CGPoint) -> CGRect? {
+  /// The code block's background rect (union of every line's ink box) in drawing
+  /// coordinates. Geometry only — shared by drawing and the copy-button hit test.
+  private func codeBlockUnion(forCharacterRange r: NSRange, at origin: CGPoint) -> CGRect? {
     guard let storage = textStorage else { return nil }
     // The background must hug the code font's ACTUAL GLYPH INK per line
     // (CTLine path bounds), not the full line fragment (measured ~17pt for
@@ -493,20 +527,29 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     // One block per fence: the union spans the FIRST line's ink top through the
     // LAST line's ink bottom at full content width. A single rounded rect rounds
     // only the block's own corners.
-    let union = CGRect(
+    return CGRect(
       x: first.minX, y: first.minY, width: first.width, height: last.maxY - first.minY)
-    drawCodeBlockBackground(union: union, at: origin)
-    return union
   }
 
   private func drawTableGrid(forCharacterRange r: NSRange, at origin: CGPoint) {
-    guard let storage = textStorage, r.location < storage.length else { return }
+    guard let geometry = tableGridGeometry(forCharacterRange: r, at: origin) else { return }
+    drawTableGridHook(
+      verticalLines: geometry.verticalLines, fromY: geometry.fromY, toY: geometry.toY)
+    if let toggle = geometry.toggle { drawTableToggleHook(frame: toggle.frame, gridMode: true) }
+  }
+
+  /// A grid-mode table's vertical lines, vertical extent and corner toggle (if shown), in
+  /// drawing coordinates. Geometry only — shared by drawing and the toggle hit test.
+  private func tableGridGeometry(forCharacterRange r: NSRange, at origin: CGPoint)
+    -> (verticalLines: [CGFloat], fromY: CGFloat, toY: CGFloat, toggle: TableToggle?)?
+  {
+    guard let storage = textStorage, r.location < storage.length else { return nil }
     guard
       let values = storage.attribute(.markdownTableGrid, at: r.location, effectiveRange: nil)
         as? [NSNumber], !values.isEmpty
-    else { return }
+    else { return nil }
     let glyphs = glyphRange(forCharacterRange: r, actualCharacterRange: nil)
-    guard glyphs.length > 0 else { return }
+    guard glyphs.length > 0 else { return nil }
     var minY = CGFloat.greatestFiniteMagnitude
     var maxY = -CGFloat.greatestFiniteMagnitude
     var headerTop = CGFloat.greatestFiniteMagnitude
@@ -521,13 +564,12 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         isFirstFragment = false
       }
     }
-    guard minY <= maxY else { return }
+    guard minY <= maxY else { return nil }
     // The table's x values are relative to the container's left edge, while glyphs and
     // line fragments start one `lineFragmentPadding` further right — without this the
     // whole grid would be drawn one padding left of its text.
     let padding = textContainers.first?.lineFragmentPadding ?? 0
     let lines = values.map { origin.x + padding + CGFloat($0.doubleValue) }
-    drawTableGridHook(verticalLines: lines, fromY: origin.y + minY, toY: origin.y + maxY)
 
     // Corner toggle (grid ⇄ source) at the top-right of the header row. Mirrors the
     // code-chrome rules: only when the block's true top is on screen (so a scrolled tall
@@ -536,60 +578,87 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     let isBlockTop =
       r.location == 0
       || storage.attribute(.markdownTableGrid, at: r.location - 1, effectiveRange: nil) == nil
-    guard isBlockTop, !lineContainsCaret(r.location), let tableWidth = lines.last else { return }
-    let m = MarkdownMetrics.standard
-    let size = m.tableToggleSize
-    let frame = CGRect(
-      x: tableWidth - m.tableToggleInset - size,
-      y: origin.y + headerTop + (headerHeight - size) / 2, width: size, height: size)
-    let ordinal =
-      (storage.attribute(.markdownTableOrdinal, at: r.location, effectiveRange: nil) as? NSNumber)?
-      .intValue ?? 0
-    drawTableToggleHook(frame: frame, gridMode: true)
-    recordTableToggle(frame: frame, tableOrdinal: ordinal)
+    var toggle: TableToggle? = nil
+    if isBlockTop, !lineContainsCaret(r.location), let tableWidth = lines.last {
+      let size = metrics.tableToggleSize
+      let frame = CGRect(
+        x: tableWidth - metrics.tableToggleInset - size,
+        y: origin.y + headerTop + (headerHeight - size) / 2, width: size, height: size)
+      let ordinal =
+        (storage.attribute(.markdownTableOrdinal, at: r.location, effectiveRange: nil) as? NSNumber)?
+        .intValue ?? 0
+      toggle = TableToggle(frame: frame, tableOrdinal: ordinal)
+    }
+    return (lines, origin.y + minY, origin.y + maxY, toggle)
   }
 
-  /// Rounded chip behind inline code (`` `code` ``), GitHub-style: the fill spans
-  /// the code glyphs plus horizontal padding, vertically inset slightly so the
-  /// chip doesn't touch the line's top/bottom edges. The horizontal extent comes
-  /// from `boundingRect(forGlyphRange:in:)` — the line fragment's `used` rect
-  /// would span the WHOLE mixed line (text `code` more), not just the code glyphs.
-  /// The corner radius scales with the line height so tall fonts still look rounded.
+  /// Rounded chip behind inline code (`` `code` ``), GitHub-style. One chip per line
+  /// fragment the span covers (a wrapped span gets a chip on each line). Horizontally it
+  /// spans the code glyphs (`boundingRect(forGlyphRange:in:)` — the fragment's `used`
+  /// rect would span the WHOLE mixed line) plus padding; vertically it hugs the code
+  /// font's ascender/descender box around the baseline plus padding. The line fragment
+  /// is NOT used for height: it also carries the line and paragraph spacing, which
+  /// pushed the chip far below the text (worst in headings).
   private func drawInlineCodeChip(forCharacterRange r: NSRange, at origin: CGPoint) {
+    guard let storage = textStorage, r.location < storage.length,
+      let container = textContainers.first
+    else { return }
     let g = glyphRange(forCharacterRange: r, actualCharacterRange: nil)
-    guard g.length > 0, let container = textContainers.first else { return }
-    let bounds = boundingRect(forGlyphRange: g, in: container)
-    guard !bounds.isNull, bounds.width > 0 else { return }
-    var minY = CGFloat.greatestFiniteMagnitude
-    var maxY = -CGFloat.greatestFiniteMagnitude
-    enumerateLineFragments(forGlyphRange: g) { rect, _, _, _, _ in
-      minY = min(minY, rect.minY)
-      maxY = max(maxY, rect.maxY)
+    guard g.length > 0 else { return }
+    let font =
+      (storage.attribute(.font, at: r.location, effectiveRange: nil) as? PlatformFont)
+      ?? codeFontFallback()
+    let hPad = metrics.inlineCodeChipHPad
+    let vPad = metrics.inlineCodeChipVInset
+    let height = font.ascender - font.descender + vPad * 2  // descender is negative
+    let radius = max(0, min(metrics.inlineCodeChipMaxRadius, height / 2))
+    enumerateLineFragments(forGlyphRange: g) { rect, _, _, lineGlyphs, _ in
+      let sub = NSIntersectionRange(lineGlyphs, g)
+      guard sub.length > 0 else { return }
+      let bounds = self.boundingRect(forGlyphRange: sub, in: container)
+      guard !bounds.isNull, bounds.width > 0 else { return }
+      // `location(forGlyphAt:)` is relative to the fragment; its y is the baseline.
+      let baseline = rect.minY + self.location(forGlyphAt: sub.location).y
+      let chip = CGRect(
+        x: origin.x + bounds.minX - hPad, y: origin.y + baseline - font.ascender - vPad,
+        width: bounds.width + hPad * 2, height: height)
+      self.drawInlineCodeChipHook(chip: chip, radius: radius)
     }
-    guard minY <= maxY else { return }
-    let m = MarkdownMetrics.standard
-    let hPad: CGFloat = m.inlineCodeChipHPad
-    let vInset: CGFloat = m.inlineCodeChipVInset
-    let height = maxY - minY
-    let radius = min(m.inlineCodeChipMaxRadius, height / 2 - vInset)
-    let chip = CGRect(
-      x: origin.x + bounds.minX - hPad, y: origin.y + minY + vInset, width: bounds.width + hPad * 2,
-      height: height - vInset * 2)
-    drawInlineCodeChipHook(chip: chip, radius: radius)
   }
 
   /// Draws the copy button (top-right) and language label (top-left) on the
-  /// opening ``` fence line — one line ABOVE the first code-content line — and
-  /// records the copy button's frame + block range for the editor's click-to-copy
-  /// hit test. Only drawn when the block's actual top line is on screen (a scrolled
-  /// tall fence doesn't float the chrome mid-block).
+  /// opening ``` fence line — one line ABOVE the first code-content line. Only drawn
+  /// when the block's actual top line is on screen (a scrolled tall fence doesn't
+  /// float the chrome mid-block).
   private func drawCodeChrome(forCharacterRange r: NSRange, union: CGRect, at origin: CGPoint) {
-    guard let storage = textStorage else { return }
+    guard let chrome = codeChromeLayout(forCharacterRange: r, union: union, at: origin) else {
+      return
+    }
+    let font = chromeFont()
+    if let language = chrome.language, let langRect = chrome.languageRect {
+      drawChromeLabel(language, in: langRect, font: font, color: codeTextColor())
+    }
+    drawChromeLabel(chrome.copyLabel, in: chrome.copyRect, font: font, color: codeTextColor())
+  }
+
+  /// Where a code block's chrome goes, or nil when it is not shown (the block's top is
+  /// not in `r`, or the caret is editing the fence line). Geometry only — shared by
+  /// drawing and the copy-button hit test.
+  private func codeChromeLayout(forCharacterRange r: NSRange, union: CGRect, at origin: CGPoint)
+    -> (
+      language: String?, languageRect: CGRect?, copyLabel: String, copyRect: CGRect,
+      hitFrame: CGRect
+    )?
+  {
+    guard let storage = textStorage else { return nil }
     // True top of this block: the char just before it is not code content.
     let isBlockTop =
       r.location == 0
       || storage.attribute(.markdownCodeBlock, at: r.location - 1, effectiveRange: nil) == nil
-    guard isBlockTop else { return }
+    guard isBlockTop else { return nil }
+    // Hide the chrome while the caret is on the ``` fence line (editing the
+    // fence marker itself) — language and Copy both disappear.
+    if r.location > 0, lineContainsCaret(r.location - 1) { return nil }
     let language =
       storage.attribute(.markdownCodeLanguage, at: r.location, effectiveRange: nil) as? String
     // The ``` opening fence is the line immediately above the block's first
@@ -607,41 +676,30 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         }
       }
     }
-    let m = MarkdownMetrics.standard
-    let topBand = fenceTop + m.codeChromeTopOffset
-    let inset: CGFloat = m.codeChromeInset
-
-    // Hide the chrome while the caret is on the ``` fence line (editing the
-    // fence marker itself) — language and Copy both disappear.
-    if r.location > 0, lineContainsCaret(r.location - 1) { return }
-
+    let topBand = fenceTop + metrics.codeChromeTopOffset
+    let inset = metrics.codeChromeInset
     // Shared style: the chrome is plain text, one weight for the language
     // name and the Copy affordance alike.
-    let langFont = chromeFont()
-    let langAttrs = chromeAttributes(font: langFont)
+    let attrs = chromeAttributes(font: chromeFont())
 
     // Language label at the top-LEFT of the block — on the ``` fence line.
+    var languageRect: CGRect? = nil
     if let language, !language.isEmpty {
-      let langSize = (language as NSString).size(withAttributes: langAttrs)
-      let langRect = CGRect(
-        x: union.minX + inset, y: topBand, width: langSize.width, height: langSize.height)
-      drawChromeLabel(language, in: langRect, font: langFont, color: codeTextColor())
+      let size = (language as NSString).size(withAttributes: attrs)
+      languageRect = CGRect(
+        x: union.minX + inset, y: topBand, width: size.width, height: size.height)
     }
 
     // Copy at the top-right, the same plain-text style as the language label.
     // The hit-test frame is padded for an easy click target while the drawn
     // glyph stays flush text.
     let copyLabel = (copiedBlockRange == r) ? "Copied" : "Copy"
-    let copyTextSize = (copyLabel as NSString).size(withAttributes: langAttrs)
+    let copySize = (copyLabel as NSString).size(withAttributes: attrs)
     let copyRect = CGRect(
-      x: union.maxX - inset - copyTextSize.width, y: topBand, width: copyTextSize.width,
-      height: copyTextSize.height)
-    drawChromeLabel(copyLabel, in: copyRect, font: langFont, color: codeTextColor())
-
-    let hitFrame = copyRect.insetBy(
-      dx: -MarkdownMetrics.standard.copyHitPaddingX, dy: -MarkdownMetrics.standard.copyHitPaddingY)
-    recordCopyButton(
-      frame: hitFrame, blockRange: r, language: language, copied: copiedBlockRange == r)
+      x: union.maxX - inset - copySize.width, y: topBand, width: copySize.width,
+      height: copySize.height)
+    let hitFrame = copyRect.insetBy(dx: -metrics.copyHitPaddingX, dy: -metrics.copyHitPaddingY)
+    return (language, languageRect, copyLabel, copyRect, hitFrame)
   }
 
   /// Collapses input character ranges into blocks by merging runs that tile
@@ -675,24 +733,46 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     return v?.rangeValue
   }
 
-  /// Vertical bar at the container's left edge for a blockquote (Obsidian-style).
-  /// Spans every line fragment of the quote run, so consecutive quote lines merge
-  /// into one continuous bar (adjacent sub-runs are coalesced by drawBackground).
-  /// The bar sits at x = origin.x (the container's left edge) while the quote text
-  /// keeps its 12pt paragraph indent — the bar moved left, text spacing unchanged;
-  /// the '>' marker glyphs sit at the indent + lineFragmentPadding to its right.
+  /// Vertical bars at the container's left edge for a blockquote (Obsidian-style):
+  /// one bar per nesting level, each `quoteIndent` further right. The
+  /// `.markdownBlockquote` value is the line's depth (`> > x` = 2), so a bar for
+  /// level k spans every consecutive line fragment deeper than k — consecutive quote
+  /// lines merge into one continuous bar per level.
   private func drawQuoteBar(forCharacterRange r: NSRange, at origin: CGPoint) {
+    guard let storage = textStorage else { return }
     let g = glyphRange(forCharacterRange: r, actualCharacterRange: nil)
     guard g.length > 0 else { return }
-    var minY = CGFloat.greatestFiniteMagnitude
-    var maxY = -CGFloat.greatestFiniteMagnitude
-    enumerateLineFragments(forGlyphRange: g) { rect, _, _, _, _ in
-      minY = min(minY, rect.minY)
-      maxY = max(maxY, rect.maxY)
+    var fragments: [(minY: CGFloat, maxY: CGFloat, depth: Int)] = []
+    enumerateLineFragments(forGlyphRange: g) { rect, _, _, lineGlyphs, _ in
+      let chars = self.characterRange(forGlyphRange: lineGlyphs, actualGlyphRange: nil)
+      let depth =
+        chars.location < storage.length
+        ? (storage.attribute(.markdownBlockquote, at: chars.location, effectiveRange: nil)
+          as? NSNumber)?.intValue ?? 1 : 1
+      fragments.append((rect.minY, rect.maxY, max(1, depth)))
     }
-    let m = MarkdownMetrics.standard
-    let bar = CGRect(x: origin.x, y: origin.y + minY, width: m.quoteBarWidth, height: maxY - minY)
-    drawQuoteBarHook(bar: bar)
+    let maxDepth = fragments.map(\.depth).max() ?? 1
+    for level in 0..<maxDepth {
+      var runStart: CGFloat? = nil
+      var runEnd: CGFloat = 0
+      func flush() {
+        guard let start = runStart else { return }
+        drawQuoteBarHook(
+          bar: CGRect(
+            x: origin.x + CGFloat(level) * metrics.quoteIndent, y: origin.y + start,
+            width: metrics.quoteBarWidth, height: runEnd - start))
+        runStart = nil
+      }
+      for f in fragments {
+        if f.depth > level {
+          if runStart == nil { runStart = f.minY }
+          runEnd = f.maxY
+        } else {
+          flush()
+        }
+      }
+      flush()
+    }
   }
 
   // MARK: - Glyphs (hide command symbols on inactive lines)
@@ -759,7 +839,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
     let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
     let loc = location(forGlyphAt: glyphRange.location)
-    let m = MarkdownMetrics.standard
+    let m = metrics
     let size = max(m.checkboxMinSize, fragRect.height * 0.62) * m.checkboxScaleFactor  // 20% larger checkbox
     let rect = CGRect(
       x: origin.x + fragRect.minX + loc.x, y: origin.y + fragRect.minY, width: size, height: size)
@@ -773,7 +853,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     drawLine(
       from: CGPoint(x: origin.x + fragRect.minX, y: y),
       to: CGPoint(x: origin.x + fragRect.maxX, y: y),
-      width: MarkdownMetrics.standard.ruleStrokeWidth, color: ruleColor())
+      width: metrics.ruleStrokeWidth, color: ruleColor())
   }
 
   /// The table's header rule, drawn on the hidden `|---|` separator row at the table's
@@ -788,7 +868,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     drawLine(
       from: CGPoint(x: origin.x + padding, y: y),
       to: CGPoint(x: origin.x + padding + tableWidth, y: y),
-      width: MarkdownMetrics.standard.tableRuleStrokeWidth, color: ruleColor())
+      width: metrics.tableRuleStrokeWidth, color: ruleColor())
   }
 
   /// One stroke, shared by the markdown rule and the table's header rule (AppKit and
@@ -814,7 +894,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
     let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
     let loc = location(forGlyphAt: glyphRange.location)
-    let height = fragRect.height * MarkdownMetrics.standard.imageHeightScale
+    let height = fragRect.height * metrics.imageHeightScale
     let aspect = image.size.width / max(1, image.size.height)
     let rect = CGRect(
       x: origin.x + fragRect.minX + loc.x,
@@ -829,7 +909,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   /// The background drawing reads the font off the storage; this is the fallback
   /// when the attribute is missing (e.g. edge cases during editing).
   open func codeFontFallback() -> PlatformFont {
-    let m = MarkdownMetrics.standard
+    let m = metrics
     return PlatformFont.monospacedSystemFont(ofSize: m.codeFontSize, weight: .regular)
   }
 
@@ -850,10 +930,6 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   open func drawTableGridHook(verticalLines: [CGFloat], fromY: CGFloat, toY: CGFloat) {}
   /// Draw a table's corner grid/source toggle button.
   open func drawTableToggleHook(frame: CGRect, gridMode: Bool) {}
-  /// Record a table toggle's frame for the editor's hit test.
-  open func recordTableToggle(frame: CGRect, tableOrdinal: Int) {
-    tableToggles.append(TableToggle(frame: frame, tableOrdinal: tableOrdinal))
-  }
   /// Table grid + header-rule color.
   open func tableGridColor() -> PlatformColor {
     PlatformColor(red: 0.75, green: 0.75, blue: 0.75, alpha: 1)
@@ -868,16 +944,11 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   open func drawChromeLabel(
     _ text: String, in rect: CGRect, font: PlatformFont, color: PlatformColor
   ) {}
-  /// Record a copy-button frame for hit-testing.
-  open func recordCopyButton(frame: CGRect, blockRange: NSRange, language: String?, copied: Bool) {
-    copyButtons.append(
-      CodeBlockChrome(copyFrame: frame, blockRange: blockRange, language: language, copied: copied))
-  }
   /// The cached inline image for a URL, if loaded.
   open func image(for url: URL) -> PlatformImage? { nil }
   /// The chrome label font (11pt semibold).
   open func chromeFont() -> PlatformFont {
-    let m = MarkdownMetrics.standard
+    let m = metrics
     return PlatformFont.systemFont(
       ofSize: m.chromeFontSize, weight: m.chromeFontWeight == .bold ? .bold : .semibold)
   }

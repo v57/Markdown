@@ -20,16 +20,20 @@
     private let markdownStorage: NSTextStorage
     private let markdownLayout: EditorLayoutManager
     private let markdownContainer: NSTextContainer
-    private var lastSyntaxRangeCount = 0
     /// Tables pinned to SOURCE mode (0-based document order). Everything else renders as a
     /// grid. VIEW state, not document state: it never reaches `onChange`, and flipping it
     /// re-parses (the alignment kerns depend on whether the pipes are visible).
     private var sourceModeTables: Set<Int> = []
+    /// Natural grid widths of the tables from the last parse, and which of them did not
+    /// fit — a resize re-parses only when that set changes.
+    private var tableWidths: [Int: CGFloat] = [:]
+    private var overflowingTables: Set<Int> = []
 
     public init(metrics: MarkdownMetrics = .standard) {
       self.metrics = metrics
       markdownStorage = NSTextStorage()
       markdownLayout = EditorLayoutManager()
+      markdownLayout.metrics = metrics
       markdownStorage.addLayoutManager(markdownLayout)
       markdownContainer = NSTextContainer(
         size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -111,8 +115,6 @@
     /// manager BEFORE the outer character edit's invalidation, and that
     /// interleaved state corrupts line breaking (same TextKit 1 constraint as
     /// the macOS editor).
-    private var lastLoggedSyntaxCount = -1
-
     public func textViewDidChange(_ textView: UITextView) {
       reapplyMarkdown()
       typingAttributes = MarkdownUIKitStyle(metrics: metrics).typingAttributes
@@ -120,9 +122,18 @@
     }
 
     private func reapplyMarkdown() {
-      let parsed = MarkdownParser.parse(
-        text, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables)
-      lastSyntaxRangeCount = parsed.syntaxRanges.count
+      // Parse under THIS view's traits: the code palette is resolved from
+      // `UITraitCollection.current`, which outside a draw pass need not be this view's
+      // (e.g. a host forcing light mode inside a dark app).
+      var parsed: ParsedMarkdown!
+      traitCollection.performAsCurrent {
+        parsed = MarkdownParser.parse(
+          text, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables,
+          maxTableWidth: availableTableWidth)
+      }
+      tableWidths = parsed.tableWidths
+      overflowingTables = MarkdownParser.overflowingTables(
+        tableWidths, availableWidth: availableTableWidth)
       // Apply attributes only (characters are identical — verbatim invariant), so
       // the storage reports .editedAttributes and textViewDidChange doesn't recurse.
       markdownStorage.beginEditing()
@@ -131,11 +142,35 @@
       ) { attrs, range, _ in markdownStorage.setAttributes(attrs, range: range) }
       markdownStorage.endEditing()
       if let lm = layoutManager as? EditorLayoutManager { lm.activeCharacterRange = selectedRange }
-      if lastSyntaxRangeCount != lastLoggedSyntaxCount {
-        print("STYLE APPLIED syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)")
-        lastLoggedSyntaxCount = lastSyntaxRangeCount
-      }
       loadImages(from: parsed.attributed)
+    }
+
+    /// Width a table grid may occupy: the container minus its line-fragment padding. nil
+    /// until the view has been sized (a zero-width container would fit no table).
+    private var availableTableWidth: CGFloat? {
+      let width = textContainer.size.width - textContainer.lineFragmentPadding * 2
+      return width > 0 ? width : nil
+    }
+
+    /// After a width change (rotation, split view): re-parse when the set of tables too
+    /// wide for a grid changed, so a table falls back to raw markdown instead of wrapping.
+    private func reflowTablesIfNeeded() {
+      guard !tableWidths.isEmpty, !isReflowingTables else { return }
+      let now = MarkdownParser.overflowingTables(tableWidths, availableWidth: availableTableWidth)
+      guard now != overflowingTables else { return }
+      isReflowingTables = true
+      defer { isReflowingTables = false }
+      reapplyMarkdown()
+    }
+    private var isReflowingTables = false
+    private var lastLayoutWidth: CGFloat = 0
+
+    public override func layoutSubviews() {
+      super.layoutSubviews()
+      if abs(bounds.width - lastLayoutWidth) > 0.5 {
+        lastLayoutWidth = bounds.width
+        reflowTablesIfNeeded()
+      }
     }
 
     private func loadImages(from attributed: NSAttributedString) {
@@ -215,8 +250,9 @@
       guard recognizer.state == .ended else { return }
       let point = recognizer.location(in: self)
       // Code-block copy button: copy the block's code to the clipboard.
+      let origin = CGPoint(x: textContainerInset.left, y: textContainerInset.top)
       if let lm = layoutManager as? EditorLayoutManager,
-        let chrome = lm.copyButtons.first(where: { $0.copyFrame.contains(point) })
+        let chrome = lm.copyButtons(origin: origin).first(where: { $0.copyFrame.contains(point) })
       {
         let code = (text as NSString).substring(with: chrome.blockRange)
         UIPasteboard.general.string = code
@@ -232,7 +268,7 @@
       }
       // Table corner toggle: flip the table between the grid and its source text.
       if let lm = layoutManager as? EditorLayoutManager,
-        let toggle = lm.tableToggles.first(where: { $0.frame.contains(point) })
+        let toggle = lm.tableToggles(origin: origin).first(where: { $0.frame.contains(point) })
       {
         setTableMode(
           source: !sourceModeTables.contains(toggle.tableOrdinal),
@@ -364,9 +400,6 @@
       super.didMoveToWindow()
       if window != nil {
         EditorTextView.live = self
-        print(
-          "EDITOR READY textKit1=\(textLayoutManager == nil) syntaxRanges=\(lastSyntaxRangeCount) chars=\(markdownStorage.length)"
-        )
       }
     }
 

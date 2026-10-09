@@ -152,7 +152,7 @@ import Testing
     #expect(m.textContainerInsetHeight == 28)
     #expect(m.codeBlockCornerRadius == 6)
     #expect(m.inlineCodeChipHPad == 3)
-    #expect(m.inlineCodeChipVInset == 2)
+    #expect(m.inlineCodeChipVInset == 1)
     #expect(m.inlineCodeChipMaxRadius == 5)
     #expect(m.inlineCodeChipStrokeWidth == 0.5)
     #expect(m.inlineCodeFontSize == 12)

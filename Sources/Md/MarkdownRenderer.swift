@@ -64,6 +64,18 @@ public enum MarkdownRenderer {
     return copy
   }
 
+  /// A copy of an already-resolved paragraph style with both indents replaced. Used by
+  /// the list pass, which measures the drawn marker to place wrapped lines under the
+  /// item's text. Returns nil when `value` is not a paragraph style.
+  public static func settingIndents(_ value: Any?, firstLine: CGFloat, head: CGFloat) -> Any? {
+    guard let existing = value as? NSParagraphStyle,
+      let copy = existing.mutableCopy() as? NSMutableParagraphStyle
+    else { return nil }
+    copy.firstLineHeadIndent = firstLine
+    copy.headIndent = head
+    return copy
+  }
+
   // MARK: - AppKit resolution
 
   #if canImport(AppKit)
@@ -90,9 +102,10 @@ public enum MarkdownRenderer {
       case .code:
         return base(font, default: .monospacedSystemFont(ofSize: m.codeFontSize, weight: .regular))
       case .heading(let level):
-        let size = m.headingSizes[max(0, min(5, level - 1))]
+        // The size comes from the font description (the style's metrics), not the
+        // standard metrics — a custom `headingSizes` must reach the rendered text.
         let weight: NSFont.Weight = level <= 3 ? .bold : .semibold
-        let f = NSFont.systemFont(ofSize: size, weight: weight)
+        let f = NSFont.systemFont(ofSize: font.size, weight: weight)
         return withTraits(font, on: f)
       case .chrome:
         let w: NSFont.Weight = m.chromeFontWeight == .bold ? .bold : .semibold
@@ -147,7 +160,6 @@ public enum MarkdownRenderer {
     }
 
     private static func resolveUIKit(_ font: MarkdownFont) -> UIFont {
-      let m = MarkdownMetrics.standard
       let weight: UIFont.Weight = {
         switch font.weight {
         case .regular: return .regular
@@ -159,9 +171,9 @@ public enum MarkdownRenderer {
       switch font.kind {
       case .code: f = .monospacedSystemFont(ofSize: font.size, weight: weight)
       case .heading(let level):
-        let size = m.headingSizes[max(0, min(5, level - 1))]
+        // Size from the font description (the style's metrics), as on macOS.
         let w: UIFont.Weight = level <= 3 ? .bold : .semibold
-        f = .systemFont(ofSize: size, weight: w)
+        f = .systemFont(ofSize: font.size, weight: w)
       default: f = .systemFont(ofSize: font.size, weight: weight)
       }
       guard !font.traits.isEmpty else { return f }

@@ -28,6 +28,7 @@
       if let text { textView.setText(text) }
       textView.onChange = onChange
       context.coordinator.textView = textView
+      context.coordinator.appliedText = text
       let scroll = NSScrollView()
       scroll.hasVerticalScroller = true
       scroll.hasHorizontalScroller = false
@@ -36,9 +37,22 @@
       scroll.documentView = textView
       return scroll
     }
-    public func updateNSView(_ nsView: NSScrollView, context: Context) {}
+    /// Pushes a new `text` from the host into the editor and refreshes `onChange`. The
+    /// text is applied only when the HOST changed it (compared with the value last
+    /// applied), never just because it differs from the editor's contents — a host that
+    /// passes its initial text and only listens to `onChange` would otherwise have every
+    /// unrelated SwiftUI update roll the user's edits back.
+    public func updateNSView(_ nsView: NSScrollView, context: Context) {
+      guard let textView = context.coordinator.textView else { return }
+      textView.onChange = onChange
+      guard text != context.coordinator.appliedText else { return }
+      context.coordinator.appliedText = text
+      if let text, text != textView.string { textView.setText(text) }
+    }
     @MainActor public final class Coordinator: NSObject {
       weak var textView: EditorTextView?
+      /// The `text` value last pushed into the editor.
+      var appliedText: String?
     }
   }
 
