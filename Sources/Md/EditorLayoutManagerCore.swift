@@ -40,6 +40,10 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   /// metrics, so a customized `MarkdownMetrics` reaches the drawn geometry too.
   public var metrics: MarkdownMetrics = .standard
 
+  /// False for a read-only viewer: the caret never reveals syntax (no line or span is
+  /// ever "active"), so the document always renders as its preview.
+  public var revealsSyntax = true
+
   /// One code block's reusable "chrome": the copy-button frame plus the block's
   /// document range (to read the code for copying) and language name (for the
   /// label). Frames are in the layout manager's drawing coordinates (== the text
@@ -107,9 +111,13 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     guard charIndex >= 0, charIndex < storage.length else { return false }
     var eff = NSRange(location: 0, length: 0)
     let attrs = storage.attributes(at: charIndex, effectiveRange: &eff)
+    // A drawn image replaces its whole source (alt text included); its first character
+    // carries the image's width as a kern (see `updateImageSlots`).
+    if let spec = attrs[.markdownImageSpec] as? MarkdownImageSpec, renderedImageSize(spec) != nil {
+      return true
+    }
     guard attrs[.markdownSyntax] != nil else { return false }
     if attrs[.markdownCheckbox] != nil { return false }  // keep the checkbox slot
-    if attrs[.markdownImage] != nil { return false }  // keep the image slot
     if attrs[.markdownListMarker] != nil { return false }  // list markers are always shown
     return !isSyntaxVisible(NSRange(location: charIndex, length: 1), attrs: attrs)
   }
@@ -143,13 +151,14 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   }
 
   private func lineContainsCaret(_ charIndex: Int) -> Bool {
-    guard let storage = textStorage else { return false }
+    guard revealsSyntax, let storage = textStorage else { return false }
     let ns = storage.string as NSString
     let caret = min(max(activeCharacterRange.location, 0), ns.length)
     return NSLocationInRange(charIndex, ns.lineRange(for: NSRange(location: caret, length: 0)))
   }
 
   private func spanIsActive(_ span: NSRange) -> Bool {
+    guard revealsSyntax else { return false }
     let sel = activeCharacterRange
     if NSIntersectionRange(span, sel).length > 0 { return true }
     guard sel.length == 0 else { return false }
@@ -301,6 +310,36 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     return glyph
   }
 
+  private static nonisolated(unsafe) var substituteGlyphCache: [String: CGGlyph] = [:]
+
+  /// The font's glyph for one UTF-16 code unit (an entity's decoded character), or nil
+  /// when the font has none.
+  private static func glyph(for unit: UInt16, in font: PlatformFont) -> CGGlyph? {
+    let key = "\(font.fontName)/\(unit)"
+    glyphCacheLock.lock()
+    if let cached = substituteGlyphCache[key] {
+      glyphCacheLock.unlock()
+      return cached == 0 ? nil : cached
+    }
+    glyphCacheLock.unlock()
+    var ch: [UniChar] = [unit]
+    var gl = [CGGlyph](repeating: 0, count: 1)
+    CTFontGetGlyphsForCharacters(font as CTFont, &ch, &gl, 1)
+    glyphCacheLock.lock()
+    substituteGlyphCache[key] = gl[0]
+    glyphCacheLock.unlock()
+    return gl[0] == 0 ? nil : gl[0]
+  }
+
+  /// Advance of the glyph a hidden character draws as (zero for most fonts; a space for
+  /// fonts without a zero-width glyph, e.g. SF Mono).
+  static func hiddenGlyphAdvance(for font: PlatformFont) -> CGFloat {
+    var glyph = zeroGlyph(for: font)
+    var advance = CGSize.zero
+    CTFontGetAdvancesForGlyphs(font as CTFont, .horizontal, &glyph, &advance, 1)
+    return advance.width
+  }
+
   /// True when the char is the actual bullet character of a plain unordered list
   /// marker ("-", "*", "+"). Its glyph is substituted with "•" in setGlyphs.
   private func isBulletChar(_ charIndex: Int, in storage: NSTextStorage) -> Bool {
@@ -322,13 +361,21 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     var zeroed = [Bool](repeating: false, count: glyphRange.length)
     var middleSlot = [Bool](repeating: false, count: glyphRange.length)
     var bullet = [Bool](repeating: false, count: glyphRange.length)
+    var substitutes: [Int: CGGlyph] = [:]
     var slotGlyph: CGGlyph? = nil
     var bulletGlyph: CGGlyph? = nil
     var anyChange = false
     for i in 0..<glyphRange.length {
       let charIndex = charIndexes[i]
       if isHiddenCharacter(charIndex, in: storage) {
-        zeroed[i] = true
+        // A hidden entity's first character draws the character it stands for.
+        if let unit = storage.attribute(.markdownGlyphSubstitute, at: charIndex, effectiveRange: nil)
+          as? NSNumber, let glyph = Self.glyph(for: unit.uint16Value, in: font)
+        {
+          substitutes[i] = glyph
+        } else {
+          zeroed[i] = true
+        }
         anyChange = true
       } else if isCheckboxMiddle(charIndex, in: storage) {
         middleSlot[i] = true
@@ -349,7 +396,10 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     var newGlyphs = [CGGlyph](repeating: 0, count: glyphRange.length)
     var newProps = [NSLayoutManager.GlyphProperty](repeating: [], count: glyphRange.length)
     for i in 0..<glyphRange.length {
-      if zeroed[i] {
+      if let substitute = substitutes[i] {
+        newGlyphs[i] = substitute
+        newProps[i] = []
+      } else if zeroed[i] {
         newGlyphs[i] = Self.zeroGlyph(for: font)
         newProps[i] = []  // real glyph, normal property — keeps the line fragment intact
       } else if middleSlot[i], let slotGlyph {
@@ -787,7 +837,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     var checkboxRanges: [NSRange] = []
     var ruleRanges: [NSRange] = []
     var tableRuleRanges: [(range: NSRange, width: CGFloat)] = []
-    var imageRanges: [NSRange] = []
+    var images: [MarkdownImageSpec] = []
     var i = charRange.location
     let end = NSMaxRange(charRange)
     while i < end {
@@ -803,10 +853,13 @@ open class EditorLayoutManagerCore: NSLayoutManager {
         } else if let width = attrs[.markdownTableRule] as? NSNumber {
           // A table's hidden `|---|` row: its characters are not drawn; a rule is.
           tableRuleRanges.append((clamped, CGFloat(truncating: width)))
-        } else if attrs[.markdownImage] != nil, let url = attrs[.markdownImage] as? URL,
-          image(for: url) != nil
+        } else if let spec = attrs[.markdownImageSpec] as? MarkdownImageSpec,
+          renderedImageSize(spec) != nil
         {
-          imageRanges.append(clamped)  // drawn as an image
+          // Drawn as an image (once, from its first character's position).
+          if images.last !== spec { images.append(spec) }
+        } else if attrs[.markdownGlyphSubstitute] != nil {
+          drawRanges.append(clamped)  // an entity's stand-in glyph (or the literal `&`)
         } else {
           let isSyntax = attrs[.markdownSyntax] != nil
           let alwaysShow = attrs[.markdownListMarker] != nil
@@ -826,7 +879,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     for r in checkboxRanges { drawCheckbox(in: r, at: origin) }
     for r in ruleRanges { drawRule(in: r, at: origin) }
     for r in tableRuleRanges { drawTableRule(in: r.range, tableWidth: r.width, at: origin) }
-    for r in imageRanges { drawImage(in: r, at: origin) }
+    for spec in images { drawImage(spec, at: origin) }
   }
 
   // MARK: - Custom element drawing
@@ -886,21 +939,194 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     path.stroke()
   }
 
-  private func drawImage(in charRange: NSRange, at origin: CGPoint) {
-    guard let storage = textStorage,
-      let url = storage.attribute(.markdownImage, at: charRange.location, effectiveRange: nil)
-        as? URL, let image = image(for: url)
-    else { return }
-    let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
-    let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
-    let loc = location(forGlyphAt: glyphRange.location)
-    let height = fragRect.height * metrics.imageHeightScale
-    let aspect = image.size.width / max(1, image.size.height)
-    let rect = CGRect(
-      x: origin.x + fragRect.minX + loc.x,
-      y: origin.y + fragRect.minY + (fragRect.height - height) / 2, width: height * aspect,
-      height: height)
-    drawImageHook(image, in: rect)
+  private func drawImage(_ spec: MarkdownImageSpec, at origin: CGPoint) {
+    guard let rect = imageRect(spec, at: origin) else { return }
+    if drawImageHook(url: spec.url, in: rect) {
+      animatedImageRects.append(rect)
+      onAnimatedImageDrawn?()
+    }
+  }
+
+  // MARK: - Images (sized slots in the text flow)
+
+  /// Where a drawn image sits, in drawing coordinates for `origin`; nil while it is not
+  /// drawn (not loaded, or its source is being edited).
+  public func imageRect(_ spec: MarkdownImageSpec, at origin: CGPoint) -> CGRect? {
+    guard let storage = textStorage, spec.range.location < storage.length,
+      let size = renderedImageSize(spec)
+    else { return nil }
+    let glyph = glyphIndexForCharacter(at: spec.range.location)
+    guard glyph < numberOfGlyphs else { return nil }
+    let frag = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+    let loc = location(forGlyphAt: glyph)
+    let baseline = frag.minY + loc.y
+    let top: CGFloat
+    switch spec.verticalAlignment {
+    case .baseline: top = baseline - size.height
+    case .middle: top = baseline - midline(at: spec.range.location) - size.height / 2
+    }
+    return CGRect(
+      x: origin.x + frag.minX + loc.x, y: origin.y + top, width: size.width, height: size.height)
+  }
+
+  /// Images drawn as animations since the editor last took them (drawing coordinates).
+  /// The editor redraws these rects on the animation's clock; an animation scrolled out of
+  /// view is not drawn, so it stops asking for frames.
+  public var animatedImageRects: [CGRect] = []
+  /// Called after an animated image is drawn (the editor schedules its next frame).
+  public var onAnimatedImageDrawn: (() -> Void)?
+
+  /// The size an image is drawn at, or nil when it is not drawn: not loaded yet, or the
+  /// caret is inside its source (editing shows the markdown instead).
+  public func renderedImageSize(_ spec: MarkdownImageSpec) -> CGSize? {
+    guard let natural = imageNaturalSize(for: spec.url), !imageSourceIsActive(spec.range) else {
+      return nil
+    }
+    return spec.displaySize(natural: natural, maxWidth: availableImageWidth(at: spec.range.location))
+  }
+
+  /// Whether the caret is editing an image's source: strictly inside it, or a selection
+  /// overlapping it. Unlike other inline spans, a caret merely touching the image's
+  /// edge keeps it drawn — a note opening with its caret before a leading image, or
+  /// typing right after one, must not flip it to markdown.
+  private func imageSourceIsActive(_ span: NSRange) -> Bool {
+    guard revealsSyntax else { return false }
+    let sel = activeCharacterRange
+    if sel.length > 0 { return NSIntersectionRange(span, sel).length > 0 }
+    return sel.location > span.location && sel.location < NSMaxRange(span)
+  }
+
+  /// The width an image may take at `index`: the container minus its padding and the
+  /// paragraph's indent (a list item's image stays inside the item).
+  private func availableImageWidth(at index: Int) -> CGFloat {
+    guard let container = textContainers.first else { return 0 }
+    var width = container.size.width - container.lineFragmentPadding * 2
+    if let storage = textStorage, index < storage.length,
+      let para = storage.attribute(.paragraphStyle, at: index, effectiveRange: nil)
+        as? NSParagraphStyle
+    {
+      width -= max(para.firstLineHeadIndent, para.headIndent)
+    }
+    return max(1, width)
+  }
+
+  /// Distance from the baseline up to the middle of lowercase text (`valign="middle"`).
+  private func midline(at index: Int) -> CGFloat {
+    let font =
+      (textStorage?.attribute(.font, at: index, effectiveRange: nil) as? PlatformFont)
+      ?? PlatformFont.systemFont(ofSize: metrics.bodyFontSize)
+    return font.xHeight / 2
+  }
+
+  /// Gives every image in `range` the horizontal slot it is drawn in: the first
+  /// character of a drawn image gets a kern of the image's width (all its characters are
+  /// zero-width glyphs then); an image that is not drawn loses the kern, so its source
+  /// or alt text lays out normally. Call after re-styling, after an image loads, when the
+  /// caret enters or leaves an image, and when the width changes. Storage attributes only.
+  public func updateImageSlots(in range: NSRange) {
+    guard let storage = textStorage, storage.length > 0 else { return }
+    let clamped = NSIntersectionRange(range, NSRange(location: 0, length: storage.length))
+    guard clamped.length > 0 else { return }
+    var edits: [(location: Int, kern: CGFloat?)] = []
+    var seen = Set<ObjectIdentifier>()
+    storage.enumerateAttribute(.markdownImageSpec, in: clamped, options: []) { value, _, _ in
+      guard let spec = value as? MarkdownImageSpec, seen.insert(ObjectIdentifier(spec)).inserted,
+        spec.range.location < storage.length
+      else { return }
+      let first = spec.range.location
+      var desired: CGFloat? = nil
+      if let size = renderedImageSize(spec) {
+        let font =
+          (storage.attribute(.font, at: first, effectiveRange: nil) as? PlatformFont)
+          ?? PlatformFont.systemFont(ofSize: metrics.bodyFontSize)
+        desired = size.width - Self.hiddenGlyphAdvance(for: font)
+      }
+      let current = (storage.attribute(.kern, at: first, effectiveRange: nil) as? NSNumber).map {
+        CGFloat($0.doubleValue)
+      }
+      if let desired, let current, abs(desired - current) < 0.01 { return }
+      if desired == nil, current == nil { return }
+      edits.append((first, desired))
+    }
+    guard !edits.isEmpty else { return }
+    storage.beginEditing()
+    for edit in edits {
+      let r = NSRange(location: edit.location, length: 1)
+      if let kern = edit.kern {
+        storage.addAttribute(.kern, value: kern, range: r)
+      } else {
+        storage.removeAttribute(.kern, range: r)
+      }
+    }
+    storage.endEditing()
+  }
+
+  /// The image spans in `range` whose image is `url` (to refresh after it loads).
+  public func imageSpans(for url: URL, in range: NSRange? = nil) -> [NSRange] {
+    guard let storage = textStorage, storage.length > 0 else { return [] }
+    let full = NSRange(location: 0, length: storage.length)
+    var out: [NSRange] = []
+    storage.enumerateAttribute(.markdownImageSpec, in: range.map { NSIntersectionRange($0, full) } ?? full)
+    { value, _, _ in
+      if let spec = value as? MarkdownImageSpec, spec.url == url, out.last != spec.range {
+        out.append(spec.range)
+      }
+    }
+    return out
+  }
+
+  /// Grows a line fragment to fit the images drawn in it (baseline images need their
+  /// height above the baseline; `valign="middle"` ones half above the text's midline,
+  /// half below), and collapses a line holding nothing visible (`.markdownCollapsibleLine`)
+  /// while it is not being edited. Called by the editor's layout-manager delegate
+  /// (`shouldSetLineFragmentRect`); returns whether anything changed.
+  public func adjustLineFragment(
+    _ rect: inout CGRect, usedRect: inout CGRect, baselineOffset: inout CGFloat,
+    glyphRange: NSRange
+  ) -> Bool {
+    guard let storage = textStorage, glyphRange.length > 0 else { return false }
+    let chars = characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+    guard chars.location < storage.length else { return false }
+    if storage.attribute(.markdownCollapsibleLine, at: chars.location, effectiveRange: nil) != nil,
+      !lineContainsCaret(chars.location)
+    {
+      rect.size.height = metrics.collapsedLineHeight
+      usedRect.size.height = metrics.collapsedLineHeight
+      baselineOffset = metrics.collapsedLineHeight
+      return true
+    }
+    var ascent: CGFloat = 0
+    var descent: CGFloat = 0
+    storage.enumerateAttribute(.markdownImageSpec, in: chars, options: []) { value, _, _ in
+      guard let spec = value as? MarkdownImageSpec, NSLocationInRange(spec.range.location, chars),
+        let size = renderedImageSize(spec)
+      else { return }
+      switch spec.verticalAlignment {
+      case .baseline:
+        ascent = max(ascent, size.height + metrics.imageTopInset)
+      case .middle:
+        let mid = midline(at: spec.range.location)
+        ascent = max(ascent, size.height / 2 + mid + metrics.imageTopInset)
+        descent = max(descent, size.height / 2 - mid)
+      }
+    }
+    guard ascent > 0 else { return false }
+    var changed = false
+    if ascent > baselineOffset {
+      let delta = ascent - baselineOffset
+      rect.size.height += delta
+      usedRect.size.height += delta
+      baselineOffset += delta
+      changed = true
+    }
+    let below = usedRect.maxY - (rect.minY + baselineOffset)
+    if descent > below {
+      let delta = descent - below
+      rect.size.height += delta
+      usedRect.size.height += delta
+      changed = true
+    }
+    return changed
   }
 
   // MARK: - Platform hooks (overridden by Md / MdUIKit subclasses)
@@ -938,14 +1164,16 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   open func drawQuoteBarHook(bar: CGRect) {}
   /// Draw the checkbox image.
   open func drawCheckboxHook(checked: Bool, in rect: CGRect) {}
-  /// Draw a loaded inline image.
-  open func drawImageHook(_ image: PlatformImage, in rect: CGRect) {}
+  /// Draw the loaded image for `url` in `rect`; returns true when it is animated (the
+  /// editor then redraws `rect` on the animation's clock).
+  @discardableResult
+  open func drawImageHook(url: URL, in rect: CGRect) -> Bool { false }
   /// Draw a chrome label (language name / Copy) as text.
   open func drawChromeLabel(
     _ text: String, in rect: CGRect, font: PlatformFont, color: PlatformColor
   ) {}
-  /// The cached inline image for a URL, if loaded.
-  open func image(for url: URL) -> PlatformImage? { nil }
+  /// The natural size (CSS pixels = points) of the loaded image for a URL, if loaded.
+  open func imageNaturalSize(for url: URL) -> CGSize? { nil }
   /// The chrome label font (11pt semibold).
   open func chromeFont() -> PlatformFont {
     let m = metrics

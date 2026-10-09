@@ -72,18 +72,25 @@ public enum MarkdownParser {
   /// line-fragment padding). A grid table wider than that cannot be drawn — its rows
   /// would wrap and tear the grid apart — so it renders as RAW markdown instead (pipes
   /// visible, no grid). `nil` (the default) never falls back.
+  ///
+  /// `resolver` turns the document's relative image sources and link destinations into
+  /// absolute URLs (a note resolves against its folder, a GitHub README against its
+  /// repository). The default resolves absolute destinations only.
   public static func parse(
     _ markdown: String,
     style: any MarkdownStyling = MarkdownStyleSpec.standard,
     sourceModeTables: Set<Int> = [],
-    maxTableWidth: CGFloat? = nil
+    maxTableWidth: CGFloat? = nil,
+    resolver: MarkdownURLResolver = .absoluteOnly
   ) -> ParsedMarkdown {
-    let first = parse(markdown, style: style, sourceModeTables: sourceModeTables, rawTables: [])
+    let first = parse(
+      markdown, style: style, sourceModeTables: sourceModeTables, rawTables: [], resolver: resolver)
     guard let maxTableWidth else { return first }
     let overflowing = Set(first.tableWidths.filter { $0.value > maxTableWidth + 0.5 }.keys)
     guard !overflowing.isEmpty else { return first }
     var fallback = parse(
-      markdown, style: style, sourceModeTables: sourceModeTables, rawTables: overflowing)
+      markdown, style: style, sourceModeTables: sourceModeTables, rawTables: overflowing,
+      resolver: resolver)
     fallback.tableWidths = first.tableWidths
     return fallback
   }
@@ -98,7 +105,7 @@ public enum MarkdownParser {
 
   private static func parse(
     _ markdown: String, style: any MarkdownStyling, sourceModeTables: Set<Int>,
-    rawTables: Set<Int>
+    rawTables: Set<Int>, resolver: MarkdownURLResolver
   ) -> ParsedMarkdown {
     let out = NSMutableAttributedString()
     var syntaxRanges: [NSRange] = []
@@ -219,6 +226,20 @@ public enum MarkdownParser {
         inlineSyntaxMark(NSRange(location: cursor, length: NSMaxRange(range) - cursor))
       }
     }
+    /// HTML tags found so far, in document order: inline HTML from the inline pass, then
+    /// the HTML blocks' tags (`inBlock`: revealed per LINE, like other block syntax).
+    var htmlTags: [(tag: MarkdownHTML.Tag, inBlock: Bool)] = []
+    /// Hides an entity's source and has its first character draw `codeUnit` instead.
+    func markEntity(_ r: NSRange, codeUnit: UInt16, lineCommand: Bool) {
+      if lineCommand { blockMarkSyntax(r) } else { inlineSyntaxMark(r) }
+      out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+      out.addAttribute(
+        .markdownGlyphSubstitute, value: NSNumber(value: codeUnit),
+        range: NSRange(location: r.location, length: 1))
+      // The substitute glyph reads as text: undo the syntax gray on that one character.
+      out.addAttribute(
+        .foregroundColor, value: style.textColor, range: NSRange(location: r.location, length: 1))
+    }
     func unionChildrenRanges(_ node: Markup) -> NSRange? {
       var result: NSRange? = nil
       for child in node.children {
@@ -279,10 +300,23 @@ public enum MarkdownParser {
             if sourceSlice != t.plainText {
               let srcNs = sourceSlice as NSString
               let plainNs = t.plainText as NSString
+              // Entities: cmark decoded `&copy;` to © in the plain text. Each is hidden
+              // syntax whose first character draws the decoded glyph (see
+              // `.markdownGlyphSubstitute`), and the escape walk below steps over it.
+              var entityAt: [Int: Int] = [:]
+              for e in MarkdownHTML.entities(in: sourceSlice) {
+                markEntity(
+                  NSRange(location: r.location + e.range.location, length: e.range.length),
+                  codeUnit: e.codeUnit, lineCommand: false)
+                entityAt[e.range.location] = e.range.length
+              }
               var si = 0
               var pi = 0
               while si < srcNs.length && pi < plainNs.length {
-                if srcNs.character(at: si) == 0x5C,  // backslash
+                if let length = entityAt[si] {
+                  si += length
+                  pi += 1
+                } else if srcNs.character(at: si) == 0x5C,  // backslash
                   si + 1 < srcNs.length, srcNs.character(at: si + 1) == plainNs.character(at: pi)
                 {
                   let esc = NSRange(location: r.location + si, length: 2)
@@ -340,7 +374,7 @@ public enum MarkdownParser {
           if let r = nsRange(l.range) {
             if let content = unionChildrenRanges(l) {
               out.addAttribute(.foregroundColor, value: style.linkColor, range: content)
-              if let dest = l.destination, let url = URL(string: dest) {
+              if let dest = l.destination, let url = resolver.resolveLink(dest) {
                 out.addAttribute(.link, value: url, range: content)
               }
             }
@@ -349,15 +383,18 @@ public enum MarkdownParser {
           }
         case let img as Image:
           if let r = nsRange(img.range) {
+            // Alt text shows until the image loads (or when it cannot): secondary color
+            // in the CONTAINER's font. Not the code font — SF Mono has no zero-width
+            // glyph, so a hidden alt run would leave a space-wide gap per character
+            // beside the drawn image.
             if let content = unionChildrenRanges(img) {
-              let codeAttrs: [NSAttributedString.Key: Any] = [
-                .font: style.codeFont(), .foregroundColor: style.codeTextColor,
-                .backgroundColor: style.codeBackground,
-              ]
-              for (k, v) in codeAttrs { out.addAttribute(k, value: v, range: content) }
+              out.addAttribute(.foregroundColor, value: style.quoteTextColor, range: content)
             }
-            if let src = img.source, let url = URL(string: src) {
+            if let src = img.source, let url = resolver.resolveImage(src) {
               out.addAttribute(.markdownImage, value: url, range: r)
+              out.addAttribute(
+                .markdownImageSpec,
+                value: MarkdownImageSpec(url: url, range: r, alt: img.plainText), range: r)
             }
             out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
             markGaps(img, in: r)
@@ -366,6 +403,11 @@ public enum MarkdownParser {
           if let r = nsRange(html.range) {
             inlineSyntaxMark(r)
             out.addAttribute(.markdownCommandSpan, value: NSValue(range: r), range: r)
+            // Rendered by the HTML pass (images, links, styling) with the block tags.
+            htmlTags.append(
+              contentsOf: MarkdownHTML.tags(
+                in: (markdown as NSString).substring(with: r), base: r.location
+              ).map { (tag: $0, inBlock: false) })
           }
         default: break
         }
@@ -524,6 +566,12 @@ public enum MarkdownParser {
       guard !base.isEmpty else { continue }
       applyInline(ci.node, base: base)
     }
+
+    // --- HTML (blocks + inline) and link reference definitions ---
+    applyHTML(
+      tags: &htmlTags, plans: plans, lines: lines, out: out, markdown: markdown, style: style,
+      resolver: resolver, blockMarkSyntax: blockMarkSyntax, inlineSyntaxMark: inlineSyntaxMark,
+      markEntity: markEntity)
 
     // --- Platform render pass ---
     // The parser stored platform-neutral attribute values (MarkdownColor,
@@ -1414,8 +1462,8 @@ public enum MarkdownParser {
   static func bareURLs(in text: String) -> [(NSRange, URL)] {
     guard text.contains("://") || text.contains("www.") else { return [] }
     guard
-      let re = try? NSRegularExpression(
-        pattern: "(?<![\\w/@.])(?:https?://|www\\.)[^\\s<>]+", options: [.caseInsensitive])
+      let re = regex(
+        "(?<![\\w/@.])(?:https?://|www\\.)[^\\s<>]+", options: [.caseInsensitive])
     else { return [] }
     let ns = text as NSString
     var out: [(NSRange, URL)] = []
@@ -1565,7 +1613,7 @@ public enum MarkdownParser {
   // MARK: - Regex helper
 
   public static func match(_ s: String, pattern: String) -> [String]? {
-    guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
+    guard let re = regex(pattern) else { return nil }
     let ns = s as NSString
     guard let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) else {
       return nil
@@ -1573,5 +1621,350 @@ public enum MarkdownParser {
     return (0..<m.numberOfRanges).map {
       m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0))
     }
+  }
+
+  /// Compiled patterns by (pattern, options). Compiling an NSRegularExpression costs far
+  /// more than matching one line, and the line planner matches every line of the document
+  /// on every keystroke — uncached compilation dominated large-document parses. Locked:
+  /// tests parse on concurrent threads.
+  private static nonisolated(unsafe) var regexCache: [String: NSRegularExpression] = [:]
+  private static let regexCacheLock = NSLock()
+
+  static func regex(
+    _ pattern: String, options: NSRegularExpression.Options = []
+  ) -> NSRegularExpression? {
+    let key = "\(options.rawValue):\(pattern)"
+    regexCacheLock.lock()
+    defer { regexCacheLock.unlock() }
+    if let cached = regexCache[key] { return cached }
+    guard let re = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
+    regexCache[key] = re
+    return re
+  }
+}
+
+// MARK: - HTML
+
+extension MarkdownParser {
+  /// Renders the HTML a README carries: hides every tag (block tags per line, like other
+  /// block syntax; inline tags per span), draws `<img>` (and the `<picture>` source for
+  /// the current appearance), links `<a href>`, styles `<b>`/`<i>`/`<code>`/`<kbd>`/
+  /// `<del>`/`<sup>`/`<hN>`, aligns `align="center"` blocks, draws `<hr>` as a rule,
+  /// decodes entities in block text, hides link reference definitions — and marks the
+  /// lines left with nothing visible as collapsible.
+  ///
+  /// `tags` arrives holding the inline HTML found by the inline pass; the HTML blocks'
+  /// tags are added here. Attribute values are still platform-neutral (pre-render),
+  /// except the newline paragraph styles, which line emission already resolved.
+  private static func applyHTML(
+    tags: inout [(tag: MarkdownHTML.Tag, inBlock: Bool)], plans: [LinePlan], lines: [LineInfo],
+    out: NSMutableAttributedString, markdown: String, style: any MarkdownStyling,
+    resolver: MarkdownURLResolver, blockMarkSyntax: (NSRange) -> Void,
+    inlineSyntaxMark: (NSRange) -> Void,
+    markEntity: (_ range: NSRange, _ codeUnit: UInt16, _ lineCommand: Bool) -> Void
+  ) {
+    let ns = markdown as NSString
+    func contentRange(_ i: Int) -> NSRange {
+      NSRange(location: lines[i].start, length: (lines[i].text as NSString).length)
+    }
+    /// Index of the line holding UTF-16 offset `location` (binary search on line starts).
+    func lineIndex(at location: Int) -> Int {
+      var lo = 0
+      var hi = lines.count - 1
+      while lo < hi {
+        let mid = (lo + hi + 1) / 2
+        if lines[mid].start <= location { lo = mid } else { hi = mid - 1 }
+      }
+      return max(0, lo)
+    }
+    /// Hides `range` as block syntax one line at a time: visibility is decided per line
+    /// (the caret's line reveals it), so a multi-line comment must not be one run.
+    func blockHide(_ range: NSRange) {
+      var i = lineIndex(at: range.location)
+      while i < lines.count, lines[i].start < NSMaxRange(range) {
+        let piece = NSIntersectionRange(range, contentRange(i))
+        if piece.length > 0 { blockMarkSyntax(piece) }
+        i += 1
+      }
+    }
+
+    // --- HTML block runs: consecutive .html lines tokenized together (a comment or a
+    // tag may span lines) ---
+    var htmlLines: [Int] = []
+    var runOfLine: [Int: ClosedRange<Int>] = [:]
+    var i = 0
+    while i < plans.count {
+      guard plans[i].role == .html else {
+        i += 1
+        continue
+      }
+      var j = i
+      while j + 1 < plans.count, plans[j + 1].role == .html { j += 1 }
+      for k in i...j { runOfLine[k] = i...j }
+      htmlLines.append(contentsOf: i...j)
+      let start = lines[i].start
+      let end = NSMaxRange(contentRange(j))
+      let text = ns.substring(with: NSRange(location: start, length: end - start))
+      let blockTags = MarkdownHTML.tags(in: text, base: start)
+      for tag in blockTags { blockHide(tag.range) }
+      tags.append(contentsOf: blockTags.map { (tag: $0, inBlock: true) })
+      for e in MarkdownHTML.entities(in: text, base: start)
+      where !blockTags.contains(where: { NSIntersectionRange($0.range, e.range).length > 0 }) {
+        markEntity(e.range, e.codeUnit, true)
+      }
+      // Indentation inside an HTML block is source formatting, not content (and it
+      // would push a centered line off-center).
+      for k in i...j {
+        let text = lines[k].text as NSString
+        var n = 0
+        while n < text.length, text.character(at: n) == 0x20 || text.character(at: n) == 0x09 {
+          n += 1
+        }
+        if n > 0, n < text.length { blockMarkSyntax(NSRange(location: lines[k].start, length: n)) }
+      }
+      i = j + 1
+    }
+
+    // --- Link reference definitions (`[id]: url "title"`): no rendered form ---
+    var referenceLines: [Int] = []
+    for (k, plan) in plans.enumerated() where plan.role == .plain {
+      if match(lines[k].text, pattern: "^ {0,3}\\[[^\\]]+\\]:\\s*\\S") != nil {
+        blockMarkSyntax(contentRange(k))
+        referenceLines.append(k)
+      }
+    }
+
+    // --- Tags in document order ---
+    tags.sort { $0.tag.range.location < $1.tag.range.location }
+    let isDark = MarkdownRenderer.currentAppearanceIsDark()
+    var pictureSources: [MarkdownHTML.Tag]? = nil
+    struct Open {
+      var tag: MarkdownHTML.Tag
+      var inBlock: Bool
+    }
+    var stack: [Open] = []
+
+    func updateParagraphs(lines range: ClosedRange<Int>, _ change: (inout MarkdownParagraph) -> Void) {
+      for k in range where k < lines.count {
+        let content = contentRange(k)
+        var para = style.bodyParagraph()
+        if content.length > 0 {
+          out.enumerateAttribute(.paragraphStyle, in: content, options: []) { value, r, _ in
+            guard var p = value as? MarkdownParagraph else { return }
+            change(&p)
+            out.addAttribute(.paragraphStyle, value: p, range: r)
+          }
+          if let first = out.attribute(.paragraphStyle, at: content.location, effectiveRange: nil)
+            as? MarkdownParagraph
+          {
+            para = first
+          }
+        } else {
+          change(&para)
+        }
+        // The newline's style was resolved at emission; replace it with the new one.
+        if lines[k].hasNewline, NSMaxRange(content) < out.length {
+          out.addAttribute(
+            .paragraphStyle, value: MarkdownRenderer.resolve(para),
+            range: NSRange(location: NSMaxRange(content), length: 1))
+        }
+      }
+    }
+    func updateFonts(_ range: NSRange, _ change: (MarkdownFont) -> MarkdownFont) {
+      guard range.length > 0 else { return }
+      out.enumerateAttribute(.font, in: range, options: []) { value, r, _ in
+        let font = (value as? MarkdownFont) ?? style.bodyFont()
+        out.addAttribute(.font, value: change(font), range: r)
+      }
+    }
+    func close(_ open: Open, at closeLocation: Int?) {
+      let tag = open.tag
+      let contentStart = NSMaxRange(tag.range)
+      let contentEnd = closeLocation ?? contentStart
+      let content = NSRange(location: contentStart, length: max(0, contentEnd - contentStart))
+      switch tag.name {
+      case "a":
+        if let href = tag.attributes["href"], let url = resolver.resolveLink(href),
+          content.length > 0
+        {
+          out.addAttribute(.link, value: url, range: content)
+          out.addAttribute(.foregroundColor, value: style.linkColor, range: content)
+        }
+      case "b", "strong", "summary":
+        updateFonts(content) { $0.addingTraits([.bold]) }
+      case "i", "em":
+        updateFonts(content) { $0.addingTraits([.italic]) }
+      case "code", "kbd", "samp", "tt":
+        updateFonts(content) { MarkdownFont(kind: .code, size: max(9, $0.size - 1), weight: .regular) }
+        out.addAttribute(.foregroundColor, value: style.codeTextColor, range: content)
+        out.addAttribute(.markdownInlineCode, value: true, range: content)
+      case "del", "s", "strike":
+        if content.length > 0 {
+          out.addAttribute(.strikethroughStyle, value: 1, range: content)
+          out.addAttribute(.strikethroughColor, value: style.textColor, range: content)
+        }
+      case "sup", "sub", "small":
+        updateFonts(content) { f in
+          var smaller = f
+          smaller.size = max(8, (f.size * 0.8).rounded())
+          return smaller
+        }
+      case "h1", "h2", "h3", "h4", "h5", "h6":
+        let level = Int(String(tag.name.dropFirst())) ?? 1
+        updateFonts(content) { _ in style.headingFont(level: level) }
+        let first = lineIndex(at: tag.range.location)
+        let last = lineIndex(at: max(tag.range.location, contentEnd))
+        let heading = style.headingParagraph(level: level)
+        updateParagraphs(lines: first...last) { p in
+          p.paragraphSpacing = heading.paragraphSpacing
+          p.paragraphSpacingBefore = first == lineIndex(at: tag.range.location) ? heading.paragraphSpacingBefore : 0
+        }
+      default:
+        break
+      }
+      if let align = tag.attributes["align"]?.lowercased() {
+        let alignment: MarkdownParagraph.Alignment? =
+          align == "center" ? .center : align == "right" ? .right : align == "left" ? .left : nil
+        if let alignment {
+          let first = lineIndex(at: tag.range.location)
+          var last = lineIndex(at: max(tag.range.location, contentEnd))
+          // Unclosed: through the end of its own HTML block.
+          if closeLocation == nil, let run = runOfLine[first] { last = run.upperBound }
+          updateParagraphs(lines: first...last) { $0.alignment = alignment }
+        }
+      }
+    }
+
+    for (tag, inBlock) in tags {
+      if tag.isComment { continue }
+      switch tag.name {
+      case "img":
+        var src = tag.attributes["src"] ?? ""
+        if let sources = pictureSources, let chosen = MarkdownHTML.pictureSource(sources, isDark: isDark) {
+          src = chosen
+        }
+        guard !src.isEmpty, let url = resolver.resolveImage(src) else { continue }
+        let width = MarkdownHTML.dimension(tag.attributes["width"])
+        let height = MarkdownHTML.dimension(tag.attributes["height"])
+        let valign = (tag.attributes["valign"] ?? tag.attributes["align"] ?? "").lowercased()
+        let spec = MarkdownImageSpec(
+          url: url, range: tag.range, width: width.points, height: height.points,
+          widthFraction: width.fraction, alt: tag.attributes["alt"] ?? "",
+          verticalAlignment: ["middle", "absmiddle", "center"].contains(valign) ? .middle : .baseline)
+        out.addAttribute(.markdownImage, value: url, range: tag.range)
+        out.addAttribute(.markdownImageSpec, value: spec, range: tag.range)
+      case "picture":
+        pictureSources = tag.isClosing ? nil : []
+      case "source":
+        pictureSources?.append(tag)
+      case "hr":
+        guard inBlock else { continue }
+        let line = contentRange(lineIndex(at: tag.range.location))
+        if ns.substring(with: line).trimmingCharacters(in: .whitespaces)
+          == ns.substring(with: tag.range)
+        {
+          out.addAttribute(.markdownRule, value: true, range: line)
+        }
+      default:
+        if tag.isClosing {
+          if let index = stack.lastIndex(where: { $0.tag.name == tag.name }) {
+            let open = stack.remove(at: index)
+            close(open, at: tag.range.location)
+          }
+        } else if !tag.isSelfClosing {
+          stack.append(Open(tag: tag, inBlock: inBlock))
+        }
+      }
+    }
+    // Unclosed elements still apply their alignment (to the end of their block).
+    for open in stack where open.tag.attributes["align"] != nil { close(open, at: nil) }
+
+    // --- Collapsible lines: nothing left to see (tags, comments, definitions) ---
+    for k in htmlLines + referenceLines {
+      let content = contentRange(k)
+      guard content.length > 0 else { continue }
+      var hidden = 0
+      out.enumerateAttribute(.markdownSyntax, in: content, options: []) { value, r, _ in
+        if value != nil { hidden += r.length }
+      }
+      guard hidden == content.length else { continue }
+      var visible = false
+      for key: NSAttributedString.Key in [.markdownImage, .markdownGlyphSubstitute, .markdownRule] {
+        out.enumerateAttribute(key, in: content, options: []) { value, _, stop in
+          if value != nil {
+            visible = true
+            stop.pointee = true
+          }
+        }
+      }
+      // A `<br>` line is deliberate vertical space.
+      if visible || ns.substring(with: content).lowercased().contains("<br") { continue }
+      let length = content.length + (lines[k].hasNewline ? 1 : 0)
+      out.addAttribute(
+        .markdownCollapsibleLine, value: true,
+        range: NSRange(location: content.location, length: length))
+    }
+  }
+}
+
+// MARK: - Anchors
+
+extension MarkdownParser {
+  /// GitHub's heading anchor for `text`: lowercased; punctuation dropped except `-` and
+  /// `_`; spaces become `-` ("Get started!" → "get-started").
+  public static func githubSlug(_ text: String) -> String {
+    var out = ""
+    for scalar in text.lowercased().unicodeScalars {
+      if scalar == " " {
+        out.append("-")
+      } else if scalar == "-" || scalar == "_" || CharacterSet.alphanumerics.contains(scalar) {
+        out.unicodeScalars.append(scalar)
+      }
+    }
+    return out
+  }
+
+  /// Every in-page anchor of `markdown` → the UTF-16 offset of its line: headings by
+  /// GitHub slug (repeats get `-1`, `-2`, … like GitHub), plus HTML `id=`/`name=`
+  /// attributes. Keys are lowercased.
+  public static func anchors(in markdown: String) -> [String: Int] {
+    let doc = Document(parsing: markdown, options: .disableSmartOpts)
+    var lineStarts: [Int] = [0]
+    let ns = markdown as NSString
+    for i in 0..<ns.length where ns.character(at: i) == 0x0A { lineStarts.append(i + 1) }
+    var out: [String: Int] = [:]
+    var seen: [String: Int] = [:]
+    func visit(_ node: Markup) {
+      if let heading = node as? Heading, let range = heading.range {
+        let base = githubSlug(heading.plainText)
+        let count = seen[base, default: 0]
+        seen[base] = count + 1
+        let slug = count == 0 ? base : "\(base)-\(count)"
+        let line = range.lowerBound.line - 1
+        if out[slug] == nil, line < lineStarts.count { out[slug] = lineStarts[line] }
+      }
+      for child in node.children { visit(child) }
+    }
+    visit(doc)
+    for tag in MarkdownHTML.tags(in: markdown) where !tag.isClosing {
+      for key in ["id", "name"] {
+        if let value = tag.attributes[key]?.lowercased(), !value.isEmpty, out[value] == nil {
+          out[value] = tag.range.location
+        }
+      }
+    }
+    return out
+  }
+
+  /// True when `url` points into the document at `documentURL` (same URL, ignoring the
+  /// fragment) — an in-page anchor link.
+  public static func isSameDocument(_ url: URL, _ documentURL: URL?) -> Bool {
+    guard let documentURL else { return false }
+    func stripped(_ u: URL) -> String {
+      var c = URLComponents(url: u, resolvingAgainstBaseURL: true)
+      c?.fragment = nil
+      return (c?.url ?? u).absoluteString
+    }
+    return stripped(url) == stripped(documentURL)
   }
 }

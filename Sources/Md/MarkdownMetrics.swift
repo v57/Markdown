@@ -105,6 +105,11 @@ public struct MarkdownMetrics: Sendable {
   public var checkboxImageSize: CGFloat = 13
   /// Inline image drawn height relative to the line fragment.
   public var imageHeightScale: CGFloat = 1.05
+  /// Space kept above an image that is taller than its line's text.
+  public var imageTopInset: CGFloat = 4
+  /// Height of a line holding only hidden markup (HTML tags, comments, link reference
+  /// definitions) while it is not being edited.
+  public var collapsedLineHeight: CGFloat = 0
   /// Checkbox glyph box geometry.
   public var checkboxCornerRadius: CGFloat = 3
   public var checkboxStrokeWidth: CGFloat = 1.2

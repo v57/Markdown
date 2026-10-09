@@ -72,16 +72,20 @@
       CheckboxRenderer.image(checked: checked, size: rect.width).draw(in: rect)
     }
 
-    public override func drawImageHook(_ image: PlatformImage, in rect: CGRect) {
-      image.draw(in: rect)
+    public override func drawImageHook(url: URL, in rect: CGRect) -> Bool {
+      guard let entry = MarkdownImageCache.shared.entry(for: url) else { return false }
+      entry.image(at: ProcessInfo.processInfo.systemUptime).draw(
+        in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+        hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)])
+      return entry.isAnimated
     }
 
     public override func drawChromeLabel(
       _ text: String, in rect: CGRect, font: PlatformFont, color: PlatformColor
     ) { (text as NSString).draw(in: rect, withAttributes: [.font: font, .foregroundColor: color]) }
 
-    public override func image(for url: URL) -> PlatformImage? {
-      InlineImageCache.shared.image(for: url)
+    public override func imageNaturalSize(for url: URL) -> CGSize? {
+      MarkdownImageCache.shared.naturalSize(for: url)
     }
 
     public override func chromeAttributes(font: PlatformFont) -> [NSAttributedString.Key: Any] {

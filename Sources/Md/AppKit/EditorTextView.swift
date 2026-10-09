@@ -23,6 +23,32 @@
     /// fit — a resize re-parses only when that set changes.
     private var tableWidths: [Int: CGFloat] = [:]
     private var overflowingTables: Set<Int> = []
+    /// Resolves the document's relative image sources and links (a note's folder, a
+    /// GitHub repository). Setting it re-styles the document.
+    public var resolver: MarkdownURLResolver = .absoluteOnly {
+      didSet { reapplyMarkdown() }
+    }
+    /// A read-only viewer: not editable, and syntax is never revealed (no caret-driven
+    /// show/hide, no table source mode, no checkbox toggling) — the document always
+    /// renders as its preview. Text stays selectable and links clickable.
+    public var isReadOnly = false {
+      didSet {
+        guard isReadOnly != oldValue else { return }
+        isEditable = !isReadOnly
+        markdownLayout.revealsSyntax = !isReadOnly
+        sourceModeTables.removeAll()
+        reapplyMarkdown()
+        let full = NSRange(location: 0, length: markdownStorage.length)
+        markdownLayout.invalidateGlyphs(
+          forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
+        markdownLayout.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
+        needsDisplay = true
+      }
+    }
+    /// Asked first when a link is clicked; return true when the host handled it (e.g.
+    /// opened another note). Same-document `#anchor` links scroll without asking;
+    /// anything unhandled opens in the default browser/app.
+    public var onOpenURL: (@MainActor (URL) -> Bool)?
 
     public init(metrics: MarkdownMetrics = .standard) {
       self.metrics = metrics
@@ -88,7 +114,9 @@
     /// hosts that inflate the editor with existing content (e.g. a note editor).
     public func setText(_ newText: String) {
       self.string = newText
+      sourceModeTables.removeAll()
       reapplyMarkdown()
+      setSelectedRange(NSRange(location: 0, length: 0))
     }
 
     // MARK: - Derived styling (re-parse on every character edit)
@@ -127,7 +155,7 @@
       effectiveAppearance.performAsCurrentDrawingAppearance {
         parsed = MarkdownParser.parse(
           string, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables,
-          maxTableWidth: availableTableWidth)
+          maxTableWidth: availableTableWidth, resolver: resolver)
       }
       tableWidths = parsed.tableWidths
       overflowingTables = MarkdownParser.overflowingTables(
@@ -144,10 +172,9 @@
       markdownStorage.endEditing()
       // typingAttributes reset lives in textDidChange (same event, safe point):
       // setting it here would crash on the stale selection (Select-All → Delete).
-      if let lm = layoutManager as? EditorLayoutManager {
-        lm.activeCharacterRange = selectedRange()
-      }
-      loadImages(from: parsed.attributed)
+      markdownLayout.activeCharacterRange = selectedRange()
+      markdownLayout.updateImageSlots(in: NSRange(location: 0, length: markdownStorage.length))
+      loadVisibleImages()
     }
 
     /// Width a table grid may occupy: the container minus its line-fragment padding. nil
@@ -171,18 +198,90 @@
     }
     private var isReflowingTables = false
 
-    private func loadImages(from attributed: NSAttributedString) {
-      attributed.enumerateAttribute(
-        .markdownImage, in: NSRange(location: 0, length: attributed.length), options: []
-      ) { value, _, _ in
-        guard let url = value as? URL else { return }
-        InlineImageCache.shared.load(url: url) { [weak self] in
-          guard let self else { return }
-          // Images are drawn at line height from the cache on every draw — a plain
-          // redraw suffices; layout does not change.
-          self.needsDisplay = true
+    // MARK: - Images (lazy loading, slots, animation)
+
+    /// Loads the images in and around the visible part of the document (a screen above,
+    /// two below) — a long README requests only what the reader is near. Called after
+    /// re-styling and on every scroll.
+    private func loadVisibleImages() {
+      guard markdownStorage.length > 0 else { return }
+      let visible =
+        visibleRect.isEmpty ? NSRect(x: 0, y: 0, width: frame.width, height: 1200) : visibleRect
+      let area = NSRect(
+        x: visible.minX, y: visible.minY - visible.height, width: visible.width,
+        height: visible.height * 4)
+      let origin = textContainerOrigin
+      let glyphs = markdownLayout.glyphRange(
+        forBoundingRect: area.offsetBy(dx: -origin.x, dy: -origin.y), in: markdownContainer)
+      let chars = markdownLayout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+      guard chars.length > 0 else { return }
+      let cache = MarkdownImageCache.shared
+      markdownStorage.enumerateAttribute(.markdownImage, in: chars, options: []) { value, _, _ in
+        guard let url = value as? URL, !cache.hasRequested(url) else { return }
+        cache.load(url) { [weak self] url in self?.imageDidLoad(url) }
+      }
+      // Images loaded earlier (another document, before a re-parse) need their slots;
+      // a no-op for images whose kern is already right.
+      markdownLayout.updateImageSlots(in: chars)
+    }
+
+    private var loadedImageURLs: Set<URL> = []
+    /// Coalesces image arrivals into one relayout per run-loop turn (a README's icons
+    /// arrive in bursts).
+    private func imageDidLoad(_ url: URL) {
+      loadedImageURLs.insert(url)
+      guard loadedImageURLs.count == 1 else { return }
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        let urls = self.loadedImageURLs
+        self.loadedImageURLs.removeAll()
+        for url in urls {
+          for span in self.markdownLayout.imageSpans(for: url) { self.refreshImageSpan(span) }
         }
       }
+    }
+
+    /// Re-lays out one image's source span: its slot (kern), glyphs (the source collapses
+    /// once the image draws) and line height.
+    private func refreshImageSpan(_ span: NSRange) {
+      markdownLayout.updateImageSlots(in: span)
+      markdownLayout.invalidateGlyphs(
+        forCharacterRange: span, changeInLength: 0, actualCharacterRange: nil)
+      markdownLayout.invalidateLayout(forCharacterRange: span, actualCharacterRange: nil)
+      markdownLayout.invalidateDisplay(forCharacterRange: span)
+    }
+
+    private var animationTimerScheduled = false
+    /// Animated images record their rects while drawing; redraw those on the animation
+    /// clock. One scrolled out of view is not drawn, so it stops asking.
+    public override func draw(_ dirtyRect: NSRect) {
+      markdownLayout.animatedImageRects.removeAll()
+      super.draw(dirtyRect)
+      let rects = markdownLayout.animatedImageRects
+      guard !rects.isEmpty, !animationTimerScheduled else { return }
+      animationTimerScheduled = true
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 30) { [weak self] in
+        guard let self else { return }
+        self.animationTimerScheduled = false
+        for r in rects where r.intersects(self.visibleRect) { self.setNeedsDisplay(r) }
+      }
+    }
+
+    // MARK: - Anchors
+
+    /// Scrolls so the heading (or HTML `id`/`name` anchor) with GitHub slug `anchor` is at
+    /// the top. Returns false when the document has no such anchor.
+    @discardableResult
+    public func scrollToAnchor(_ anchor: String) -> Bool {
+      let key = (anchor.removingPercentEncoding ?? anchor).lowercased()
+      guard let location = MarkdownParser.anchors(in: string)[key], markdownStorage.length > 0
+      else { return false }
+      let char = min(location, markdownStorage.length - 1)
+      let glyph = markdownLayout.glyphIndexForCharacter(at: char)
+      markdownLayout.ensureLayout(forGlyphRange: NSRange(location: 0, length: glyph + 1))
+      let rect = markdownLayout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+      scroll(NSPoint(x: 0, y: max(0, rect.minY + textContainerOrigin.y - 8)))
+      return true
     }
 
     // MARK: - Selection / active line (drives syntax show/hide)
@@ -210,6 +309,11 @@
       guard let lm = layoutManager as? EditorLayoutManager else { return }
       let newSelection = selectedRange()
       guard newSelection != lm.activeCharacterRange else { return }
+      // A viewer never reveals syntax: nothing to re-lay out.
+      guard !isReadOnly else {
+        lm.activeCharacterRange = newSelection
+        return
+      }
       // Leaving a source-mode table returns it to the grid: the grid is the reading state,
       // and source mode has no toggle of its own. Done BEFORE the visibility pass because
       // a re-parse replaces the attributes wholesale.
@@ -227,6 +331,8 @@
       let affected = NSUnionRange(
         lm.affectedRange(for: lm.activeCharacterRange), lm.affectedRange(for: newSelection))
       lm.activeCharacterRange = newSelection
+      // An image whose source the caret entered (or left) loses (or regains) its slot.
+      lm.updateImageSlots(in: affected)
       // Re-layout the affected ranges so hidden commands collapse to zero width
       // (and appear again when the caret lands on/inside them).
       lm.invalidateGlyphs(forCharacterRange: affected, changeInLength: 0, actualCharacterRange: nil)
@@ -245,7 +351,17 @@
       if !isUnclampingSize { unclampSize() }
       let widthChanged = abs(newSize.width - frame.width) > 0.5
       super.setFrameSize(newSize)
-      if widthChanged { reflowTablesIfNeeded() }
+      if widthChanged {
+        reflowTablesIfNeeded()
+        // Every image's maximum width changed. Deferred: attribute edits are not safe in
+        // the middle of a frame change.
+        DispatchQueue.main.async { [weak self] in
+          guard let self else { return }
+          self.markdownLayout.updateImageSlots(
+            in: NSRange(location: 0, length: self.markdownStorage.length))
+          self.loadVisibleImages()
+        }
+      }
     }
 
     /// Set while `unclampSize()` writes minSize/maxSize (see `setFrameSize`).
@@ -286,8 +402,30 @@
 
     public func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool
     {
-      if let url = link as? URL { NSWorkspace.shared.open(url) }
+      guard let url = (link as? URL) ?? (link as? String).flatMap({ URL(string: $0) }) else {
+        return true
+      }
+      if let fragment = url.fragment, MarkdownParser.isSameDocument(url, resolver.documentURL),
+        scrollToAnchor(fragment)
+      {
+        return true
+      }
+      if onOpenURL?(url) == true { return true }
+      NSWorkspace.shared.open(url)
       return true
+    }
+
+    /// Grows image lines and collapses markup-only lines (see `adjustLineFragment`).
+    public func layoutManager(
+      _ layoutManager: NSLayoutManager,
+      shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
+      lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
+      baselineOffset: UnsafeMutablePointer<CGFloat>, in textContainer: NSTextContainer,
+      forGlyphRange glyphRange: NSRange
+    ) -> Bool {
+      markdownLayout.adjustLineFragment(
+        &lineFragmentRect.pointee, usedRect: &lineFragmentUsedRect.pointee,
+        baselineOffset: &baselineOffset.pointee, glyphRange: glyphRange)
     }
 
     // MARK: - Interactive content (copy button, table toggle, checkbox)
@@ -312,6 +450,11 @@
           lm.clearCopied(block)
           self.needsDisplay = true
         }
+        return
+      }
+      // A viewer has no source modes and no checkboxes to toggle.
+      if isReadOnly {
+        super.mouseDown(with: event)
         return
       }
       // Table corner toggle: flip the table between the grid and its source text. The
@@ -474,6 +617,16 @@
         // shrinking below the first viewport / narrow windows.
         unclampSize()
         EditorTextView.live = self
+        // Lazy image loading follows the scroll position.
+        if let clip = enclosingScrollView?.contentView {
+          clip.postsBoundsChangedNotifications = true
+          NotificationCenter.default.removeObserver(
+            self, name: NSView.boundsDidChangeNotification, object: nil)
+          NotificationCenter.default.addObserver(
+            self, selector: #selector(clipBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification, object: clip)
+        }
+        loadVisibleImages()
         // Take focus only when nothing else in the window has it — never steal it from
         // a host's own fields.
         if let window, window.firstResponder == nil || window.firstResponder === window {
@@ -481,6 +634,8 @@
         }
       }
     }
+
+    @objc private func clipBoundsDidChange(_ note: Notification) { loadVisibleImages() }
 
     /// The code palette is GitHub Light/Dark (static colors, unlike the dynamic
     /// system colors used elsewhere) — re-apply when the appearance switches so

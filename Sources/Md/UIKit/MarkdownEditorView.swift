@@ -15,24 +15,61 @@
     public var text: String?
     /// Called with the full document text after every user edit.
     public var onChange: @MainActor (String) -> Void
+    /// Resolves relative image sources and links (see `MarkdownURLResolver`). Re-applied
+    /// when its `documentURL` changes.
+    public var resolver: MarkdownURLResolver
+    /// Read-only viewer mode (see `EditorTextView.isReadOnly`).
+    public var isReadOnly: Bool
+    /// An in-page anchor (GitHub heading slug) to scroll to once the text is laid out;
+    /// a new value scrolls again.
+    public var anchor: String?
+    /// Asked first when a link is activated; return true when handled.
+    public var onOpenURL: (@MainActor (URL) -> Bool)?
 
     public init(
       metrics: MarkdownMetrics = .standard,
       text: String? = nil,
-      onChange: @escaping @MainActor (String) -> Void = { _ in }
+      resolver: MarkdownURLResolver = .absoluteOnly,
+      isReadOnly: Bool = false,
+      anchor: String? = nil,
+      onChange: @escaping @MainActor (String) -> Void = { _ in },
+      onOpenURL: (@MainActor (URL) -> Bool)? = nil
     ) {
       self.metrics = metrics
       self.text = text
+      self.resolver = resolver
+      self.isReadOnly = isReadOnly
+      self.anchor = anchor
       self.onChange = onChange
+      self.onOpenURL = onOpenURL
+    }
+
+    /// Applies the non-text configuration (cheap when unchanged).
+    @MainActor private func configure(_ textView: EditorTextView, coordinator: Coordinator) {
+      textView.onChange = onChange
+      textView.onOpenURL = onOpenURL
+      if textView.isReadOnly != isReadOnly { textView.isReadOnly = isReadOnly }
+      if coordinator.resolvedDocument != resolver.documentURL || !coordinator.hasResolver {
+        coordinator.hasResolver = true
+        coordinator.resolvedDocument = resolver.documentURL
+        textView.resolver = resolver
+      }
+    }
+
+    @MainActor private func scrollToAnchorIfNeeded(_ textView: EditorTextView, coordinator: Coordinator) {
+      guard let anchor, anchor != coordinator.appliedAnchor else { return }
+      coordinator.appliedAnchor = anchor
+      DispatchQueue.main.async { textView.scrollToAnchor(anchor) }
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
 
     public func makeUIViewController(context: Context) -> MarkdownEditorViewController {
       let controller = MarkdownEditorViewController(metrics: metrics)
+      configure(controller.textView, coordinator: context.coordinator)
       if let text { controller.textView.setText(text) }
-      controller.textView.onChange = onChange
       context.coordinator.appliedText = text
+      scrollToAnchorIfNeeded(controller.textView, coordinator: context.coordinator)
       return controller
     }
 
@@ -45,7 +82,8 @@
       _ uiViewController: MarkdownEditorViewController, context: Context
     ) {
       let textView = uiViewController.textView
-      textView.onChange = onChange
+      configure(textView, coordinator: context.coordinator)
+      defer { scrollToAnchorIfNeeded(textView, coordinator: context.coordinator) }
       guard text != context.coordinator.appliedText else { return }
       context.coordinator.appliedText = text
       if let text, text != textView.text { textView.setText(text) }
@@ -54,6 +92,9 @@
     @MainActor public final class Coordinator {
       /// The `text` value last pushed into the editor.
       var appliedText: String?
+      var appliedAnchor: String?
+      var resolvedDocument: URL?
+      var hasResolver = false
     }
   }
 #endif

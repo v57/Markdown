@@ -49,7 +49,29 @@ public enum MarkdownRenderer {
     p.paragraphSpacingBefore = paragraph.paragraphSpacingBefore
     p.firstLineHeadIndent = paragraph.firstLineHeadIndent
     p.headIndent = paragraph.headIndent
+    p.alignment = nativeAlignment(paragraph.alignment)
     return p
+  }
+
+  static func nativeAlignment(_ alignment: MarkdownParagraph.Alignment) -> NSTextAlignment {
+    switch alignment {
+    case .natural: return .natural
+    case .left: return .left
+    case .center: return .center
+    case .right: return .right
+    }
+  }
+
+  /// Whether the current appearance (the drawing appearance on macOS, the current trait
+  /// collection on iOS) is dark — what a `<picture>`'s `prefers-color-scheme` matches.
+  public static func currentAppearanceIsDark() -> Bool {
+    #if canImport(AppKit)
+      return NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    #elseif canImport(UIKit)
+      return UITraitCollection.current.userInterfaceStyle == .dark
+    #else
+      return false
+    #endif
   }
 
   /// A copy of an already-resolved paragraph style with `extra` added to its first-line

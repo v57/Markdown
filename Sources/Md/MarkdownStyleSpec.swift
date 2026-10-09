@@ -67,16 +67,21 @@ public struct MarkdownParagraph: Equatable, Sendable {
   public var paragraphSpacingBefore: CGFloat
   public var firstLineHeadIndent: CGFloat
   public var headIndent: CGFloat
+  /// Horizontal alignment (HTML `align="center"` blocks); natural by default.
+  public var alignment: Alignment
+
+  public enum Alignment: Equatable, Sendable { case natural, left, center, right }
 
   public init(
     lineSpacing: CGFloat = 0, paragraphSpacing: CGFloat = 0, paragraphSpacingBefore: CGFloat = 0,
-    firstLineHeadIndent: CGFloat = 0, headIndent: CGFloat = 0
+    firstLineHeadIndent: CGFloat = 0, headIndent: CGFloat = 0, alignment: Alignment = .natural
   ) {
     self.lineSpacing = lineSpacing
     self.paragraphSpacing = paragraphSpacing
     self.paragraphSpacingBefore = paragraphSpacingBefore
     self.firstLineHeadIndent = firstLineHeadIndent
     self.headIndent = headIndent
+    self.alignment = alignment
   }
 }
 

@@ -6,9 +6,22 @@ extension NSAttributedString.Key {
   /// Marks task-list checkbox ranges ("[x]"/"[ ]"); the layout manager draws a checkbox
   /// image instead of the literal characters (keeps the source string verbatim).
   public static let markdownCheckbox = NSAttributedString.Key("MarkdownCheckbox")
-  /// Marks inline image ranges ("![alt](url)"); the layout manager draws a cached image
-  /// in place of the range once loaded (keeps the source string verbatim).
+  /// Marks inline image ranges ("![alt](url)", `<img src>`) with the RESOLVED image URL;
+  /// the layout manager draws the cached image in place of the range once loaded (keeps
+  /// the source string verbatim).
   public static let markdownImage = NSAttributedString.Key("MarkdownImage")
+  /// The `MarkdownImageSpec` of an image, over its whole source span. One object per
+  /// image, so adjacent images with the same URL still form separate attribute runs.
+  public static let markdownImageSpec = NSAttributedString.Key("MarkdownImageSpec")
+  /// Marks a line (content plus newline) whose every visible character is hidden markup
+  /// — an HTML line holding only tags/comments, a link reference definition. The layout
+  /// manager collapses its line fragment while the line is not being edited.
+  public static let markdownCollapsibleLine = NSAttributedString.Key("MarkdownCollapsibleLine")
+  /// On the FIRST character of an HTML entity (`&amp;`, `&#169;`): an `NSNumber` holding
+  /// the UTF-16 code unit it stands for. While the entity is hidden, the layout manager
+  /// draws that character's glyph in place of the `&` (the rest collapse to zero width),
+  /// so `&copy;` reads as © with the source untouched.
+  public static let markdownGlyphSubstitute = NSAttributedString.Key("MarkdownGlyphSubstitute")
   /// Marks fenced-code CONTENT ranges; the layout manager draws the continuous
   /// full-width background block (per-line backgrounds would show seams). This
   /// span covers the code-content lines only (NOT the ``` fence lines) — it drives

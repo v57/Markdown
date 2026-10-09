@@ -65,7 +65,7 @@ public struct CodeScanner {
     }
     lines = ls
 
-    func re(_ p: String) -> NSRegularExpression? { try? NSRegularExpression(pattern: p) }
+    func re(_ p: String) -> NSRegularExpression? { MarkdownParser.regex(p) }
     let ident = "[A-Za-z_$][A-Za-z0-9_$]*"
     if !spec.declKeywords.isEmpty {
       let alt = spec.declKeywords.keys.sorted { $0.count > $1.count }.joined(separator: "|")
