@@ -25,11 +25,15 @@ public struct MarkdownURLResolver: Sendable {
 
   /// Absolute destinations as-is; relative ones against the directory of `documentURL`
   /// (nil: relative destinations do not resolve, except `#anchor` links).
-  public static func relative(to documentURL: URL?) -> MarkdownURLResolver {
+  ///
+  /// `root` is what a root-relative path (`/docs/a.png`) means — a repository's top
+  /// folder, the way GitHub resolves it. Without one, `/` is the host's (or for a file,
+  /// the disk's) root.
+  public static func relative(to documentURL: URL?, root: URL? = nil) -> MarkdownURLResolver {
     MarkdownURLResolver(
       documentURL: documentURL,
-      resolveImage: { resolveRelative($0, against: documentURL) },
-      resolveLink: { resolveRelative($0, against: documentURL) })
+      resolveImage: { resolveRelative($0, against: documentURL, root: root) },
+      resolveLink: { resolveRelative($0, against: documentURL, root: root) })
   }
 
   /// Absolute destinations only — the parser's behavior without a document location.
@@ -39,10 +43,19 @@ public struct MarkdownURLResolver: Sendable {
   /// `#fragment` targets the document itself, anything else is a path relative to the
   /// document's directory. Spaces and other characters a URL cannot hold are
   /// percent-encoded first (`![](my image.png)` is common in notes).
-  public static func resolveRelative(_ raw: String, against documentURL: URL?) -> URL? {
+  public static func resolveRelative(_ raw: String, against documentURL: URL?, root: URL? = nil)
+    -> URL?
+  {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
     if let absolute = absoluteURL(trimmed) { return absolute }
+    // Root-relative ("/x", not protocol-relative "//host/x"): against `root`.
+    if let root, trimmed.hasPrefix("/"), !trimmed.hasPrefix("//"),
+      let encoded = encodedReference(String(trimmed.drop(while: { $0 == "/" })))
+    {
+      let base = root.hasDirectoryPath ? root : root.appendingPathComponent("", isDirectory: true)
+      return URL(string: encoded, relativeTo: base)?.absoluteURL
+    }
     guard let documentURL else { return nil }
     if trimmed.hasPrefix("#") {
       var components = URLComponents(url: documentURL, resolvingAgainstBaseURL: true)

@@ -27,6 +27,32 @@ import Testing
     #expect(MarkdownURLResolver.absoluteOnly.resolveLink("mailto:a@b.c") != nil)
   }
 
+  @Test func rootRelativePathsUseTheRoot() {
+    let root = URL(fileURLWithPath: "/repos/secretive", isDirectory: true)
+    let doc = root.appendingPathComponent("docs/Guide.md")
+    let r = MarkdownURLResolver.relative(to: doc, root: root)
+    #expect(r.resolveImage("/.github/readme/app-dark.png")?.path == "/repos/secretive/.github/readme/app-dark.png")
+    #expect(r.resolveImage("img.png")?.path == "/repos/secretive/docs/img.png")
+    #expect(r.resolveLink("/FAQ.md#top")?.path == "/repos/secretive/FAQ.md")
+    #expect(r.resolveImage("//cdn.example/x.png")?.path != "/repos/secretive/cdn.example/x.png")
+    // Without a root, "/" stays the disk root.
+    #expect(MarkdownURLResolver.relative(to: doc).resolveImage("/a.png")?.path == "/a.png")
+  }
+
+  #if canImport(AppKit)
+    @Test func svgTspanPositionsAreHoisted() {
+      let svg = """
+        <svg><text fill="#fff">
+          <tspan x="4" y="14">passing</tspan>
+        </text><text x="1"><tspan>a</tspan><tspan>b</tspan></text></svg>
+        """
+      let fixed = String(decoding: MarkdownImageCache.appKitCompatibleSVG(Data(svg.utf8)), as: UTF8.self)
+      #expect(fixed.contains(##"<text fill="#fff" x="4" y="14">passing</text>"##))
+      // Two tspans: left alone.
+      #expect(fixed.contains("<tspan>a</tspan><tspan>b</tspan>"))
+    }
+  #endif
+
   // MARK: - HTML tokenizer
 
   @Test func tagsAttributesAndComments() {

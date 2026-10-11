@@ -38,11 +38,11 @@
       guard current == nil, !jobs.isEmpty else { return }
       let job = jobs.removeFirst()
       current = job
-      // A snapshot of a web view outside any window comes back blank: park it, invisible,
-      // in the key window while it renders.
+      // A snapshot of a web view outside any window comes back blank: park it in the key
+      // window, off-screen, while it renders. Fully opaque — the snapshot bakes in the
+      // view's alpha, so a near-transparent "hidden" view yields near-invisible images.
       if webView.superview == nil, let window = Self.hostWindow() {
-        webView.alpha = 0.011
-        webView.frame.origin = CGPoint(x: -10_000, y: 0)
+        webView.frame.origin = CGPoint(x: -10_000, y: -10_000)
         window.insertSubview(webView, at: 0)
       }
       webView.frame.size = job.size

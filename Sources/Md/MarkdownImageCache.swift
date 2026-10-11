@@ -103,6 +103,16 @@ public final class MarkdownImageCache: @unchecked Sendable {
     lock.unlock()
   }
 
+  /// Drops every image loaded from disk, so a reload shows files edited since.
+  public func forgetFileImages() {
+    lock.lock()
+    for url in states.keys where url.isFileURL {
+      if case .loading = states[url] { continue }
+      states[url] = nil
+    }
+    lock.unlock()
+  }
+
   /// Drops everything known about `url` (a reload fetches it again).
   public func forget(_ url: URL) {
     lock.lock()
@@ -213,7 +223,9 @@ public final class MarkdownImageCache: @unchecked Sendable {
 
   private static func decodeSVG(_ data: Data, completion: @escaping @Sendable (Entry?) -> Void) {
     #if canImport(AppKit)
-      guard let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else {
+      guard let image = NSImage(data: appKitCompatibleSVG(data)), image.size.width > 0,
+        image.size.height > 0
+      else {
         completion(nil)
         return
       }
@@ -228,6 +240,21 @@ public final class MarkdownImageCache: @unchecked Sendable {
         }
       }
     #endif
+  }
+
+  /// AppKit's SVG renderer ignores `x`/`y` on a `<tspan>`, so text positioned that way
+  /// (GitHub's workflow-status badges) is drawn above the image and clipped. A `<text>`
+  /// holding exactly one positioned `<tspan>` gets the tspan's attributes hoisted onto
+  /// itself, which AppKit does honor. Anything else passes through untouched.
+  static func appKitCompatibleSVG(_ data: Data) -> Data {
+    guard let svg = String(data: data, encoding: .utf8), svg.contains("<tspan"),
+      let re = MarkdownParser.regex(
+        "<text([^>]*)>\\s*<tspan((?:\\s+[^\\s=>]+=\"[^\"]*\")*)\\s*>([^<]*)</tspan>\\s*</text>")
+    else { return data }
+    let ns = svg as NSString
+    let fixed = re.stringByReplacingMatches(
+      in: svg, range: NSRange(location: 0, length: ns.length), withTemplate: "<text$1$2>$3</text>")
+    return Data(fixed.utf8)
   }
 
   // MARK: - Animation
