@@ -378,7 +378,7 @@
 /* Begin XCLocalSwiftPackageReference section */
 		267577A33037283100FB9989 /* XCLocalSwiftPackageReference "../Markdown" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Markdown;
+			relativePath = .;
 		};
 /* End XCLocalSwiftPackageReference section */
 
