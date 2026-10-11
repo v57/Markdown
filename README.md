@@ -156,6 +156,21 @@ App (Markdown.xcodeproj)
   show a Mac folder at launch without the picker. (Not on macOS: the sandbox
   grants no access to a path given on the command line.)
 
+Distribution
+
+  Scripts/release.sh mac        Developer ID: archive, export, notarize and
+                                staple; build/release/Markdown.dmg and .zip for
+                                a GitHub release (stable link:
+                                releases/latest/download/Markdown.dmg)
+  Scripts/release.sh appstore   macOS and iOS archives uploaded to App Store
+                                Connect
+
+  The direct build adds DIRECT_DISTRIBUTION, which turns on UpdateChecker: a
+  daily check of the latest GitHub release and "Check for Updates…" (App Store
+  builds leave it out). Notarization uses a notarytool keychain profile
+  ("notary" by default; see the script). PrivacyInfo.xcprivacy declares no
+  tracking or collection and the UserDefaults reason.
+
 Features (both stacks)
 
   - Live re-styling on every edit; the source text is kept verbatim.

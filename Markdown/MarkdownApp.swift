@@ -3,6 +3,10 @@ import SwiftData
 import SwiftUI
 
 @main struct MarkdownApp: App {
+  #if os(macOS) && DIRECT_DISTRIBUTION
+    @State private var updates = UpdateChecker()
+  #endif
+
   // macOS CLI harness: run headless probes before the UI launches. The app
   // target defaults to MainActor isolation, so the @MainActor SelfTest/
   // SmokeTest calls are direct. --selftest/--smoke exit before any window.
@@ -39,13 +43,23 @@ import SwiftUI
         } else {
           ContentView()
             .modelContainer(for: SidebarFolder.self)
+            #if os(macOS) && DIRECT_DISTRIBUTION
+              .modifier(UpdateAlerts(checker: updates))
+            #endif
         }
       }
       .frame(minWidth: 480, minHeight: 360)
     }
     .defaultSize(width: 1100, height: 760)
     #if os(macOS)
-      .commands { TextEditingCommands() }  // standard Edit menu so ⌘C/V/X/Z work
+      .commands {
+        TextEditingCommands()  // standard Edit menu so ⌘C/V/X/Z work
+        #if DIRECT_DISTRIBUTION
+          CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { Task { await updates.check(userInitiated: true) } }
+          }
+        #endif
+      }
     #endif
   }
 }
