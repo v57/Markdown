@@ -9,3 +9,5 @@ build/
 # Xcode user state (scheme selection, breakpoints) — machine-local
 .swiftpm/xcode/xcuserdata/
 Markdown.xcodeproj/xcuserdata/
+CLAUDE.md
+/.claude
