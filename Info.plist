@@ -67,6 +67,19 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<!-- The iCloud Drive folder notes live in: "Markdown" in Finder and Files. -->
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>Markdown</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
 	<!-- App Store: HTTPS only, which is exempt. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>

@@ -118,6 +118,21 @@ App (Markdown.xcodeproj)
     Markdown.entitlements  bookmarks.app-scope (macOS; the rest comes from
                            build settings)
 
+  Notes: the sidebar's first section is the app's own notes folder —
+  NotesLocation resolves the iCloud Drive container's Documents ("Markdown" in
+  Finder and Files; entitlements in Markdown.entitlements and
+  Markdown-iOS.entitlements, NSUbiquitousContainers in Info.plist), falling
+  back to the local Documents folder when iCloud is unavailable, and moves
+  local notes into iCloud the first time it is. A file presenter on the folder
+  reloads the sidebar and the open note when a sync (or another app) changes
+  them; not-yet-downloaded notes (".Name.md.icloud") are listed by name and
+  downloaded by the coordinated read. FileActions creates notes (⌘N) and
+  folders (⇧⌘N), renames, moves (drag onto a folder; files dragged in from
+  other apps are copied) and trashes (⌘⌫ on macOS; a confirmed delete on iOS)
+  in any folder the app can write. Search (the sidebar's search field,
+  NoteSearch) matches every word against note names and text across all
+  folders, names first.
+
   Open with…: Info.plist declares Markdown (net.daringfireball.markdown,
   imported) and plain text, so Finder and Files offer the app. An opened file
   inside a sidebar folder is shown there; any other file gets its own entry

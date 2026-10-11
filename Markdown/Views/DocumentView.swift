@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 struct DocumentView: View {
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
+  @Environment(FileActions.self) private var actions
   @Environment(\.scenePhase) private var scenePhase
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @Environment(\.modelContext) private var context
@@ -52,6 +53,7 @@ struct DocumentView: View {
         default: saver.flush()
         }
       }
+      .onAppear { actions.willChangeFiles = { [saver] in saver.flush() } }
       .onDisappear { saver.flush() }
       #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) {
@@ -198,11 +200,21 @@ struct DocumentView: View {
   }
 
   /// UTF-8 first (what markdown nearly always is), else whatever encoding Foundation
-  /// detects.
+  /// detects. The read is coordinated: a note iCloud has not downloaded yet is fetched
+  /// first, and a sync in progress finishes before the text is read.
   nonisolated private static func read(_ url: URL) throws -> String {
-    if let text = try? String(contentsOf: url, encoding: .utf8) { return text }
-    var encoding = String.Encoding.utf8
-    return try String(contentsOf: url, usedEncoding: &encoding)
+    var coordinationError: NSError?
+    var result: Result<String, Error> = .failure(CocoaError(.fileReadUnknown))
+    NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinationError) {
+      url in
+      result = Result {
+        if let text = try? String(contentsOf: url, encoding: .utf8) { return text }
+        var encoding = String.Encoding.utf8
+        return try String(contentsOf: url, usedEncoding: &encoding)
+      }
+    }
+    if let coordinationError { throw coordinationError }
+    return try result.get()
   }
 
   private func refresh() {
@@ -282,7 +294,7 @@ struct DocumentView: View {
 
   // MARK: - Links
 
-  private var roots: [URL] { folders.filter { !$0.isFile }.compactMap { library.url(for: $0) } }
+  private var roots: [URL] { library.roots(folders) }
 
   /// Markdown files and folders open here; everything else is left to the editor's
   /// default (the system opens it).

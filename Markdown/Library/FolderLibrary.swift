@@ -24,12 +24,15 @@ struct FileNode: Identifiable, Hashable {
   private(set) var generation = 0
   /// Why the last add failed, for an alert.
   var lastError: String?
+  /// The app's own folders, beside the sidebar folders: the notes folder (and GitHub
+  /// repositories). Always accessible — they live in the app's container or iCloud.
+  var builtInRoots: [URL] = []
 
   @ObservationIgnored private var resolved: [PersistentIdentifier: URL] = [:]
   @ObservationIgnored private var accessing: Set<URL> = []
   @ObservationIgnored private var listings: [URL: [FileNode]] = [:]
 
-  static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn"]
+  nonisolated static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn"]
 
   // MARK: - Folders
 
@@ -39,7 +42,7 @@ struct FileNode: Identifiable, Hashable {
   @discardableResult
   func add(_ urls: [URL], existing: [SidebarFolder], context: ModelContext) -> [URL] {
     var known = Set(existing.map(\.path))
-    let roots = existing.filter { !$0.isFile }.compactMap { url(for: $0) }
+    let roots = roots(existing)
     var shown: [URL] = []
     for url in urls {
       let started = url.startAccessingSecurityScopedResource()
@@ -157,11 +160,19 @@ struct FileNode: Identifiable, Hashable {
     let keys: [URLResourceKey] = [.isDirectoryKey, .isPackageKey, .isHiddenKey]
     let items =
       (try? FileManager.default.contentsOfDirectory(
-        at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
+        at: directory, includingPropertiesForKeys: keys, options: [])) ?? []
     var folders: [FileNode] = []
     var files: [FileNode] = []
     for item in items {
+      // A note iCloud has not downloaded yet: ".Name.md.icloud" stands for "Name.md".
+      // Listed by its real name; reading it (coordinated) downloads it.
+      if let placeholder = Self.iCloudPlaceholderTarget(item) {
+        if Self.isMarkdown(placeholder) { files.append(FileNode(url: Self.canonical(placeholder), isDirectory: false)) }
+        continue
+      }
+      guard !item.lastPathComponent.hasPrefix(".") else { continue }
       let values = try? item.resourceValues(forKeys: Set(keys))
+      guard values?.isHidden != true else { continue }
       if values?.isDirectory == true {
         if values?.isPackage != true { folders.append(FileNode(url: Self.canonical(item), isDirectory: true)) }
       } else if Self.markdownExtensions.contains(item.pathExtension.lowercased()) {
@@ -200,6 +211,12 @@ struct FileNode: Identifiable, Hashable {
     return nil
   }
 
+  /// Every folder whose files the app shows and edits: the built-in ones and the
+  /// sidebar folders (not single opened files).
+  func roots(_ folders: [SidebarFolder]) -> [URL] {
+    builtInRoots + folders.filter { !$0.isFile }.compactMap { url(for: $0) }
+  }
+
   /// The sidebar folder `url` lives in (the innermost, when folders nest) — what a
   /// root-relative path (`/docs/a.png`) in its documents means.
   func root(of url: URL, roots: [URL]) -> URL? {
@@ -229,22 +246,31 @@ struct FileNode: Identifiable, Hashable {
   /// URLs, so a selected link target matched no sidebar row. Every URL entering the
   /// tree, the selection or the history goes through here (standardized path, trailing
   /// slash for directories, no base URL).
-  static func canonical(_ url: URL) -> URL {
+  nonisolated static func canonical(_ url: URL) -> URL {
     URL(fileURLWithPath: url.standardizedFileURL.path)
   }
 
-  static func isDirectory(_ url: URL) -> Bool {
+  /// The file an iCloud placeholder (".Name.md.icloud") stands for.
+  nonisolated static func iCloudPlaceholderTarget(_ url: URL) -> URL? {
+    let name = url.lastPathComponent
+    guard name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > ".x.icloud".count - 1
+    else { return nil }
+    let real = String(name.dropFirst().dropLast(".icloud".count))
+    return url.deletingLastPathComponent().appendingPathComponent(real)
+  }
+
+  nonisolated static func isDirectory(_ url: URL) -> Bool {
     var isDir: ObjCBool = false
     return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
   }
 
-  static func isMarkdown(_ url: URL) -> Bool {
+  nonisolated static func isMarkdown(_ url: URL) -> Bool {
     markdownExtensions.contains(url.pathExtension.lowercased())
   }
 
   /// Markdown, anything the system types as text, and extensionless files (README,
   /// LICENSE) — what the app opens and edits.
-  static func isText(_ url: URL) -> Bool {
+  nonisolated static func isText(_ url: URL) -> Bool {
     if isMarkdown(url) || url.pathExtension.isEmpty { return true }
     return UTType(filenameExtension: url.pathExtension)?.conforms(to: .text) ?? false
   }
@@ -277,6 +303,26 @@ struct FileNode: Identifiable, Hashable {
     defer { keepsAnchor = false }
     self.anchor = anchor
     selection = url
+  }
+
+  /// Follows a rename or move: the selection and history entries at or inside `old`
+  /// point into `new` instead.
+  func replace(_ old: URL, with new: URL) {
+    let root = FolderLibrary.canonical(old).path
+    func moved(_ url: URL) -> URL {
+      let path = FolderLibrary.canonical(url).path
+      guard path == root || path.hasPrefix(root + "/") else { return url }
+      return URL(fileURLWithPath: new.path + path.dropFirst(root.count))
+    }
+    back = back.map(moved)
+    forward = forward.map(moved)
+    if let selection {
+      isTraversing = true
+      keepsAnchor = true
+      self.selection = moved(selection)
+      keepsAnchor = false
+      isTraversing = false
+    }
   }
 
   /// Drops the selection and history entries inside `folder` (it left the sidebar, and
