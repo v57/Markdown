@@ -442,13 +442,18 @@
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(code, forType: .string)
-        lm.markCopied(chrome.blockRange)
-        needsDisplay = true
+        let button = chrome.copyFrame.insetBy(dx: -6, dy: -4)
+        crossfade(button, duration: 0.15) {
+          lm.markCopied(chrome.blockRange)
+          setNeedsDisplay(button)
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
           [weak self, block = chrome.blockRange] in
           guard let self, let lm = self.layoutManager as? EditorLayoutManager else { return }
-          lm.clearCopied(block)
-          self.needsDisplay = true
+          self.crossfade(button, duration: 0.3) {
+            lm.clearCopied(block)
+            self.setNeedsDisplay(button)
+          }
         }
         return
       }
@@ -464,9 +469,11 @@
           $0.frame.contains(point)
         })
       {
-        setTableMode(
-          source: !sourceModeTables.contains(toggle.tableOrdinal),
-          ordinal: toggle.tableOrdinal)
+        crossfade(visibleRect) {
+          setTableMode(
+            source: !sourceModeTables.contains(toggle.tableOrdinal),
+            ordinal: toggle.tableOrdinal)
+        }
         return
       }
       let index = characterIndexForInsertion(at: point)
@@ -492,10 +499,12 @@
       let inner = NSRange(location: eff.location + 1, length: eff.length - 2)
       let current = ns.substring(with: inner)
       let replacement = (current == "x" || current == "X") ? " " : "x"
-      if shouldChangeText(in: inner, replacementString: replacement) {
+      guard shouldChangeText(in: inner, replacementString: replacement) else { return }
+      crossfade(paragraphRect(containing: eff)) {
         textStorage?.replaceCharacters(in: inner, with: replacement)
         didChangeText()
       }
+      popCheckbox(at: eff.location, checked: replacement == "x")
     }
 
     // MARK: - Smart list continuation on Return (Obsidian-style)

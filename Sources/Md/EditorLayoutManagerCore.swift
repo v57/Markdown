@@ -886,17 +886,38 @@ open class EditorLayoutManagerCore: NSLayoutManager {
 
   private func drawCheckbox(in charRange: NSRange, at origin: CGPoint) {
     guard let storage = textStorage else { return }
+    var whole = NSRange(location: 0, length: 0)
     let checked =
-      (storage.attribute(.markdownCheckbox, at: charRange.location, effectiveRange: nil) as? Bool)
-      ?? false
+      (storage.attribute(.markdownCheckbox, at: charRange.location, effectiveRange: &whole)
+        as? Bool) ?? false
+    // An overlay is animating this checkbox; drawing it too would show it twice.
+    if checkboxesHiddenForAnimation.contains(whole.location) { return }
+    drawCheckboxHook(checked: checked, in: checkboxRect(in: charRange, origin: origin))
+  }
+
+  /// Checkboxes (by the location of their `[ ]` range) left undrawn while an overlay
+  /// animates them.
+  public var checkboxesHiddenForAnimation: Set<Int> = []
+
+  /// Where the checkbox for the `[ ]` range starting at `location` is drawn, in the
+  /// coordinates `origin` (the text container's origin) puts it in.
+  public func checkboxRect(at location: Int, origin: CGPoint) -> CGRect? {
+    guard let storage = textStorage, location < storage.length else { return nil }
+    var whole = NSRange(location: 0, length: 0)
+    guard storage.attribute(.markdownCheckbox, at: location, effectiveRange: &whole) != nil
+    else { return nil }
+    ensureLayout(forCharacterRange: whole)
+    return checkboxRect(in: whole, origin: origin)
+  }
+
+  private func checkboxRect(in charRange: NSRange, origin: CGPoint) -> CGRect {
     let glyphRange = glyphRange(forCharacterRange: charRange, actualCharacterRange: nil)
     let fragRect = lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
     let loc = location(forGlyphAt: glyphRange.location)
     let m = metrics
     let size = max(m.checkboxMinSize, fragRect.height * 0.62) * m.checkboxScaleFactor  // 20% larger checkbox
-    let rect = CGRect(
+    return CGRect(
       x: origin.x + fragRect.minX + loc.x, y: origin.y + fragRect.minY, width: size, height: size)
-    drawCheckboxHook(checked: checked, in: rect)
   }
 
   private func drawRule(in charRange: NSRange, at origin: CGPoint) {

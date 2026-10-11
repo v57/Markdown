@@ -28,6 +28,11 @@
     /// fit — a resize re-parses only when that set changes.
     private var tableWidths: [Int: CGFloat] = [:]
     private var overflowingTables: Set<Int> = []
+    /// The checkbox/copy tap recognizer, and the character under its touch at touch-down.
+    /// The hit test must use the layout from before the tap: the text view's own tap
+    /// places the caret first, which reveals the line's `- ` and shifts its checkbox.
+    private weak var contentTap: UITapGestureRecognizer?
+    private var touchDownIndex: Int?
     /// Resolves the document's relative image sources and links (a note's folder, a
     /// GitHub repository). Setting it re-styles the document.
     public var resolver: MarkdownURLResolver = .absoluteOnly {
@@ -120,6 +125,7 @@
       tap.delegate = self
       tap.cancelsTouchesInView = false
       addGestureRecognizer(tap)
+      contentTap = tap
     }
 
     /// Replaces the document with `newText` and re-applies styling. Programmatic,
@@ -408,13 +414,18 @@
       {
         let code = (text as NSString).substring(with: chrome.blockRange)
         UIPasteboard.general.string = code
-        lm.markCopied(chrome.blockRange)
-        setNeedsDisplay()
+        let button = chrome.copyFrame.insetBy(dx: -6, dy: -4)
+        crossfade(button, duration: 0.15) {
+          lm.markCopied(chrome.blockRange)
+          setNeedsDisplay()
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
           [weak self, block = chrome.blockRange] in
           guard let self, let lm = self.layoutManager as? EditorLayoutManager else { return }
-          lm.clearCopied(block)
-          self.setNeedsDisplay()
+          self.crossfade(button, duration: 0.3) {
+            lm.clearCopied(block)
+            self.setNeedsDisplay()
+          }
         }
         return
       }
@@ -424,15 +435,17 @@
       if let lm = layoutManager as? EditorLayoutManager,
         let toggle = lm.tableToggles(origin: origin).first(where: { $0.frame.contains(point) })
       {
-        setTableMode(
-          source: !sourceModeTables.contains(toggle.tableOrdinal),
-          ordinal: toggle.tableOrdinal)
+        crossfade(CGRect(origin: contentOffset, size: bounds.size)) {
+          setTableMode(
+            source: !sourceModeTables.contains(toggle.tableOrdinal),
+            ordinal: toggle.tableOrdinal)
+        }
         return
       }
       // Tapping INTO a grid-mode table switches it to source: a grid cell has hidden pipes
       // and alignment kerns, so typing there would be blind.
       let storage = textStorage
-      let index = characterIndexForTap(at: point)
+      let index = touchDownIndex ?? characterIndexForTap(at: point)
       if let ordinal = tableOrdinal(at: index), !sourceModeTables.contains(ordinal) {
         setTableMode(source: true, ordinal: ordinal)
       }
@@ -447,9 +460,13 @@
       let inner = NSRange(location: eff.location + 1, length: eff.length - 2)
       let current = ns.substring(with: inner)
       let replacement = (current == "x" || current == "X") ? " " : "x"
-      storage.replaceCharacters(in: inner, with: replacement)
-      // UITextView doesn't have didChangeText(); textViewDidChange fires from
-      // the storage edit automatically, which re-applies styling.
+      crossfade(paragraphRect(containing: eff)) {
+        storage.replaceCharacters(in: inner, with: replacement)
+        // UIKit reports only typed edits to the delegate: restyle and tell the host
+        // (which otherwise saves nothing and puts the old text back on its next update).
+        textViewDidChange(self)
+      }
+      popCheckbox(at: eff.location, checked: replacement == "x")
     }
 
     /// Flips one table between the grid and its raw markdown source. VIEW state only: the
@@ -497,6 +514,36 @@
       shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
       true
+    }
+
+    public func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
+    ) -> Bool {
+      if gestureRecognizer === contentTap {
+        touchDownIndex = characterIndexForTap(at: touch.location(in: self))
+      }
+      return true
+    }
+
+    /// A tap on a checkbox toggles it and does nothing else: the text view's own
+    /// recognizers would also place the caret in that line (revealing its syntax) and
+    /// raise the keyboard.
+    public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer)
+      -> Bool
+    {
+      // Every recognizer but ours and the pans (a drag from a checkbox still scrolls):
+      // UIKit's text interactions are taps, long presses and private recognizer classes.
+      if gestureRecognizer !== contentTap, !(gestureRecognizer is UIPanGestureRecognizer),
+        !isReadOnly, isCheckbox(at: characterIndexForTap(at: gestureRecognizer.location(in: self)))
+      {
+        return false
+      }
+      return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+
+    private func isCheckbox(at index: Int) -> Bool {
+      index < textStorage.length
+        && textStorage.attribute(.markdownCheckbox, at: index, effectiveRange: nil) != nil
     }
 
     // MARK: - Smart list continuation on Return (Obsidian-style)
