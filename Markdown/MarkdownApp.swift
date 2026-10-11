@@ -48,7 +48,13 @@ import SwiftUI
             #endif
         }
       }
-      .frame(minWidth: 480, minHeight: 360)
+      // A minimum window size only makes sense where windows are freely resizable.
+      // On iOS the scene is the screen (or a Split View/Slide Over column), and a
+      // 480 pt minimum on a narrower iPhone centers the oversized content, shifting
+      // it left by half the overflow and pushing toolbars past the right edge.
+      #if os(macOS) || os(visionOS)
+        .frame(minWidth: 480, minHeight: 360)
+      #endif
     }
     .defaultSize(width: 1100, height: 760)
     #if os(macOS)
