@@ -9,6 +9,8 @@ struct ContentView: View {
   @State private var navigator: Navigator
   @State private var actions: FileActions
   @State private var notes = NotesLocation()
+  @State private var github = GitHubAuth()
+  @State private var repositories = RepositoryStore()
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
 
@@ -33,15 +35,29 @@ struct ContentView: View {
     .environment(navigator)
     .environment(notes)
     .environment(actions)
+    .environment(github)
+    .environment(repositories)
     .task {
+      repositories.willChangeFiles = { [actions] in actions.willChangeFiles() }
+      repositories.didChangeFiles = { [library] in library.reload() }
+      updateRoots()
       await notes.resolve()
-      if let url = notes.url { library.builtInRoots = [url] }
+      updateRoots()
+      repositories.refreshChanges()
     }
     // Notes changed by sync or another app: re-list, and reload the open note.
     .onChange(of: notes.externalChanges) { library.reload() }
+    .onChange(of: repositories.repositories) { updateRoots() }
+    // Edits saved, files moved: recount the repositories' local changes.
+    .onChange(of: library.generation) { repositories.refreshChanges() }
     .onOpenURL { open($0) }
     // Opened files go to this window instead of a new one each.
     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+  }
+
+  /// The app's own folders: notes and GitHub repositories.
+  private func updateRoots() {
+    library.builtInRoots = (notes.url.map { [$0] } ?? []) + repositories.directories
   }
 
   private func open(_ url: URL) {

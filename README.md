@@ -133,6 +133,18 @@ App (Markdown.xcodeproj)
   NoteSearch) matches every word against note names and text across all
   folders, names first.
 
+  GitHub (Markdown/GitHub/): "Connect GitHub Repository…" signs in with the
+  OAuth device flow (GitHubAuth; the OAuth App's client ID is the
+  GITHUB_CLIENT_ID build setting, the token goes to the Keychain) and lists
+  your repositories; any public repository can be added without signing in
+  (read-only). RepositorySync clones only notes — markdown files and images —
+  through the REST Git Data API into Application Support/GitHub/<owner>/<repo>,
+  recording each file's blob id. Pull is a per-file three-way merge (a file
+  changed on both sides keeps the local text and saves GitHub's as
+  "Name (GitHub).md"); Commit and Push pulls, creates blobs, a tree on the base
+  tree and a commit, then moves the branch forward without forcing. The
+  sidebar shows each repository's local change count.
+
   Open with…: Info.plist declares Markdown (net.daringfireball.markdown,
   imported) and plain text, so Finder and Files offer the app. An opened file
   inside a sidebar folder is shown there; any other file gets its own entry

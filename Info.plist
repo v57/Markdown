@@ -80,6 +80,10 @@
 			<string>Any</string>
 		</dict>
 	</dict>
+	<!-- GitHub sign-in (device flow): the OAuth App's client ID, from the GITHUB_CLIENT_ID
+	     build setting. Empty disables sign-in; public repositories still work. -->
+	<key>GitHubClientID</key>
+	<string>$(GITHUB_CLIENT_ID)</string>
 	<!-- App Store: HTTPS only, which is exempt. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>

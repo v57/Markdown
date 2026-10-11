@@ -11,9 +11,11 @@ struct SidebarView: View {
   @Environment(Navigator.self) private var navigator
   @Environment(NotesLocation.self) private var notes
   @Environment(FileActions.self) private var actions
+  @Environment(RepositoryStore.self) private var repositories
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @State private var isImporting = false
+  @State private var isConnectingGitHub = false
   @State private var isDropTargeted = false
   @State private var query = ""
   @State private var results: [SearchResult]?
@@ -25,6 +27,13 @@ struct SidebarView: View {
         searchResults(results)
       } else {
         notesSection
+        if !repositories.repositories.isEmpty {
+          Section("GitHub") {
+            ForEach(repositories.repositories, id: \.fullName) { repository in
+              RepositoryRow(repository: repository)
+            }
+          }
+        }
         if !rootFolders.isEmpty {
           section("Folders", rootFolders)
         }
@@ -65,8 +74,21 @@ struct SidebarView: View {
             isImporting = true
           }
           .keyboardShortcut("o", modifiers: [.command, .shift])
+          Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") {
+            isConnectingGitHub = true
+          }
         }
       }
+    }
+    .sheet(isPresented: $isConnectingGitHub) { GitHubConnectView() }
+    .alert(
+      repositories.message?.title ?? "",
+      isPresented: Binding(
+        get: { repositories.message != nil }, set: { if !$0 { repositories.message = nil } })
+    ) {
+      Button("OK", role: .cancel) {}
+    } message: {
+      Text(repositories.message?.text ?? "")
     }
     .fileImporter(
       isPresented: $isImporting, allowedContentTypes: [.folder], allowsMultipleSelection: true
@@ -166,6 +188,9 @@ struct SidebarView: View {
     guard !Task.isCancelled else { return }
     var roots: [(name: String, url: URL)] = []
     if let url = notes.url { roots.append(("Notes", url)) }
+    for repository in repositories.repositories {
+      roots.append((repository.fullName, repositories.directory(for: repository)))
+    }
     for folder in folders {
       guard let url = library.url(for: folder) else { continue }
       roots.append((folder.name, folder.isFile ? url.deletingLastPathComponent() : url))
@@ -317,6 +342,10 @@ private struct FolderRootRow: View {
 struct FileTreeRow: View {
   let node: FileNode
   var isRoot = false
+  /// Roots only: a count shown beside the name (a repository's local changes), and an
+  /// operation in progress ("Pulling…").
+  var badge = 0
+  var activity: String?
   @Environment(FolderLibrary.self) private var library
   @Environment(FileActions.self) private var actions
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
@@ -348,7 +377,14 @@ struct FileTreeRow: View {
   /// Roots keep their sidebar menu (FolderRootRow); everything inside gets the file one.
   @ViewBuilder private func label(_ label: some View) -> some View {
     if isRoot {
-      label
+      HStack {
+        label
+        if let activity {
+          Spacer()
+          ProgressView().controlSize(.small).help(activity)
+        }
+      }
+      .badge(badge)
     } else {
       label
         .draggable(node.url)
