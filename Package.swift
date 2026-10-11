@@ -6,8 +6,8 @@ import PackageDescription
 let package = Package(
   name: "Markdown",
   platforms: [
-    .macOS(.v14),
-    .iOS(.v17),
+    .macOS(.v12),
+    .iOS(.v15),
   ],
   products: [
     // The single library: shared core + AppKit stack (macOS) + UIKit stack (iOS),

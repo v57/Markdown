@@ -10,7 +10,10 @@
     // Colors — all dynamic system colors → automatic dark/light support
     public let textColor: NSColor = .labelColor
     public let syntaxColor: NSColor = .tertiaryLabelColor  // ★ "commands in tertiary color"
-    public let codeBackground: NSColor = .quaternarySystemFill  // macOS 14+; package targets macOS 12
+    public let codeBackground: NSColor = {
+      if #available(macOS 14, *) { return .quaternarySystemFill }
+      return NSColor.labelColor.withAlphaComponent(0.05)
+    }()
     public let codeTextColor: NSColor = .secondaryLabelColor
     public let linkColor: NSColor = .linkColor
     public let quoteTextColor: NSColor = .secondaryLabelColor

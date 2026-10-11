@@ -113,7 +113,9 @@ public enum MarkdownRenderer {
       case .systemBlue: return .systemBlue
       case .controlAccent: return .controlAccentColor
       case .systemBackground: return .windowBackgroundColor
-      case .quaternarySystemFill: return .quaternarySystemFill
+      case .quaternarySystemFill:
+        if #available(macOS 14, *) { return .quaternarySystemFill }
+        return NSColor.labelColor.withAlphaComponent(0.05)
       }
     }
 

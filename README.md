@@ -10,6 +10,10 @@ Single library, one module: `Md`. Platform-specific code lives in
 UIKit/AppKit framework, no separate core framework. Everything compiles into
 the one `Md` module on the host platform.
 
+Requirements: the `Md` library supports macOS 12+ and iOS 15+ (the oldest the
+current toolchain targets). The app needs macOS 14+ and iOS 17+ (Observation and
+SwiftData).
+
 Layout
 
   Sources/Md/                 platform-neutral core
@@ -144,7 +148,7 @@ Verification
           (108 tests: parser, style spec, layout probes, highlighter, schemes,
           tables, rendering regressions, HTML/images/anchors)
           xcodebuild -project Markdown.xcodeproj -scheme Markdown build
-  iOS:    swift build --triple arm64-apple-ios17.0-simulator --build-tests
+  iOS:    swift build --triple arm64-apple-ios15.0-simulator --build-tests
           xcodebuild -project Markdown.xcodeproj -scheme Markdown
             -destination 'generic/platform=iOS Simulator' build
           (app runs on the iOS simulator; UIKit tests in

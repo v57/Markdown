@@ -374,6 +374,7 @@
     }
 
     /// iOS 17+: a tapped link runs our routing instead of UIKit's default action.
+    @available(iOS 17, *)
     public func textView(
       _ textView: UITextView, primaryActionFor textItem: UITextItem,
       defaultAction: UIAction
