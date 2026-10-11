@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftData
+import UniformTypeIdentifiers
 
 /// One row of a folder tree: a subdirectory or a markdown file.
 struct FileNode: Identifiable, Hashable {
@@ -32,35 +33,46 @@ struct FileNode: Identifiable, Hashable {
 
   // MARK: - Folders
 
-  /// Adds directories (dropped or picked) to the sidebar, skipping files and folders
-  /// already there. Returns the URLs that were added.
+  /// Adds dropped, picked or opened items to the sidebar: directories as folders, text
+  /// files as single files — unless a sidebar folder already holds them. Returns what to
+  /// show for each item (new or already there); anything else is reported in `lastError`.
   @discardableResult
   func add(_ urls: [URL], existing: [SidebarFolder], context: ModelContext) -> [URL] {
     var known = Set(existing.map(\.path))
-    var added: [URL] = []
+    let roots = existing.filter { !$0.isFile }.compactMap { url(for: $0) }
+    var shown: [URL] = []
     for url in urls {
       let started = url.startAccessingSecurityScopedResource()
       let standardized = Self.canonical(url)
-      guard Self.isDirectory(standardized) else {
+      let isDirectory = Self.isDirectory(standardized)
+      guard isDirectory || Self.isText(standardized) else {
         if started { url.stopAccessingSecurityScopedResource() }
-        lastError = "“\(url.lastPathComponent)” is not a folder."
+        lastError = "“\(url.lastPathComponent)” is not a folder or a text file."
+        continue
+      }
+      // A file inside a sidebar folder is shown there, with its folder's access.
+      if !isDirectory, root(of: standardized, roots: roots) != nil {
+        if started { url.stopAccessingSecurityScopedResource() }
+        reveal(standardized, roots: roots)
+        shown.append(standardized)
         continue
       }
       guard known.insert(standardized.path).inserted else {
         if started { url.stopAccessingSecurityScopedResource() }
+        shown.append(standardized)
         continue
       }
       let bookmark = try? standardized.bookmarkData(
         options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
-      let folder = SidebarFolder(path: standardized.path, bookmark: bookmark)
+      let folder = SidebarFolder(path: standardized.path, bookmark: bookmark, isFile: !isDirectory)
       context.insert(folder)
       // Keep the access the drop/picker granted; the bookmark takes over next launch.
       if started { accessing.insert(url) }
       resolved[folder.persistentModelID] = standardized
-      added.append(standardized)
+      shown.append(standardized)
     }
     try? context.save()
-    return added
+    return shown
   }
 
   /// Removes a folder from the sidebar (the folder on disk is untouched).
@@ -121,7 +133,9 @@ struct FileNode: Identifiable, Hashable {
         }
       }
     }
-    guard Self.isDirectory(url) else { return nil }
+    let exists =
+      folder.isFile ? FileManager.default.fileExists(atPath: url.path) : Self.isDirectory(url)
+    guard exists else { return nil }
     resolved[folder.persistentModelID] = url
     return url
   }
@@ -226,6 +240,13 @@ struct FileNode: Identifiable, Hashable {
 
   static func isMarkdown(_ url: URL) -> Bool {
     markdownExtensions.contains(url.pathExtension.lowercased())
+  }
+
+  /// Markdown, anything the system types as text, and extensionless files (README,
+  /// LICENSE) — what the app opens and edits.
+  static func isText(_ url: URL) -> Bool {
+    if isMarkdown(url) || url.pathExtension.isEmpty { return true }
+    return UTType(filenameExtension: url.pathExtension)?.conforms(to: .text) ?? false
   }
 }
 

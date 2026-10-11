@@ -1,7 +1,8 @@
 import Foundation
 import SwiftData
 
-/// A directory the user added to the sidebar.
+/// A directory the user added to the sidebar, or (`isFile`) a single file opened from
+/// Finder or Files ("Open with…") outside every sidebar folder.
 ///
 /// `path` is what the user sees and how duplicates are detected; `bookmark` is what
 /// gets the folder back after a relaunch. The macOS sandbox only grants access to a
@@ -13,10 +14,12 @@ import SwiftData
   var path: String = ""
   var bookmark: Data?
   var addedAt: Date = Date()
+  var isFile: Bool = false
 
-  init(path: String, bookmark: Data?, addedAt: Date = .now) {
+  init(path: String, bookmark: Data?, isFile: Bool = false, addedAt: Date = .now) {
     self.path = path
     self.bookmark = bookmark
+    self.isFile = isFile
     self.addedAt = addedAt
   }
 

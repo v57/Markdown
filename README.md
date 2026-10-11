@@ -118,6 +118,13 @@ App (Markdown.xcodeproj)
     Markdown.entitlements  bookmarks.app-scope (macOS; the rest comes from
                            build settings)
 
+  Open with…: Info.plist declares Markdown (net.daringfireball.markdown,
+  imported) and plain text, so Finder and Files offer the app. An opened file
+  inside a sidebar folder is shown there; any other file gets its own entry
+  under Files (a bookmark, like folders), with "Add Enclosing Folder…" to grant
+  the folder so its images and links resolve. Saving such a file writes in
+  place when the sandbox refuses the atomic write's temporary file.
+
   Debug simulator builds accept --add-folder <path> (repeatable) to add and
   show a Mac folder at launch without the picker. (Not on macOS: the sandbox
   grants no access to a path given on the command line.)

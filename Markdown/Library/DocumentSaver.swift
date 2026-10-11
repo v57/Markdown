@@ -76,7 +76,7 @@ import Observation
       "Markdown only has read access to the folder containing “\(file.lastPathComponent)”. Allow editing to save your changes."
   }
 
-  private static func isPermissionDenied(_ error: Error) -> Bool {
+  nonisolated private static func isPermissionDenied(_ error: Error) -> Bool {
     let ns = error as NSError
     if ns.domain == NSCocoaErrorDomain, ns.code == NSFileWriteNoPermissionError { return true }
     if ns.domain == NSPOSIXErrorDomain, [Int(EPERM), Int(EACCES)].contains(ns.code) { return true }
@@ -100,6 +100,14 @@ import Observation
     ) { target in
       do {
         try Data(text.utf8).write(to: target, options: .atomic)
+      } catch where isPermissionDenied(error) {
+        // A file opened on its own ("Open with…"): the sandbox grants the file but not
+        // its folder, where an atomic write puts its temporary copy. Write in place.
+        do {
+          try Data(text.utf8).write(to: target)
+        } catch {
+          writeError = error
+        }
       } catch {
         writeError = error
       }

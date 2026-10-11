@@ -16,17 +16,9 @@ struct SidebarView: View {
   var body: some View {
     @Bindable var navigator = navigator
     List(selection: $navigator.selection) {
-      Section("Folders") {
-        ForEach(folders) { folder in
-          FolderRootRow(folder: folder)
-        }
-        #if os(iOS)
-          .onDelete { offsets in
-            for index in offsets {
-              remove(folders[index], library: library, navigator: navigator, context: context)
-            }
-          }
-        #endif
+      section("Folders", rootFolders)
+      if !openedFiles.isEmpty {
+        section("Files", openedFiles)
       }
     }
     .overlay {
@@ -92,6 +84,24 @@ struct SidebarView: View {
     }
   #endif
 
+  private var rootFolders: [SidebarFolder] { folders.filter { !$0.isFile } }
+  private var openedFiles: [SidebarFolder] { folders.filter(\.isFile) }
+
+  private func section(_ title: String, _ items: [SidebarFolder]) -> some View {
+    Section(title) {
+      ForEach(items) { folder in
+        FolderRootRow(folder: folder)
+      }
+      #if os(iOS)
+        .onDelete { offsets in
+          for index in offsets {
+            remove(items[index], library: library, navigator: navigator, context: context)
+          }
+        }
+      #endif
+    }
+  }
+
   /// Adds the folders and shows the first new one (its README).
   @discardableResult
   private func add(_ urls: [URL]) -> Bool {
@@ -111,7 +121,7 @@ private struct FolderRootRow: View {
   var body: some View {
     Group {
       if let url = library.url(for: folder) {
-        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true)
+        FileTreeRow(node: FileNode(url: url, isDirectory: !folder.isFile), isRoot: true)
       } else {
         Label {
           Text(folder.name).foregroundStyle(.secondary)

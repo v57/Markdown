@@ -1,6 +1,7 @@
 import Md
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The detail pane: the selected markdown file, or the selected folder's README, edited
 /// in place (or previewed read-only). Edits save themselves (see `DocumentSaver`).
@@ -15,6 +16,7 @@ struct DocumentView: View {
   @State private var content: Content = .empty
   @State private var saver = DocumentSaver()
   @State private var showsSaveError = false
+  @State private var isPickingFolder = false
   /// Edit (default) or preview: preview never reveals syntax, and on iOS lets a tap
   /// follow a link instead of placing the caret.
   @AppStorage("editsDocuments") private var isEditing = true
@@ -56,6 +58,11 @@ struct DocumentView: View {
           _ in saver.flush()
         }
       #endif
+      .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
+        if case .success(let folder) = result, case .document(let file, _) = content {
+          addFolder(folder, showing: file)
+        }
+      }
       .alert("Couldn’t Save", isPresented: $showsSaveError) {
         #if os(macOS)
           if case .failed(_, permissionDenied: true) = saver.state {
@@ -120,6 +127,14 @@ struct DocumentView: View {
           .keyboardShortcut("s", modifiers: .command)
           .disabled(saver.state != .unsaved)
           .help("Edits save automatically; ⌘S saves right away.")
+      }
+      if case .document(let file, _) = content, isStandalone(file) {
+        Button("Add Enclosing Folder…", systemImage: "folder.badge.plus") {
+          addEnclosingFolder(of: file)
+        }
+        .help(
+          "Add “\(file.deletingLastPathComponent().lastPathComponent)” to the sidebar, so this file’s images and links work."
+        )
       }
       Button("Reload", systemImage: "arrow.clockwise") { refresh() }
         .keyboardShortcut("r", modifiers: .command)
@@ -205,7 +220,7 @@ struct DocumentView: View {
     private func allowEditing() {
       guard case .document(let file, _) = content,
         let folder = folders.first(where: { f in
-          library.url(for: f).map { library.root(of: file, roots: [$0]) != nil } ?? false
+          !f.isFile && library.url(for: f).map { library.root(of: file, roots: [$0]) != nil } ?? false
         }), let root = library.url(for: folder)
       else { return }
       let panel = NSOpenPanel()
@@ -224,9 +239,50 @@ struct DocumentView: View {
     }
   #endif
 
+  // MARK: - Opened files
+
+  /// A file opened on its own (Finder, Files): the app may read and write only the file,
+  /// so relative images and links in it do not resolve.
+  private func isStandalone(_ file: URL) -> Bool {
+    library.root(of: file, roots: roots) == nil
+  }
+
+  /// Asks for access to the file's folder and adds it to the sidebar.
+  private func addEnclosingFolder(of file: URL) {
+    #if os(macOS)
+      let folder = file.deletingLastPathComponent()
+      let panel = NSOpenPanel()
+      panel.canChooseDirectories = true
+      panel.canChooseFiles = false
+      panel.allowsMultipleSelection = false
+      panel.directoryURL = folder
+      panel.prompt = "Add Folder"
+      panel.message =
+        "Choose “\(folder.lastPathComponent)” to show it in the sidebar, with its images and linked files."
+      guard panel.runModal() == .OK, let granted = panel.url else { return }
+      addFolder(granted, showing: file)
+    #else
+      isPickingFolder = true
+    #endif
+  }
+
+  /// Adds `folder` to the sidebar; when it holds `file`, the file's own sidebar entry
+  /// goes (the folder now shows it) and the file is shown again with resolving links.
+  private func addFolder(_ folder: URL, showing file: URL) {
+    let added = library.add([folder], existing: folders, context: context)
+    let newRoots = roots + added.filter(FolderLibrary.isDirectory)
+    guard library.root(of: file, roots: newRoots) != nil else { return }
+    if let entry = folders.first(where: { $0.isFile && $0.path == file.path }) {
+      library.remove(entry, context: context)
+    }
+    library.reveal(file, roots: newRoots)
+    navigator.open(file)
+    library.reload()
+  }
+
   // MARK: - Links
 
-  private var roots: [URL] { folders.compactMap { library.url(for: $0) } }
+  private var roots: [URL] { folders.filter { !$0.isFile }.compactMap { library.url(for: $0) } }
 
   /// Markdown files and folders open here; everything else is left to the editor's
   /// default (the system opens it).
