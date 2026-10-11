@@ -128,8 +128,9 @@ App (Markdown.xcodeproj)
   them; not-yet-downloaded notes (".Name.md.icloud") are listed by name and
   downloaded by the coordinated read. FileActions creates notes (⌘N) and
   folders (⇧⌘N), renames, moves (drag onto a folder; files dragged in from
-  other apps are copied) and trashes (⌘⌫ on macOS; a confirmed delete on iOS)
-  in any folder the app can write. Search (the sidebar's search field,
+  other apps are copied) and trashes (Delete in the sidebar on macOS; a
+  confirmed delete on iOS) in any folder the app can write. A new note opens
+  with the caret in it (MarkdownEditorView's startsEditing). Search (the sidebar's search field,
   NoteSearch) matches every word against note names and text across all
   folders, names first.
 

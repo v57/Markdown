@@ -25,6 +25,9 @@
     public var anchor: String?
     /// Asked first when a link is activated; return true when handled.
     public var onOpenURL: (@MainActor (URL) -> Bool)?
+    /// Puts the caret in the editor when it appears (a note just created): typing goes
+    /// straight into it.
+    public var startsEditing: Bool
 
     public init(
       metrics: MarkdownMetrics = .standard,
@@ -33,7 +36,8 @@
       isReadOnly: Bool = false,
       anchor: String? = nil,
       onChange: @escaping @MainActor (String) -> Void = { _ in },
-      onOpenURL: (@MainActor (URL) -> Bool)? = nil
+      onOpenURL: (@MainActor (URL) -> Bool)? = nil,
+      startsEditing: Bool = false
     ) {
       self.metrics = metrics
       self.text = text
@@ -42,6 +46,7 @@
       self.anchor = anchor
       self.onChange = onChange
       self.onOpenURL = onOpenURL
+      self.startsEditing = startsEditing
     }
 
     /// Applies the non-text configuration (cheap when unchanged).
@@ -70,6 +75,9 @@
       if let text { controller.textView.setText(text) }
       context.coordinator.appliedText = text
       scrollToAnchorIfNeeded(controller.textView, coordinator: context.coordinator)
+      if startsEditing {
+        DispatchQueue.main.async { controller.textView.becomeFirstResponder() }
+      }
       return controller
     }
 

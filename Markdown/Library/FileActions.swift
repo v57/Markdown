@@ -32,9 +32,11 @@ import Observation
   /// Creates an empty note in `directory` and shows it.
   @discardableResult
   func newNote(in directory: URL) -> URL? {
-    create(Self.availableURL(for: "Untitled.md", in: directory, isDirectory: false)) { url in
-      try Data().write(to: url, options: .withoutOverwriting)
+    let url = create(Self.availableURL(for: "Untitled.md", in: directory, isDirectory: false)) {
+      try Data().write(to: $0, options: .withoutOverwriting)
     }
+    if url != nil { navigator.startsEditing = true }
+    return url
   }
 
   /// Creates a folder in `directory`, shows it and asks for its name.

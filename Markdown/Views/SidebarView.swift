@@ -23,7 +23,7 @@ struct SidebarView: View {
   var body: some View {
     @Bindable var navigator = navigator
     List(selection: $navigator.selection) {
-      if let results, !query.isEmpty {
+      if isShowingResults, let results {
         searchResults(results)
       } else {
         notesSection
@@ -42,6 +42,9 @@ struct SidebarView: View {
         }
       }
     }
+    // A fresh list when switching between results and trees: diffing one into the other
+    // left rows of both on screen (macOS).
+    .id(isShowingResults)
     .searchable(text: $query, placement: .sidebar, prompt: "Search Notes")
     .task(id: query) { await search() }
     .overlay {
@@ -162,8 +165,12 @@ struct SidebarView: View {
 
   // MARK: - Search
 
+  private var isShowingResults: Bool { results != nil && !query.isEmpty }
+
   @ViewBuilder private func searchResults(_ results: [SearchResult]) -> some View {
-    Section(results.isEmpty ? "No Results" : "\(results.count) Results") {
+    Section(
+      results.isEmpty ? "No Results" : results.count == 1 ? "1 Result" : "\(results.count) Results"
+    ) {
       ForEach(results) { result in
         VStack(alignment: .leading, spacing: 2) {
           Text(result.name).lineLimit(1)
@@ -346,6 +353,8 @@ struct FileTreeRow: View {
   /// operation in progress ("Pulling…").
   var badge = 0
   var activity: String?
+  /// Roots only: shown instead of the folder name ("owner/repository").
+  var title: String?
   @Environment(FolderLibrary.self) private var library
   @Environment(FileActions.self) private var actions
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
@@ -360,7 +369,7 @@ struct FileTreeRow: View {
           FileTreeRow(node: child)
         }
       } label: {
-        label(Label(node.name, systemImage: isRoot ? "folder.fill" : "folder"))
+        label(Label(title ?? node.name, systemImage: isRoot ? "folder.fill" : "folder"))
           .dropDestination(for: URL.self) { urls, _ in
             actions.drop(urls, into: node.url, roots: library.roots(folders))
           } isTargeted: { isDropTargeted = $0 }

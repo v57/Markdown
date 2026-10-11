@@ -11,6 +11,7 @@ struct DocumentView: View {
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(FileActions.self) private var actions
+  @Environment(RepositoryStore.self) private var repositories
   @Environment(\.scenePhase) private var scenePhase
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @Environment(\.modelContext) private var context
@@ -55,6 +56,12 @@ struct DocumentView: View {
       }
       .onAppear { actions.willChangeFiles = { [saver] in saver.flush() } }
       .onDisappear { saver.flush() }
+      // A save in a GitHub repository changes its count of local changes.
+      .onChange(of: saver.state) { _, state in
+        if state == .saved, let file = saver.file, repositories.repository(containing: file) != nil {
+          repositories.refreshChanges()
+        }
+      }
       #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) {
           _ in saver.flush()
@@ -90,7 +97,8 @@ struct DocumentView: View {
         text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
         isReadOnly: !isEditing, anchor: navigator.anchor,
         onChange: { saver.edited($0) },
-        onOpenURL: { open($0) }
+        onOpenURL: { open($0) },
+        startsEditing: navigator.startsEditing && isEditing
       )
       .id(file)
     case .noReadme(let folder):

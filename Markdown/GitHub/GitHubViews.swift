@@ -209,7 +209,8 @@ struct RepositoryRow: View {
     FileTreeRow(
       node: FileNode(url: dir, isDirectory: true), isRoot: true,
       badge: store.changeCounts[repository.fullName] ?? 0,
-      activity: store.activity[repository.fullName]
+      activity: store.activity[repository.fullName],
+      title: repository.fullName
     )
     .contextMenu {
       Button("Pull") { Task { await store.pull(repository, client: auth.client) } }

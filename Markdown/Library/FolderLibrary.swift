@@ -288,10 +288,13 @@ struct FileNode: Identifiable, Hashable {
         forward.removeAll()
       }
       if !keepsAnchor { anchor = nil }
+      startsEditing = false
     }
   }
   /// The in-page anchor to scroll to in the shown document.
   var anchor: String?
+  /// The shown document was just created: the editor takes the keyboard focus.
+  var startsEditing = false
   private(set) var back: [URL] = []
   private(set) var forward: [URL] = []
   @ObservationIgnored private var isTraversing = false
