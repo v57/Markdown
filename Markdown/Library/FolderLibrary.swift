@@ -1,0 +1,295 @@
+import Foundation
+import Observation
+import SwiftData
+
+/// One row of a folder tree: a subdirectory or a markdown file.
+struct FileNode: Identifiable, Hashable {
+  let url: URL
+  let isDirectory: Bool
+  var id: URL { url }
+  var name: String { url.lastPathComponent }
+}
+
+/// Access to the sidebar's folders and their contents.
+///
+/// Resolves each `SidebarFolder`'s bookmark to a URL once per run and keeps its
+/// security-scoped access open while the folder is in the sidebar (README images and
+/// linked files are read lazily, long after the folder was resolved). Directory
+/// listings are cached until `reload()`; expansion state is per run.
+@Observable final class FolderLibrary {
+  /// Directories whose disclosure group is open.
+  var expanded: Set<URL> = []
+  /// Bumped by `reload()` so views re-read listings and documents.
+  private(set) var generation = 0
+  /// Why the last add failed, for an alert.
+  var lastError: String?
+
+  @ObservationIgnored private var resolved: [PersistentIdentifier: URL] = [:]
+  @ObservationIgnored private var accessing: Set<URL> = []
+  @ObservationIgnored private var listings: [URL: [FileNode]] = [:]
+
+  static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn"]
+
+  // MARK: - Folders
+
+  /// Adds directories (dropped or picked) to the sidebar, skipping files and folders
+  /// already there. Returns the URLs that were added.
+  @discardableResult
+  func add(_ urls: [URL], existing: [SidebarFolder], context: ModelContext) -> [URL] {
+    var known = Set(existing.map(\.path))
+    var added: [URL] = []
+    for url in urls {
+      let started = url.startAccessingSecurityScopedResource()
+      let standardized = Self.canonical(url)
+      guard Self.isDirectory(standardized) else {
+        if started { url.stopAccessingSecurityScopedResource() }
+        lastError = "“\(url.lastPathComponent)” is not a folder."
+        continue
+      }
+      guard known.insert(standardized.path).inserted else {
+        if started { url.stopAccessingSecurityScopedResource() }
+        continue
+      }
+      let bookmark = try? standardized.bookmarkData(
+        options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
+      let folder = SidebarFolder(path: standardized.path, bookmark: bookmark)
+      context.insert(folder)
+      // Keep the access the drop/picker granted; the bookmark takes over next launch.
+      if started { accessing.insert(url) }
+      resolved[folder.persistentModelID] = standardized
+      added.append(standardized)
+    }
+    try? context.save()
+    return added
+  }
+
+  /// Removes a folder from the sidebar (the folder on disk is untouched).
+  func remove(_ folder: SidebarFolder, context: ModelContext) {
+    if let url = resolved.removeValue(forKey: folder.persistentModelID),
+      let held = accessing.first(where: { Self.canonical($0) == url })
+    {
+      held.stopAccessingSecurityScopedResource()
+      accessing.remove(held)
+    }
+    context.delete(folder)
+    try? context.save()
+  }
+
+  /// Replaces a folder's access with what the user just granted (`granted`, from an
+  /// open panel): a fresh bookmark — read-write — and that access for this run.
+  func regrant(_ folder: SidebarFolder, with granted: URL, context: ModelContext) {
+    if let old = resolved.removeValue(forKey: folder.persistentModelID) {
+      for held in accessing where Self.canonical(held) == old {
+        held.stopAccessingSecurityScopedResource()
+        accessing.remove(held)
+      }
+    }
+    if granted.startAccessingSecurityScopedResource() { accessing.insert(granted) }
+    let url = Self.canonical(granted)
+    folder.bookmark = try? url.bookmarkData(
+      options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
+    folder.path = url.path
+    resolved[folder.persistentModelID] = url
+    try? context.save()
+  }
+
+  /// The folder's URL with access granted, or nil when it can no longer be reached
+  /// (moved, deleted, bookmark unresolvable).
+  func url(for folder: SidebarFolder) -> URL? {
+    // A removed folder's row can render once more while it animates out. Resolving it
+    // then would reopen its access, and refreshing a stale bookmark would write to the
+    // deleted model — which brought removed folders back on the next save.
+    guard !folder.isDeleted, folder.modelContext != nil else { return nil }
+    if let url = resolved[folder.persistentModelID] { return url }
+    var url = URL(fileURLWithPath: folder.path, isDirectory: true)
+    if let bookmark = folder.bookmark {
+      var stale = false
+      if let fromBookmark = try? URL(
+        resolvingBookmarkData: bookmark, options: Self.bookmarkResolutionOptions, relativeTo: nil,
+        bookmarkDataIsStale: &stale)
+      {
+        if fromBookmark.startAccessingSecurityScopedResource() { accessing.insert(fromBookmark) }
+        url = Self.canonical(fromBookmark)
+        if stale, let fresh = try? url.bookmarkData(
+          options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil,
+          relativeTo: nil)
+        {
+          // Moved or renamed: refresh the bookmark and the displayed path (only what
+          // changed — every write marks the model dirty).
+          if folder.bookmark != fresh { folder.bookmark = fresh }
+          if folder.path != url.path { folder.path = url.path }
+        }
+      }
+    }
+    guard Self.isDirectory(url) else { return nil }
+    resolved[folder.persistentModelID] = url
+    return url
+  }
+
+  #if os(macOS)
+    private static let bookmarkCreationOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
+    private static let bookmarkResolutionOptions: URL.BookmarkResolutionOptions = [.withSecurityScope]
+  #else
+    private static let bookmarkCreationOptions: URL.BookmarkCreationOptions = []
+    private static let bookmarkResolutionOptions: URL.BookmarkResolutionOptions = []
+  #endif
+
+  // MARK: - Contents
+
+  /// A directory's subdirectories and markdown files — folders first, then files, each
+  /// in Finder order. Hidden items and packages (.app, .xcodeproj) are left out.
+  func children(of directory: URL) -> [FileNode] {
+    if let cached = listings[directory] { return cached }
+    let keys: [URLResourceKey] = [.isDirectoryKey, .isPackageKey, .isHiddenKey]
+    let items =
+      (try? FileManager.default.contentsOfDirectory(
+        at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
+    var folders: [FileNode] = []
+    var files: [FileNode] = []
+    for item in items {
+      let values = try? item.resourceValues(forKeys: Set(keys))
+      if values?.isDirectory == true {
+        if values?.isPackage != true { folders.append(FileNode(url: Self.canonical(item), isDirectory: true)) }
+      } else if Self.markdownExtensions.contains(item.pathExtension.lowercased()) {
+        files.append(FileNode(url: Self.canonical(item), isDirectory: false))
+      }
+    }
+    let order: (FileNode, FileNode) -> Bool = {
+      $0.name.localizedStandardCompare($1.name) == .orderedAscending
+    }
+    let result = folders.sorted(by: order) + files.sorted(by: order)
+    listings[directory] = result
+    return result
+  }
+
+  /// The README GitHub would show for `directory`: in the folder itself, then in
+  /// `.github/` and `docs/`. Matched case-insensitively (README.md, readme.markdown…).
+  func readme(in directory: URL) -> URL? {
+    for sub in ["", ".github", "docs"] {
+      let dir = sub.isEmpty ? directory : directory.appendingPathComponent(sub, isDirectory: true)
+      guard
+        let items = try? FileManager.default.contentsOfDirectory(
+          at: dir, includingPropertiesForKeys: nil)
+      else { continue }
+      let candidates = items.filter {
+        $0.deletingPathExtension().lastPathComponent.lowercased() == "readme"
+          && Self.markdownExtensions.contains($0.pathExtension.lowercased())
+      }
+      // Prefer the canonical README.md when several spellings exist.
+      if let best = candidates.min(by: { lhs, rhs in
+        (lhs.pathExtension.lowercased() == "md" ? 0 : 1, lhs.lastPathComponent)
+          < (rhs.pathExtension.lowercased() == "md" ? 0 : 1, rhs.lastPathComponent)
+      }) {
+        return Self.canonical(best)
+      }
+    }
+    return nil
+  }
+
+  /// The sidebar folder `url` lives in (the innermost, when folders nest) — what a
+  /// root-relative path (`/docs/a.png`) in its documents means.
+  func root(of url: URL, roots: [URL]) -> URL? {
+    let path = Self.canonical(url).path
+    return roots.filter { path.hasPrefix($0.path + "/") || path == $0.path }
+      .max { $0.path.count < $1.path.count }
+  }
+
+  /// Opens every ancestor of `url` below its sidebar root, so a link target is visible.
+  func reveal(_ url: URL, roots: [URL]) {
+    guard let root = root(of: url, roots: roots) else { return }
+    var dir = Self.canonical(url).deletingLastPathComponent()
+    while dir.path.count >= root.path.count, dir.path.hasPrefix(root.path) {
+      expanded.insert(Self.canonical(dir))
+      dir = dir.deletingLastPathComponent()
+    }
+  }
+
+  /// Forgets cached listings and asks views to re-read what they show.
+  func reload() {
+    listings.removeAll()
+    generation += 1
+  }
+
+  /// One spelling per file: `contentsOfDirectory` answers `/private/tmp/…` for a
+  /// folder added as `/tmp/…`, while links resolve to `/tmp/…` — equal files, unequal
+  /// URLs, so a selected link target matched no sidebar row. Every URL entering the
+  /// tree, the selection or the history goes through here (standardized path, trailing
+  /// slash for directories, no base URL).
+  static func canonical(_ url: URL) -> URL {
+    URL(fileURLWithPath: url.standardizedFileURL.path)
+  }
+
+  static func isDirectory(_ url: URL) -> Bool {
+    var isDir: ObjCBool = false
+    return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+  }
+
+  static func isMarkdown(_ url: URL) -> Bool {
+    markdownExtensions.contains(url.pathExtension.lowercased())
+  }
+}
+
+/// What the detail pane shows, with back/forward history. Selecting a folder shows its
+/// README; following a link pushes the previous selection.
+@Observable final class Navigator {
+  /// The selected sidebar item (folder or markdown file).
+  var selection: URL? {
+    didSet {
+      guard selection != oldValue else { return }
+      if !isTraversing, let oldValue {
+        back.append(oldValue)
+        forward.removeAll()
+      }
+      if !keepsAnchor { anchor = nil }
+    }
+  }
+  /// The in-page anchor to scroll to in the shown document.
+  var anchor: String?
+  private(set) var back: [URL] = []
+  private(set) var forward: [URL] = []
+  @ObservationIgnored private var isTraversing = false
+  @ObservationIgnored private var keepsAnchor = false
+
+  /// Shows `url`, scrolled to `anchor` if given.
+  func open(_ url: URL, anchor: String? = nil) {
+    keepsAnchor = true
+    defer { keepsAnchor = false }
+    self.anchor = anchor
+    selection = url
+  }
+
+  /// Drops the selection and history entries inside `folder` (it left the sidebar, and
+  /// with it the app's access).
+  func forget(under folder: URL) {
+    let root = FolderLibrary.canonical(folder).path
+    func isInside(_ url: URL) -> Bool {
+      let path = FolderLibrary.canonical(url).path
+      return path == root || path.hasPrefix(root + "/")
+    }
+    back.removeAll(where: isInside)
+    forward.removeAll(where: isInside)
+    if let selection, isInside(selection) {
+      isTraversing = true
+      self.selection = nil
+      isTraversing = false
+    }
+  }
+
+  func goBack() {
+    guard let previous = back.popLast() else { return }
+    if let selection { forward.append(selection) }
+    traverse(to: previous)
+  }
+
+  func goForward() {
+    guard let next = forward.popLast() else { return }
+    if let selection { back.append(selection) }
+    traverse(to: next)
+  }
+
+  private func traverse(to url: URL) {
+    isTraversing = true
+    defer { isTraversing = false }
+    selection = url
+  }
+}

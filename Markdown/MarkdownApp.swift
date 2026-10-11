@@ -1,0 +1,51 @@
+import Md
+import SwiftData
+import SwiftUI
+
+@main struct MarkdownApp: App {
+  // macOS CLI harness: run headless probes before the UI launches. The app
+  // target defaults to MainActor isolation, so the @MainActor SelfTest/
+  // SmokeTest calls are direct. --selftest/--smoke exit before any window.
+  // On iOS there is no CLI (the harness lives in the AppKit-only Md stack),
+  // so the init body compiles to nothing there.
+  init() {
+    #if os(macOS)
+      if CommandLine.arguments.contains("--selftest") {
+        SelfTest.runAndExit()  // Never
+      }
+      if CommandLine.arguments.contains("--smoke") {
+        SmokeTest.schedule()  // quits after 3 s, prints SMOKE OK
+      }
+      if CommandLine.arguments.contains("--typingprobe") {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { SelfTest.typingProbe() }
+      }
+    #endif
+  }
+
+  /// The probes drive the live sample editor, so they get it instead of the library UI.
+  private static var runsProbes: Bool {
+    #if os(macOS)
+      ["--smoke", "--typingprobe"].contains { CommandLine.arguments.contains($0) }
+    #else
+      false
+    #endif
+  }
+
+  var body: some Scene {
+    WindowGroup("Markdown") {
+      Group {
+        if Self.runsProbes {
+          MarkdownEditorView()
+        } else {
+          ContentView()
+            .modelContainer(for: SidebarFolder.self)
+        }
+      }
+      .frame(minWidth: 480, minHeight: 360)
+    }
+    .defaultSize(width: 1100, height: 760)
+    #if os(macOS)
+      .commands { TextEditingCommands() }  // standard Edit menu so ⌘C/V/X/Z work
+    #endif
+  }
+}

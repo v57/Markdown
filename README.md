@@ -86,12 +86,37 @@ Embedding
 
 App (Markdown.xcodeproj)
 
-  The sample app is a SwiftUI app that builds and runs on BOTH macOS and iOS.
-  Entry is @main on MarkdownApp (Markdown/ContentView.swift); the macOS CLI
+  The app is a SwiftUI app that builds and runs on BOTH macOS and iOS.
+  Entry is @main on MarkdownApp (Markdown/MarkdownApp.swift); the macOS CLI
   harness (--selftest / --smoke / --typingprobe) runs in MarkdownApp.init
-  under #if os(macOS) and is absent on iOS. The single MarkdownEditorView
-  symbol resolves to the AppKit NSViewRepresentable on macOS and the UIKit
+  under #if os(macOS) and is absent on iOS (the probes get the sample editor
+  instead of the library window). The single MarkdownEditorView symbol
+  resolves to the AppKit NSViewRepresentable on macOS and the UIKit
   UIViewControllerRepresentable on iOS.
+
+  Folder sidebar: drop folders on the sidebar (Finder, Files) or use Add
+  Folder (⇧⌘O). They are saved with SwiftData (SidebarFolder: path plus a
+  security-scoped bookmark, so the sandbox grants access again after a
+  relaunch) and shown as expandable trees of subfolders and markdown files.
+  Selecting a folder shows its README (also .github/ and docs/); selecting a
+  file shows it. Files are edited in place: DocumentSaver writes edits back
+  (coordinated, atomic) after a short pause, and right away on ⌘S, switching
+  documents, reload, backgrounding and quit. The toolbar toggles Editing /
+  Preview (read-only, links tappable on iOS). Folders added while the app was
+  read-only keep read-only bookmarks; a failed save offers "Allow Editing…"
+  (macOS), which re-grants the folder read-write. Relative images resolve
+  against the file and "/" against the sidebar folder; links to markdown files
+  and folders open in the app with back/forward (⌘[ ⌘]), Reload is ⌘R.
+
+    Markdown/Library/   SidebarFolder (SwiftData), FolderLibrary, Navigator,
+                        DocumentSaver
+    Markdown/Views/     SidebarView, DocumentView
+    Markdown.entitlements  bookmarks.app-scope (macOS; the rest comes from
+                           build settings)
+
+  Debug simulator builds accept --add-folder <path> (repeatable) to add and
+  show a Mac folder at launch without the picker. (Not on macOS: the sandbox
+  grants no access to a path given on the command line.)
 
 Features (both stacks)
 
@@ -116,8 +141,8 @@ Features (both stacks)
 Verification
 
   macOS:  swift build && swift test
-          (86 tests: parser, style spec, layout probes, highlighter, schemes,
-          tables, rendering regressions)
+          (108 tests: parser, style spec, layout probes, highlighter, schemes,
+          tables, rendering regressions, HTML/images/anchors)
           xcodebuild -project Markdown.xcodeproj -scheme Markdown build
   iOS:    swift build --triple arm64-apple-ios17.0-simulator --build-tests
           xcodebuild -project Markdown.xcodeproj -scheme Markdown
