@@ -11,3 +11,22 @@ build/
 Markdown.xcodeproj/xcuserdata/
 CLAUDE.md
 /.claude
+
+# macOS
+.DS_Store
+# Finder folder icon: a file named Icon plus a carriage return
+Icon[]
+
+# Build
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Secrets
+.env
+
+# Agents (local agent instructions, settings and boards)
+AGENTS.md
+.claude/
+.codex/
+KANBAN*.md
