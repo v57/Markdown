@@ -25,7 +25,7 @@ import Foundation
 ///
 /// The core owns run classification and geometry; actual drawing (bezier paths,
 /// colors, images, text) is delegated to `open` hooks overridden by the
-/// platform-specific subclasses in `Md` (AppKit) and `MdUIKit` (UIKit).
+/// platform-specific subclasses in `MarkdownKit` (AppKit) and `MdUIKit` (UIKit).
 open class EditorLayoutManagerCore: NSLayoutManager {
   /// The caret/selection character range. Visibility is derived from it:
   /// line-level commands (heading '#', blockquote '>', fences, table pipes) show
@@ -1150,7 +1150,7 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     return changed
   }
 
-  // MARK: - Platform hooks (overridden by Md / MdUIKit subclasses)
+  // MARK: - Platform hooks (overridden by MarkdownKit / MdUIKit subclasses)
 
   /// The code font used by fenced code blocks (14pt monospaced by default).
   /// The background drawing reads the font off the storage; this is the fallback

@@ -180,7 +180,7 @@
 
     public static func runAndExit() -> Never {
       // Live-harness entry: the pure parser/layout/continuation/code-highlighting
-      // assertions (~200) now live in Swift Testing tests (Tests/MdTests and
+      // assertions (~200) now live in Swift Testing tests (Tests/MarkdownKitTests and
       // Tests/MdCodeTests) — `swift test` is the real correctness gate. This
       // entry verifies the harness links and exits cleanly; the window-backed
       // probes (typingProbe / scrollGeometryProbe / editPathProbe /
@@ -192,7 +192,7 @@
     // MARK: - Task 19 tests (code syntax highlighting)
     // NOTE: the assertions formerly in codeHighlightTests() were ported to
     // Tests/MdCodeTests/CodeHighlightingTests.swift and the parser-integration
-    // checks to Tests/MdTests/ParserTests.swift — `swift test` is now the gate.
+    // checks to Tests/MarkdownKitTests/ParserTests.swift — `swift test` is now the gate.
     // This section is intentionally empty (DRY).
 
     /// Measures scroll content geometry in the LIVE text view: the document view

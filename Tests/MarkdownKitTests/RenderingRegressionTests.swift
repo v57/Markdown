@@ -1,7 +1,7 @@
 #if canImport(AppKit)
   import Testing
   import AppKit
-  @testable import Md
+  @testable import MarkdownKit
 
   /// Regressions for visible rendering defects: each test pins one behavior that was
   /// wrong on screen (dead buttons, misaligned indents, gaps, unstyled markup).

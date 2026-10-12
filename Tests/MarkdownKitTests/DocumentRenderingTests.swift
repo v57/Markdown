@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import Md
+@testable import MarkdownKit
 
 #if canImport(AppKit)
   import AppKit

@@ -1,11 +1,11 @@
 #if canImport(AppKit)
   import Testing
   import AppKit
-  @testable import Md
+  @testable import MarkdownKit
 
   // MARK: - Parser + layout + parser-integration tests
   //
-  // Ported from Sources/Md/SelfTest.swift (runAndExit / codeHighlightTests). The
+  // Ported from Sources/MarkdownKit/SelfTest.swift (runAndExit / codeHighlightTests). The
   // layout probes construct EditorLayoutManager + NSTextStorage + NSTextContainer
   // and measure usedRect / lineFragmentRect headlessly (no window needed) — they
   // are the regression suite for TextKit bugs (zero-width hidden commands, line

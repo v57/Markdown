@@ -4,7 +4,7 @@
   /// TextKit 1 layout manager (UIKit stack). All glyph/geometry/merge logic lives
   /// in the platform-neutral `EditorLayoutManagerCore`; this subclass supplies the
   /// UIKit drawing (UIBezierPath, UIColor, UIImage, NSString) through the core's
-  /// `open` hooks. Mirrors `Sources/Md/EditorLayoutManager.swift` (AppKit).
+  /// `open` hooks. Mirrors `Sources/MarkdownKit/EditorLayoutManager.swift` (AppKit).
   public final class EditorLayoutManager: EditorLayoutManagerCore {
     // MARK: - Drawing hooks (UIKit)
 

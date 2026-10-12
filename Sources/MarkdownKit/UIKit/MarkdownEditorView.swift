@@ -5,7 +5,7 @@
   /// SwiftUI host adapter for the UIKit markdown editor. This is a thin
   /// `UIViewControllerRepresentable` wrapper around `MarkdownEditorViewController`
   /// (the actual editor is UIKit, not SwiftUI) — the iOS analogue of the macOS
-  /// `MarkdownEditorView` (NSViewRepresentable) in the `Md` module.
+  /// `MarkdownEditorView` (NSViewRepresentable) in the `MarkdownKit` module.
   public struct MarkdownEditorView: UIViewControllerRepresentable {
     /// Metrics used for this editor instance. Defaults to `MarkdownMetrics.standard`;
     /// pass a customized `MarkdownMetrics` to re-theme spacing/fonts/geometry.
