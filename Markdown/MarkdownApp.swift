@@ -35,6 +35,18 @@ import SwiftUI
     #endif
   }
 
+  /// Sidebar folders hold security-scoped bookmarks, which only resolve on this device, so the
+  /// store stays local. The default configuration would mirror it to CloudKit because the app
+  /// has an iCloud container, and CloudKit traps at launch without the CloudKit service.
+  private static let sidebarStore: ModelContainer = {
+    do {
+      return try ModelContainer(
+        for: SidebarFolder.self, configurations: ModelConfiguration(cloudKitDatabase: .none))
+    } catch {
+      fatalError("Could not open the sidebar store: \(error)")
+    }
+  }()
+
   var body: some Scene {
     WindowGroup("Markdown") {
       Group {
@@ -42,7 +54,7 @@ import SwiftUI
           MarkdownEditorView()
         } else {
           ContentView()
-            .modelContainer(for: SidebarFolder.self)
+            .modelContainer(Self.sidebarStore)
             #if os(macOS) && DIRECT_DISTRIBUTION
               .modifier(UpdateAlerts(checker: updates))
             #endif
