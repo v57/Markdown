@@ -1,4 +1,4 @@
-import Md
+import MarkdownKit
 import SwiftData
 import SwiftUI
 
@@ -10,7 +10,7 @@ import SwiftUI
   // macOS CLI harness: run headless probes before the UI launches. The app
   // target defaults to MainActor isolation, so the @MainActor SelfTest/
   // SmokeTest calls are direct. --selftest/--smoke exit before any window.
-  // On iOS there is no CLI (the harness lives in the AppKit-only Md stack),
+  // On iOS there is no CLI (the harness lives in the AppKit-only MarkdownKit stack),
   // so the init body compiles to nothing there.
   init() {
     #if os(macOS)

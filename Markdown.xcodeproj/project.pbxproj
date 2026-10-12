@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		267577A53037283100FB9989 /* Md in Frameworks */ = {isa = PBXBuildFile; productRef = 267577A43037283100FB9989 /* Md */; };
+		267577A53037283100FB9989 /* MarkdownKit in Frameworks */ = {isa = PBXBuildFile; productRef = 267577A43037283100FB9989 /* MarkdownKit */; };
 		269C449B303192220055AD81 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 269C449A303192220055AD81 /* Markdown */; };
 /* End PBXBuildFile section */
 
@@ -28,7 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				269C449B303192220055AD81 /* Markdown in Frameworks */,
-				267577A53037283100FB9989 /* Md in Frameworks */,
+				267577A53037283100FB9989 /* MarkdownKit in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -69,7 +69,7 @@
 			name = Markdown;
 			packageProductDependencies = (
 				269C449A303192220055AD81 /* Markdown */,
-				267577A43037283100FB9989 /* Md */,
+				267577A43037283100FB9989 /* MarkdownKit */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Markdown.app */;
@@ -402,9 +402,9 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		267577A43037283100FB9989 /* Md */ = {
+		267577A43037283100FB9989 /* MarkdownKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = Md;
+			productName = MarkdownKit;
 		};
 		269C449A303192220055AD81 /* Markdown */ = {
 			isa = XCSwiftPackageProductDependency;

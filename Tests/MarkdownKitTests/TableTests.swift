@@ -3,7 +3,7 @@
   import CoreText
   import Testing
 
-  @testable import Md
+  @testable import MarkdownKit
 
   // MARK: - GFM tables: grid mode (aligned columns, hidden pipes, drawn separators) and
   // source mode (today's raw-markdown rendering), plus the pure column geometry.

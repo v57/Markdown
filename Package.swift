@@ -11,22 +11,22 @@ let package = Package(
   ],
   products: [
     // The single library: shared core + AppKit stack (macOS) + UIKit stack (iOS),
-    // selected by #if canImport(...) in Sources/Md/AppKit and Sources/Md/UIKit.
-    .library(name: "Md", targets: ["Md"])
+    // selected by #if canImport(...) in Sources/MarkdownKit/AppKit and Sources/MarkdownKit/UIKit.
+    .library(name: "MarkdownKit", targets: ["MarkdownKit"])
   ],
   dependencies: [
     // swift-markdown (also an Xcode SPM dependency) — provides the Markdown module (cmark AST).
     .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.8.0")
   ],
   targets: [
-    // The single target: every source under Sources/Md/ compiles into the Md
-    // module on the host platform. Sources/Md/AppKit is #if canImport(AppKit)-
-    // guarded (macOS only); Sources/Md/UIKit is #if canImport(UIKit)-guarded
-    // (iOS only); the shared core in Sources/Md/ is platform-neutral.
+    // The single target: every source under Sources/MarkdownKit/ compiles into the MarkdownKit
+    // module on the host platform. Sources/MarkdownKit/AppKit is #if canImport(AppKit)-
+    // guarded (macOS only); Sources/MarkdownKit/UIKit is #if canImport(UIKit)-guarded
+    // (iOS only); the shared core in Sources/MarkdownKit/ is platform-neutral.
     .target(
-      name: "Md", dependencies: [.product(name: "Markdown", package: "swift-markdown")],
+      name: "MarkdownKit", dependencies: [.product(name: "Markdown", package: "swift-markdown")],
       swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
     .testTarget(
-      name: "MdTests", dependencies: ["Md"],
+      name: "MarkdownKitTests", dependencies: ["MarkdownKit"],
       swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
   ])

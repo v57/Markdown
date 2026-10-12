@@ -1,7 +1,7 @@
 #if canImport(AppKit)
   import Testing
   import AppKit
-  @testable import Md
+  @testable import MarkdownKit
 
   // Regression: selecting / navigating DOWN past the last line of a document whose
   // last line is non-empty must behave like other editors — append a trailing

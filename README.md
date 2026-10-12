@@ -4,19 +4,19 @@ A markdown editor library for Apple platforms, built on TextKit 1 live
 preview (Obsidian-style: syntax symbols are hidden on inactive lines and
 appear while you edit them).
 
-Single library, one module: `Md`. Platform-specific code lives in
-`Sources/Md/AppKit/` (macOS) and `Sources/Md/UIKit/` (iOS), selected with
+Single library, one module: `MarkdownKit`. Platform-specific code lives in
+`Sources/MarkdownKit/AppKit/` (macOS) and `Sources/MarkdownKit/UIKit/` (iOS), selected with
 `#if canImport(AppKit)` / `#if canImport(UIKit)` — there is no separate
 UIKit/AppKit framework, no separate core framework. Everything compiles into
-the one `Md` module on the host platform.
+the one `MarkdownKit` module on the host platform.
 
-Requirements: the `Md` library supports macOS 12+ and iOS 15+ (the oldest the
+Requirements: the `MarkdownKit` library supports macOS 12+ and iOS 15+ (the oldest the
 current toolchain targets). The app needs macOS 14+ and iOS 17+ (Observation and
 SwiftData).
 
 Layout
 
-  Sources/Md/                 platform-neutral core
+  Sources/MarkdownKit/        platform-neutral core
     MarkdownParser.swift        the markdown parser (swift-markdown AST)
     MarkdownRenderer.swift      renders neutral attributes -> native types
     MarkdownStyleSpec.swift     MarkdownColor/Font/Paragraph + MarkdownStyling
@@ -26,7 +26,7 @@ Layout
     CodeColorScheme.swift       hex-based code palette (platform-neutral)
     CodeHighlighter.swift       code syntax highlighting engine
     ...                         scanner/catalog/spec/kind, SampleDocument
-  Sources/Md/AppKit/          macOS editor stack (imports AppKit)
+  Sources/MarkdownKit/AppKit/ macOS editor stack (imports AppKit)
     EditorTextView.swift         NSTextView subclass (live re-styling)
     EditorLayoutManager.swift    NSLayoutManager drawing (NSBezierPath/NSImage)
     EditorView.swift             NSViewRepresentable (SwiftUI host)
@@ -34,7 +34,7 @@ Layout
     CheckboxAttachment.swift     NSImage checkbox renderer
     InlineImageCache.swift       NSImage cache
     SelfTest.swift               CLI harness (--selftest/--smoke/--typingprobe)
-  Sources/Md/UIKit/           iOS editor stack (imports UIKit)
+  Sources/MarkdownKit/UIKit/  iOS editor stack (imports UIKit)
     EditorTextViewUIKit.swift    UITextView subclass (live re-styling)
     EditorLayoutManagerUIKit.swift NSLayoutManager drawing (UIBezierPath/UIImage)
     MarkdownEditorViewController.swift  the main iOS deliverable
@@ -62,28 +62,28 @@ Architecture
   hooks (bezier paths, colors, images, chrome labels).
 
   The two editor views are different types that happen to share a name:
-    - Md.MarkdownEditorView (AppKit)  = NSViewRepresentable (macOS)
-    - Md.MarkdownEditorView (UIKit)   = UIViewControllerRepresentable (iOS)
-  Both are in the same Md module, so only one can exist per platform — which
+    - MarkdownKit.MarkdownEditorView (AppKit)  = NSViewRepresentable (macOS)
+    - MarkdownKit.MarkdownEditorView (UIKit)   = UIViewControllerRepresentable (iOS)
+  Both are in the same MarkdownKit module, so only one can exist per platform — which
   is exactly what #if canImport gives us: on macOS you get the NSView one, on
   iOS the UIViewController one.
 
 Embedding
 
   macOS (AppKit/SwiftUI host):
-      import Md
+      import MarkdownKit
       MarkdownEditorView()                       // NSViewRepresentable
 
   iOS (UIKit host):
-      import Md
+      import MarkdownKit
       let vc = MarkdownEditorViewController()    // the main deliverable
 
   iOS (SwiftUI host):
-      import Md
+      import MarkdownKit
       MarkdownEditorView()                       // UIViewControllerRepresentable
 
   Headless parsing/styling on either platform:
-      import Md
+      import MarkdownKit
       let parsed = MarkdownParser.parse("# Hi\n\n**bold** and `code`")
       parsed.attributed                          // native NSAttributedString
       parsed.blocks                              // [MarkdownParser.Block]
@@ -202,4 +202,4 @@ Verification
           xcodebuild -project Markdown.xcodeproj -scheme Markdown
             -destination 'generic/platform=iOS Simulator' build
           (app runs on the iOS simulator; UIKit tests in
-          Tests/MdTests/MdUIKitTests.swift run via Xcode)
+          Tests/MarkdownKitTests/MdUIKitTests.swift run via Xcode)

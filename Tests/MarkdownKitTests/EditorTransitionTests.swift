@@ -1,7 +1,7 @@
 #if canImport(AppKit)
   import Testing
   import AppKit
-  @testable import Md
+  @testable import MarkdownKit
 
   // A checkbox click toggles the source, reports the edit, and animates through
   // overlays that leave the text view as they found it.

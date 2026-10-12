@@ -3,7 +3,7 @@
 
   /// Draws the task-list checkbox. The layout manager renders this image in place
   /// of the "[x]"/"[ ]" characters (which stay in the source string, marked
-  /// .markdownCheckbox). Matches `Sources/Md/CheckboxAttachment.swift` (AppKit):
+  /// .markdownCheckbox). Matches `Sources/MarkdownKit/CheckboxAttachment.swift` (AppKit):
   /// the SAME SF Symbols, weights, and palette colors, so both platforms draw
   /// identical checkboxes.
   ///

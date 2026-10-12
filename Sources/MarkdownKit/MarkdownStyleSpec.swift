@@ -143,7 +143,7 @@ public struct MarkdownStyleSpec: MarkdownStyling {
 
   public init(metrics: MarkdownMetrics = .standard) { self.metrics = metrics }
 
-  // MARK: Colors — mirror Sources/Md/MarkdownStyle.swift
+  // MARK: Colors — mirror Sources/MarkdownKit/MarkdownStyle.swift
 
   public var textColor: MarkdownColor { .label }
   public var syntaxColor: MarkdownColor { .tertiaryLabel }
