@@ -2,9 +2,16 @@ import MarkdownKit
 import SwiftData
 import SwiftUI
 
+#if os(macOS) && DIRECT_DISTRIBUTION
+  import UpdateKit
+#endif
+
 @main struct MarkdownApp: App {
   #if os(macOS) && DIRECT_DISTRIBUTION
-    @State private var updates = UpdateChecker()
+    /// Updates for the direct download from GitHub Releases (Markdown.dmg, built by
+    /// Scripts/release.sh; App Store builds leave this out): checked daily. The sandbox keeps
+    /// the app from replacing itself, so the update window hands the download to the browser.
+    private let updater = AppUpdater(github: "v57/Markdown", assetName: "Markdown.dmg")
   #endif
 
   // macOS CLI harness: run headless probes before the UI launches. The app
@@ -23,6 +30,9 @@ import SwiftUI
       if CommandLine.arguments.contains("--typingprobe") {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { SelfTest.typingProbe() }
       }
+    #endif
+    #if os(macOS) && DIRECT_DISTRIBUTION
+      updater.start()
     #endif
   }
 
@@ -55,9 +65,6 @@ import SwiftUI
         } else {
           ContentView()
             .modelContainer(Self.sidebarStore)
-            #if os(macOS) && DIRECT_DISTRIBUTION
-              .modifier(UpdateAlerts(checker: updates))
-            #endif
         }
       }
       // A minimum window size only makes sense where windows are freely resizable.
@@ -74,9 +81,7 @@ import SwiftUI
       .commands {
         TextEditingCommands()  // standard Edit menu so ⌘C/V/X/Z work
         #if DIRECT_DISTRIBUTION
-          CommandGroup(after: .appInfo) {
-            Button("Check for Updates…") { Task { await updates.check(userInitiated: true) } }
-          }
+          UpdaterCommands(updater: updater)
         #endif
       }
     #endif
