@@ -50,7 +50,26 @@ struct SidebarView: View {
             .tag(LibraryItem.openedFiles)
         }
       }
+      #if os(macOS)
+        // On macOS a List hands drops only to its rows (one on the List itself never
+        // arrives), so the space under the rows is a row too, taking dropped folders.
+        Section {
+          Color.clear
+            .frame(height: 200)
+            .contentShape(Rectangle())
+            .dropDestination(for: URL.self) { urls, _ in
+              add(urls.filter(\.isFileURL))
+            } isTargeted: { isDropTargeted = $0 }
+            .listRowBackground(Color.clear)
+            .accessibilityHidden(true)
+        }
+      #endif
     }
+    #if os(macOS)
+      .safeAreaInset(edge: .top, spacing: 0) { searchField }
+      .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+    #endif
+    // Outside the insets, so the search field and the bar below take drops too.
     .overlay {
       if isDropTargeted {
         RoundedRectangle(cornerRadius: 8)
@@ -63,8 +82,6 @@ struct SidebarView: View {
       add(urls.filter(\.isFileURL))
     } isTargeted: { isDropTargeted = $0 }
     #if os(macOS)
-      .safeAreaInset(edge: .top, spacing: 0) { searchField }
-      .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
       .onDeleteCommand {
         if case .folder(let url) = navigator.item, isDeletable(url) { actions.delete(url) }
       }
@@ -384,6 +401,8 @@ struct FileTreeRow: View {
   var systemImage = "folder"
   @Environment(FolderLibrary.self) private var library
   @Environment(FileActions.self) private var actions
+  @Environment(Navigator.self) private var navigator
+  @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @State private var isDropTargeted = false
 
@@ -408,12 +427,30 @@ struct FileTreeRow: View {
   private func row(noteCount: Int) -> some View {
     label(Label(title ?? node.name, systemImage: systemImage))
       .badge(badge ?? noteCount)
-      .dropDestination(for: URL.self) { urls, _ in
-        actions.drop(urls, into: node.url, roots: library.roots(folders))
-      } isTargeted: { isDropTargeted = $0 }
+      .dropDestination(for: URL.self) { urls, _ in drop(urls) } isTargeted: { isDropTargeted = $0 }
       .listRowBackground(
         isDropTargeted ? RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.2)) : nil)
       .tag(LibraryItem.folder(node.url))
+  }
+
+  /// Notes and folders from the app's own folders move here, files from other apps are
+  /// copied in. A folder from Finder joins the sidebar instead: the rows cover most of
+  /// the sidebar, and dropping a folder on the sidebar means adding it.
+  private func drop(_ urls: [URL]) -> Bool {
+    let roots = library.roots(folders)
+    let urls = urls.filter(\.isFileURL)
+    let newFolders = urls.filter {
+      ($0.hasDirectoryPath || FolderLibrary.isDirectory($0)) && library.root(of: $0, roots: roots) == nil
+    }
+    let rest = urls.filter { !newFolders.contains($0) }
+    var dropped = false
+    if !newFolders.isEmpty {
+      let added = library.add(newFolders, existing: folders, context: context)
+      if let first = added.first { navigator.open(first) }
+      dropped = !added.isEmpty
+    }
+    if !rest.isEmpty, actions.drop(rest, into: node.url, roots: roots) { dropped = true }
+    return dropped
   }
 
   /// Roots keep their sidebar menu (FolderRootRow); everything inside gets the folder one.
