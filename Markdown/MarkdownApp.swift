@@ -9,8 +9,9 @@ import SwiftUI
 @main struct MarkdownApp: App {
   #if os(macOS) && DIRECT_DISTRIBUTION
     /// Updates for the direct download from GitHub Releases (Markdown.dmg, built by
-    /// Scripts/release.sh; App Store builds leave this out): checked daily. The sandbox keeps
-    /// the app from replacing itself, so the update window hands the download to the browser.
+    /// Scripts/release.sh; App Store builds leave this out): checked daily once the user
+    /// turns on automatic checks (never before). The sandbox keeps the app from replacing
+    /// itself, so the update window hands the download to the browser.
     private let updater = AppUpdater(github: "v57/Markdown", assetName: "Markdown.dmg")
   #endif
 
