@@ -10,6 +10,7 @@
 		267577A53037283100FB9989 /* MarkdownKit in Frameworks */ = {isa = PBXBuildFile; productRef = 267577A43037283100FB9989 /* MarkdownKit */; };
 		269C449B303192220055AD81 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 269C449A303192220055AD81 /* Markdown */; };
 		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = D5C0DE000000000000000002 /* UpdateKit */; };
+		61748B000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = 61748B000000000000000002 /* GitHubKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				61748B000000000000000003 /* GitHubKit in Frameworks */,
 				269C449B303192220055AD81 /* Markdown in Frameworks */,
 				267577A53037283100FB9989 /* MarkdownKit in Frameworks */,
 				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
@@ -73,6 +75,7 @@
 				269C449A303192220055AD81 /* Markdown */,
 				267577A43037283100FB9989 /* MarkdownKit */,
 				D5C0DE000000000000000002 /* UpdateKit */,
+				61748B000000000000000002 /* GitHubKit */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Markdown.app */;
@@ -106,6 +109,7 @@
 				269C4499303192220055AD81 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 				267577A33037283100FB9989 /* XCLocalSwiftPackageReference "../Markdown" */,
 				D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */,
+				61748B000000000000000001 /* XCLocalSwiftPackageReference "../Git" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -396,6 +400,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../UpdateKit;
 		};
+		61748B000000000000000001 /* XCLocalSwiftPackageReference "../Git" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Git;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -423,6 +431,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */;
 			productName = UpdateKit;
+		};
+		61748B000000000000000002 /* GitHubKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 61748B000000000000000001 /* XCLocalSwiftPackageReference "../Git" */;
+			productName = GitHubKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

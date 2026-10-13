@@ -1,3 +1,4 @@
+import GitHubKit
 import SwiftUI
 
 /// The Connect GitHub sheet: sign in (device flow), then pick one of your repositories —
@@ -8,7 +9,7 @@ struct GitHubConnectView: View {
   @Environment(Navigator.self) private var navigator
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
-  @State private var repositories: [GitHubClient.Repository] = []
+  @State private var repositories: [GitHubRepository] = []
   @State private var isLoading = false
   @State private var filter = ""
   @State private var publicName = ""
@@ -66,6 +67,13 @@ struct GitHubConnectView: View {
         Button("Sign In with GitHub…") { auth.signIn() }
         Text("Signing in lets you edit your repositories, including private ones, and push changes.")
           .font(.callout).foregroundStyle(.secondary)
+      case .requesting:
+        HStack {
+          ProgressView().controlSize(.small)
+          Text("Asking GitHub for a code…").foregroundStyle(.secondary)
+          Spacer()
+          Button("Cancel") { auth.cancelSignIn() }
+        }
       case .waiting(let code, let url):
         VStack(alignment: .leading, spacing: 10) {
           Text("Enter this code on GitHub:")
@@ -105,7 +113,7 @@ struct GitHubConnectView: View {
         let connected = store.repositories.contains { $0.fullName == repository.fullName }
         let busy = store.activity[repository.fullName]
         Button {
-          connect(owner: repository.owner.login, name: repository.name)
+          connect(owner: repository.owner, name: repository.name)
         } label: {
           HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -135,7 +143,7 @@ struct GitHubConnectView: View {
     }
   }
 
-  private var filtered: [GitHubClient.Repository] {
+  private var filtered: [GitHubRepository] {
     let query = filter.trimmingCharacters(in: .whitespaces)
     guard !query.isEmpty else { return repositories }
     return repositories.filter { $0.fullName.localizedCaseInsensitiveContains(query) }
@@ -149,7 +157,7 @@ struct GitHubConnectView: View {
     isLoading = true
     defer { isLoading = false }
     do {
-      repositories = try await auth.client.repositories()
+      repositories = try await auth.api.repositories()
     } catch {
       auth.error = error.localizedDescription
     }
@@ -175,7 +183,7 @@ struct GitHubConnectView: View {
 
   private func connect(owner: String, name: String) {
     Task {
-      if let dir = await store.connect(owner: owner, name: name, client: auth.client) {
+      if let dir = await store.connect(owner: owner, name: name, client: auth.api) {
         navigator.open(dir)
         dismiss()
       }
@@ -214,7 +222,7 @@ struct RepositoryRow: View {
       systemImage: "arrow.triangle.branch"
     )
     .contextMenu {
-      Button("Pull") { Task { await store.pull(repository, client: auth.client) } }
+      Button("Pull") { Task { await store.pull(repository, client: auth.api) } }
       Button("Commit and Push…") { beginCommit() }
         .disabled(repository.isAnonymous && auth.token == nil)
       Divider()
@@ -228,7 +236,7 @@ struct RepositoryRow: View {
       TextField("Message", text: $commitMessage)
       Button("Push") {
         let message = commitMessage
-        Task { await store.commitAndPush(repository, message: message, client: auth.client) }
+        Task { await store.commitAndPush(repository, message: message, client: auth.api) }
       }
       .keyboardShortcut(.defaultAction)
       Button("Cancel", role: .cancel) {}

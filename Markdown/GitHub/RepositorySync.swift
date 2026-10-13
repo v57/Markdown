@@ -1,4 +1,5 @@
 import Foundation
+import GitHubKit
 
 /// A connected repository's sync state: the commit the local copy is based on, and the
 /// blob id of every synced file at that commit. Comparing a file's current blob id with
@@ -56,7 +57,7 @@ nonisolated enum RepositorySync {
   // MARK: - Clone
 
   static func clone(
-    client: GitHubClient, owner: String, name: String, branch: String, into directory: URL
+    client: GitHubAPI, owner: String, name: String, branch: String, into directory: URL
   ) async throws -> RepositoryState {
     let head = try await client.head(owner: owner, name: name, branch: branch)
     let tree = try await client.tree(owner: owner, name: name, commit: head)
@@ -85,7 +86,7 @@ nonisolated enum RepositorySync {
       guard isSynced(path, size: values?.fileSize), let data = try? Data(contentsOf: url) else {
         continue
       }
-      result[path] = GitHubClient.blobSHA(data)
+      result[path] = GitHubAPI.blobSHA(data)
     }
     return result
   }
@@ -104,7 +105,7 @@ nonisolated enum RepositorySync {
 
   // MARK: - Pull
 
-  static func pull(client: GitHubClient, state: RepositoryState, directory: URL) async throws
+  static func pull(client: GitHubAPI, state: RepositoryState, directory: URL) async throws
     -> PullResult
   {
     let head = try await client.head(owner: state.owner, name: state.name, branch: state.branch)
@@ -164,11 +165,11 @@ nonisolated enum RepositorySync {
   /// Commits the local changes as one commit and moves the branch to it. GitHub must
   /// still be at `state.headCommit` (pull first); a rejected update changes nothing.
   static func push(
-    client: GitHubClient, state: RepositoryState, directory: URL, message: String
+    client: GitHubAPI, state: RepositoryState, directory: URL, message: String
   ) async throws -> RepositoryState {
     let changes = changes(state, in: directory)
     guard !changes.isEmpty else { return state }
-    var treeChanges: [GitHubClient.Change] = []
+    var treeChanges: [GitHubTreeChange] = []
     var files = state.files
     for change in changes {
       switch change.kind {
@@ -190,7 +191,7 @@ nonisolated enum RepositorySync {
     do {
       try await client.updateBranch(
         owner: state.owner, name: state.name, branch: state.branch, to: commit)
-    } catch let failure as GitHubClient.Failure where failure.status == 422 {
+    } catch GitHubError.api(status: 422, _) {
       throw Rejected(errorDescription: "GitHub has newer commits on \(state.branch). Pull, then push again.")
     }
     var next = state
@@ -203,7 +204,7 @@ nonisolated enum RepositorySync {
   // MARK: - Helpers
 
   private static func syncedFiles(
-    client: GitHubClient, owner: String, name: String, tree: String
+    client: GitHubAPI, owner: String, name: String, tree: String
   ) async throws -> [String: String] {
     let entries = try await client.files(owner: owner, name: name, tree: tree)
     var files: [String: String] = [:]
@@ -215,7 +216,7 @@ nonisolated enum RepositorySync {
 
   /// Downloads blobs (path → blob id) into `directory`, a few at a time.
   private static func download(
-    _ files: [String: String], client: GitHubClient, owner: String, name: String,
+    _ files: [String: String], client: GitHubAPI, owner: String, name: String,
     into directory: URL
   ) async throws {
     let jobs = Array(files)

@@ -145,9 +145,10 @@ App (Markdown.xcodeproj)
   NoteSearch) matches every word against note names and text across all
   folders, names first.
 
-  GitHub (Markdown/GitHub/): "Connect GitHub Repository…" signs in with the
-  OAuth device flow (GitHubAuth; the OAuth App's client ID is the
-  GITHUB_CLIENT_ID build setting, the token goes to the Keychain) and lists
+  GitHub (Markdown/GitHub/, on GitHubKit from ../Git): "Connect GitHub
+  Repository…" signs in with the OAuth device flow (GitHubAuth over
+  GitHubAccount; the OAuth App's client ID is the GITHUB_CLIENT_ID build
+  setting, the token goes to the Keychain) and lists
   your repositories; any public repository can be added without signing in
   (read-only). RepositorySync clones only notes — markdown files and images —
   through the REST Git Data API into Application Support/GitHub/<owner>/<repo>,

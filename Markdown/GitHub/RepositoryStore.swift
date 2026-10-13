@@ -1,4 +1,5 @@
 import Foundation
+import GitHubKit
 import Observation
 
 /// The connected GitHub repositories: their local copies (in the app's Application
@@ -47,7 +48,7 @@ import Observation
 
   /// Clones `owner/name` and adds it to the sidebar. Returns its local folder.
   @discardableResult
-  func connect(owner: String, name: String, client: GitHubClient) async -> URL? {
+  func connect(owner: String, name: String, client: GitHubAPI) async -> URL? {
     let fullName = "\(owner)/\(name)"
     guard !repositories.contains(where: { $0.fullName.lowercased() == fullName.lowercased() }) else {
       message = ("Already Connected", "\(fullName) is already in the sidebar.")
@@ -58,7 +59,7 @@ import Observation
     do {
       let info = try await client.repository(owner: owner, name: name)
       var state = RepositoryState(
-        owner: info.owner.login, name: info.name, branch: info.defaultBranch, headCommit: "",
+        owner: info.owner, name: info.name, branch: info.defaultBranch ?? "main", headCommit: "",
         headTree: "", files: [:])
       let dir = directory(for: state)
       state = try await RepositorySync.clone(
@@ -73,7 +74,7 @@ import Observation
     }
   }
 
-  func pull(_ repository: RepositoryState, client: GitHubClient) async {
+  func pull(_ repository: RepositoryState, client: GitHubAPI) async {
     willChangeFiles()
     activity[repository.fullName] = "Pulling…"
     defer { activity[repository.fullName] = nil }
@@ -95,7 +96,7 @@ import Observation
 
   /// Pulls first (GitHub may have moved on), then commits the local changes and pushes.
   /// Conflicts stop it: they need merging by hand.
-  func commitAndPush(_ repository: RepositoryState, message commitMessage: String, client: GitHubClient)
+  func commitAndPush(_ repository: RepositoryState, message commitMessage: String, client: GitHubAPI)
     async
   {
     guard !repository.isAnonymous, client.token != nil else {
@@ -158,7 +159,7 @@ import Observation
 
   // MARK: - State
 
-  private func pulled(_ repository: RepositoryState, client: GitHubClient) async throws
+  private func pulled(_ repository: RepositoryState, client: GitHubAPI) async throws
     -> RepositorySync.PullResult
   {
     let result = try await RepositorySync.pull(
