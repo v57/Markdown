@@ -6,8 +6,8 @@ import PackageDescription
 let package = Package(
   name: "Markdown",
   platforms: [
-    .macOS(.v12),
-    .iOS(.v15),
+    .macOS(.v14),
+    .iOS(.v17),
   ],
   products: [
     // The single library: shared core + AppKit stack (macOS) + UIKit stack (iOS),
@@ -16,7 +16,9 @@ let package = Package(
   ],
   dependencies: [
     // swift-markdown (also an Xcode SPM dependency) — provides the Markdown module (cmark AST).
-    .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.8.0")
+    .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.8.0"),
+    // The Code repo next to this one — CodeHighlighting colors fenced code blocks.
+    .package(path: "../Code"),
   ],
   targets: [
     // The single target: every source under Sources/MarkdownKit/ compiles into the MarkdownKit
@@ -24,9 +26,14 @@ let package = Package(
     // guarded (macOS only); Sources/MarkdownKit/UIKit is #if canImport(UIKit)-guarded
     // (iOS only); the shared core in Sources/MarkdownKit/ is platform-neutral.
     .target(
-      name: "MarkdownKit", dependencies: [.product(name: "Markdown", package: "swift-markdown")],
+      name: "MarkdownKit",
+      dependencies: [
+        .product(name: "Markdown", package: "swift-markdown"),
+        .product(name: "CodeHighlighting", package: "Code"),
+      ],
       swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
     .testTarget(
-      name: "MarkdownKitTests", dependencies: ["MarkdownKit"],
+      name: "MarkdownKitTests",
+      dependencies: ["MarkdownKit", .product(name: "CodeHighlighting", package: "Code")],
       swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
   ])

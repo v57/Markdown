@@ -1,6 +1,7 @@
 #if canImport(UIKit)
   import Testing
   import UIKit
+  import CodeHighlighting
   @testable import MarkdownKit
 
   // MARK: - iOS (UIKit) editor stack tests

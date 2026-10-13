@@ -1,3 +1,4 @@
+import CodeHighlighting
 import Foundation
 import Markdown
 

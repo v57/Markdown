@@ -1,3 +1,4 @@
+import CodeHighlighting
 import Foundation
 
 #if canImport(AppKit)
@@ -114,8 +115,7 @@ public enum MarkdownRenderer {
       case .controlAccent: return .controlAccentColor
       case .systemBackground: return .windowBackgroundColor
       case .quaternarySystemFill:
-        if #available(macOS 14, *) { return .quaternarySystemFill }
-        return NSColor.labelColor.withAlphaComponent(0.05)
+        return .quaternarySystemFill
       }
     }
 
@@ -213,10 +213,10 @@ public enum MarkdownRenderer {
 
   // MARK: - Render
 
-  /// The code-syntax palette, resolved from the current platform appearance.
-  /// Used by the parser's token-coloring pass (the `MarkdownStyling` protocol
-  /// intentionally omits `codeScheme` so MdCore stays decoupled from MdCode's
-  /// appearance resolution).
+  /// The code-syntax palette (CodeHighlighting's GitHub Light/Dark), resolved
+  /// from the current platform appearance. Used by the parser's token-coloring
+  /// pass (the `MarkdownStyling` protocol leaves out `codeScheme` so the style
+  /// contract stays free of appearance resolution).
   public static func currentCodeScheme() -> CodeColorScheme { CodeColorScheme.systemAware }
 
   /// Converts a parser-built attributed string (platform-neutral attribute

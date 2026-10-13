@@ -10,9 +10,9 @@ Single library, one module: `MarkdownKit`. Platform-specific code lives in
 UIKit/AppKit framework, no separate core framework. Everything compiles into
 the one `MarkdownKit` module on the host platform.
 
-Requirements: the `MarkdownKit` library supports macOS 12+ and iOS 15+ (the oldest the
-current toolchain targets). The app needs macOS 14+ and iOS 17+ (Observation and
-SwiftData).
+Requirements: macOS 14+ and iOS 17+, for both the `MarkdownKit` library and the app.
+Fenced code is highlighted and colored by `CodeHighlighting` from the Code repo, which
+must sit next to this one (`../Code`).
 
 Layout
 
@@ -24,9 +24,7 @@ Layout
     EditorLayoutManagerCore.swift  shared TextKit layout logic + draw hooks
     MarkdownKeys.swift          NSAttributedString.Key extensions
     TableColumnLayout.swift     table grid geometry (column targets, kerns)
-    CodeColorScheme.swift       hex-based code palette (platform-neutral)
-    CodeHighlighter.swift       code syntax highlighting engine
-    ...                         scanner/catalog/spec/kind, SampleDocument
+    ...                         images, metrics, HTML export, SampleDocument
   Sources/MarkdownKit/AppKit/ macOS editor stack (imports AppKit)
     EditorTextView.swift         NSTextView subclass (live re-styling)
     EditorLayoutManager.swift    NSLayoutManager drawing (NSBezierPath/NSImage)
@@ -208,10 +206,11 @@ Features (both stacks)
 Verification
 
   macOS:  swift build && swift test
-          (108 tests: parser, style spec, layout probes, highlighter, schemes,
-          tables, rendering regressions, HTML/images/anchors)
+          (107 tests: parser, style spec, layout probes, code colors,
+          tables, rendering regressions, HTML/images/anchors; the highlighter's
+          own tests live in ../Code)
           xcodebuild -project Markdown.xcodeproj -scheme Markdown build
-  iOS:    swift build --triple arm64-apple-ios15.0-simulator --build-tests
+  iOS:    swift build --triple arm64-apple-ios17.0-simulator --build-tests
           xcodebuild -project Markdown.xcodeproj -scheme Markdown
             -destination 'generic/platform=iOS Simulator' build
           (app runs on the iOS simulator; UIKit tests in

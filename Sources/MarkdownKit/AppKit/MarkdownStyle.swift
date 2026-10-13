@@ -1,5 +1,6 @@
 #if canImport(AppKit)
   import AppKit
+  import CodeHighlighting
 
   public struct MarkdownStyle {
     /// Metrics this style reads from — the single source of truth.
@@ -10,10 +11,7 @@
     // Colors — all dynamic system colors → automatic dark/light support
     public let textColor: NSColor = .labelColor
     public let syntaxColor: NSColor = .tertiaryLabelColor  // ★ "commands in tertiary color"
-    public let codeBackground: NSColor = {
-      if #available(macOS 14, *) { return .quaternarySystemFill }
-      return NSColor.labelColor.withAlphaComponent(0.05)
-    }()
+    public let codeBackground: NSColor = .quaternarySystemFill
     public let codeTextColor: NSColor = .secondaryLabelColor
     public let linkColor: NSColor = .linkColor
     public let quoteTextColor: NSColor = .secondaryLabelColor

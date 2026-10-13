@@ -1,6 +1,7 @@
 #if canImport(AppKit)
   import Testing
   import AppKit
+  import CodeHighlighting
   @testable import MarkdownKit
 
   /// Regressions for visible rendering defects: each test pins one behavior that was

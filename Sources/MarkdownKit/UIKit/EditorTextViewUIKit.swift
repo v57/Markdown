@@ -360,14 +360,6 @@
 
     // MARK: - Links
 
-    public func textView(
-      _ textView: UITextView, shouldInteractWith url: URL, in characterRange: NSRange,
-      interaction: UITextItemInteraction
-    ) -> Bool {
-      open(url)
-      return false
-    }
-
     /// Link routing: same-document anchors scroll, then the host, then the system.
     private func open(_ url: URL) {
       if let fragment = url.fragment, MarkdownParser.isSameDocument(url, resolver.documentURL),
@@ -379,8 +371,7 @@
       UIApplication.shared.open(url)
     }
 
-    /// iOS 17+: a tapped link runs our routing instead of UIKit's default action.
-    @available(iOS 17, *)
+    /// A tapped link runs our routing instead of UIKit's default action.
     public func textView(
       _ textView: UITextView, primaryActionFor textItem: UITextItem,
       defaultAction: UIAction

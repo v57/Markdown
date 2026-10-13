@@ -89,9 +89,9 @@ public struct MarkdownParagraph: Equatable, Sendable {
 /// described platform-neutrally; each platform's `MarkdownStyle` renders them
 /// into its native types (NSFont/NSColor/NSParagraphStyle, UIFont/UIColor/...).
 ///
-/// NOTE: the code-syntax palette (`CodeColorScheme`) is intentionally NOT part
-/// of this protocol — MdCore must not depend on MdCode. Each platform style
-/// exposes its own `codeScheme` property; the parser receives it separately.
+/// NOTE: the code-syntax palette (CodeHighlighting's `CodeColorScheme`) is
+/// intentionally NOT part of this protocol. Each platform style exposes its own
+/// `codeScheme` property; the parser receives it separately.
 public protocol MarkdownStyling {
   var textColor: MarkdownColor { get }
   var syntaxColor: MarkdownColor { get }

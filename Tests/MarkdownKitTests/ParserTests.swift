@@ -1,6 +1,7 @@
 #if canImport(AppKit)
   import Testing
   import AppKit
+  import CodeHighlighting
   @testable import MarkdownKit
 
   // MARK: - Parser + layout + parser-integration tests
