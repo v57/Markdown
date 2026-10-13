@@ -149,7 +149,9 @@ struct ContentView: View {
 
   /// The listed folder when the app can write there, otherwise the notes folder.
   private var newItemDirectory: URL? {
-    if case .folder(let dir) = navigator.item, library.root(of: dir, roots: library.roots(folders)) != nil {
+    if case .folder(let dir) = navigator.item, FolderLibrary.isDirectory(dir),
+      library.root(of: dir, roots: library.roots(folders)) != nil
+    {
       return dir
     }
     return notes.url

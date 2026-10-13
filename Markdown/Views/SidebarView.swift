@@ -255,7 +255,9 @@ struct SidebarView: View {
 
   /// Where a new folder goes: the listed folder, otherwise the notes folder.
   private func newFolder() {
-    if case .folder(let dir) = navigator.item, library.root(of: dir, roots: library.roots(folders)) != nil {
+    if case .folder(let dir) = navigator.item, FolderLibrary.isDirectory(dir),
+      library.root(of: dir, roots: library.roots(folders)) != nil
+    {
       actions.newFolder(in: dir)
     } else if let root = notes.url {
       actions.newFolder(in: root)
@@ -460,9 +462,6 @@ struct FileTreeRow: View {
 @MainActor func remove(
   _ folder: SidebarFolder, library: FolderLibrary, navigator: Navigator, context: ModelContext
 ) {
-  if let url = library.url(for: folder) {
-    navigator.forget(under: url)
-    if navigator.item == .folder(url) { navigator.item = nil }
-  }
+  if let url = library.url(for: folder) { navigator.forget(under: url) }
   library.remove(folder, context: context)
 }
