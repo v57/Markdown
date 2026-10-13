@@ -65,10 +65,11 @@ import SwiftUI
       // 480 pt minimum on a narrower iPhone centers the oversized content, shifting
       // it left by half the overflow and pushing toolbars past the right edge.
       #if os(macOS) || os(visionOS)
-        .frame(minWidth: 480, minHeight: 360)
+        .frame(minWidth: 640, minHeight: 400)
       #endif
     }
-    .defaultSize(width: 1100, height: 760)
+    .defaultSize(width: 1280, height: 800)
+    .commands { MarkdownCommands() }
     #if os(macOS)
       .commands {
         TextEditingCommands()  // standard Edit menu so ⌘C/V/X/Z work

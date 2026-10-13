@@ -20,6 +20,7 @@ Layout
     MarkdownParser.swift        the markdown parser (swift-markdown AST)
     MarkdownRenderer.swift      renders neutral attributes -> native types
     MarkdownStyleSpec.swift     MarkdownColor/Font/Paragraph + MarkdownStyling
+    MarkdownFormatting.swift    Format commands (bold, lists, tables…) as text edits
     EditorLayoutManagerCore.swift  shared TextKit layout logic + draw hooks
     MarkdownKeys.swift          NSAttributedString.Key extensions
     TableColumnLayout.swift     table grid geometry (column targets, kerns)
@@ -98,23 +99,35 @@ App (Markdown.xcodeproj)
   resolves to the AppKit NSViewRepresentable on macOS and the UIKit
   UIViewControllerRepresentable on iOS.
 
-  Folder sidebar: drop folders on the sidebar (Finder, Files) or use Add
-  Folder (⇧⌘O). They are saved with SwiftData (SidebarFolder: path plus a
-  security-scoped bookmark, so the sandbox grants access again after a
-  relaunch) and shown as expandable trees of subfolders and markdown files.
-  Selecting a folder shows its README (also .github/ and docs/); selecting a
-  file shows it. Files are edited in place: DocumentSaver writes edits back
-  (coordinated, atomic) after a short pause, and right away on ⌘S, switching
-  documents, reload, backgrounding and quit. The toolbar toggles Editing /
-  Preview (read-only, links tappable on iOS). Folders added while the app was
+  Three columns, as in Notes: the sidebar lists where notes live (All Notes, the
+  notes folder in iCloud Drive or on the device and its folders, GitHub
+  repositories, folders dropped on the sidebar or added with Add Folder (⇧⌘O),
+  files opened on their own); the note list shows the selected folder's notes,
+  newest first, grouped by date (Pinned, Today, Yesterday, …) with each note's
+  time and first line; the detail pane edits the note. With no note chosen, a
+  folder's README is shown. Sidebar folders are saved with SwiftData
+  (SidebarFolder: path plus a security-scoped bookmark, so the sandbox grants
+  access again after a relaunch). Pins and recent notes are kept in the app's
+  defaults (NotePreferences).
+
+  Files are edited in place: DocumentSaver writes edits back (coordinated,
+  atomic) after a short pause, and right away on ⌘S, switching documents,
+  reload, backgrounding and quit; the status bar (macOS) says whether edits are
+  saved and counts words. Edit / Read (⇧⌘E) switches between the live editor
+  and a read-only view (links tappable on iOS). Formatting comes from
+  MarkdownKit's MarkdownEditorCommands: the Format menu on macOS, a bar above
+  the keyboard on iOS. Quick Open (⌘K) finds notes by name and by content and
+  runs commands; the welcome sheet opens with the first window (unless turned
+  off) and from Window › Welcome to Markdown. Folders added while the app was
   read-only keep read-only bookmarks; a failed save offers "Allow Editing…"
   (macOS), which re-grants the folder read-write. Relative images resolve
   against the file and "/" against the sidebar folder; links to markdown files
   and folders open in the app with back/forward (⌘[ ⌘]), Reload is ⌘R.
 
     Markdown/Library/   SidebarFolder (SwiftData), FolderLibrary, Navigator,
-                        DocumentSaver
-    Markdown/Views/     SidebarView, DocumentView
+                        DocumentSaver, NoteList, NotePreferences, SearchScope
+    Markdown/Views/     SidebarView, NoteListView, DocumentView, QuickOpenView,
+                        WelcomeView, Commands (menu bar, window state)
     Markdown.entitlements  bookmarks.app-scope (macOS; the rest comes from
                            build settings)
 

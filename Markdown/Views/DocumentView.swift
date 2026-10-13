@@ -3,8 +3,9 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The detail pane: the selected markdown file, or the selected folder's README, edited
-/// in place (or previewed read-only). Edits save themselves (see `DocumentSaver`).
+/// The detail pane: the selected note, or a folder's README (a link to the folder, or the
+/// listed folder while no note is selected), edited in place or read (`Edit` / `Read`).
+/// Edits save themselves (see `DocumentSaver`); the status bar says so and counts words.
 /// Relative images resolve against the file; links to markdown files and folders open
 /// here (with back/forward), anything else opens externally.
 struct DocumentView: View {
@@ -12,6 +13,8 @@ struct DocumentView: View {
   @Environment(Navigator.self) private var navigator
   @Environment(FileActions.self) private var actions
   @Environment(RepositoryStore.self) private var repositories
+  @Environment(NotesLocation.self) private var notes
+  @Environment(NotePreferences.self) private var preferences
   @Environment(\.scenePhase) private var scenePhase
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @Environment(\.modelContext) private var context
@@ -19,6 +22,12 @@ struct DocumentView: View {
   @State private var saver = DocumentSaver()
   @State private var showsSaveError = false
   @State private var isPickingFolder = false
+  @State private var commands = MarkdownEditorCommands()
+  @State private var wordCount = 0
+  @State private var wordCountTask: Task<Void, Never>?
+  #if os(iOS)
+    @State private var isKeyboardShown = false
+  #endif
   /// Edit (default) or preview: preview never reveals syntax, and on iOS lets a tap
   /// follow a link instead of placing the caret.
   @AppStorage("editsDocuments") private var isEditing = true
@@ -31,9 +40,11 @@ struct DocumentView: View {
     case failed(file: URL, message: String)
   }
 
-  /// Re-loads when the selection changes or the library reloads.
+  /// Re-loads when the selection changes (or, with none, the listed folder), or the
+  /// library reloads.
   private struct LoadKey: Equatable {
     var selection: URL?
+    var item: LibraryItem?
     var generation: Int
   }
 
@@ -44,7 +55,27 @@ struct DocumentView: View {
         .navigationSubtitle(subtitle)
       #endif
       .toolbar { toolbar }
-      .task(id: LoadKey(selection: navigator.selection, generation: library.generation)) {
+      #if os(macOS)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          if case .document = content { statusBar }
+        }
+      #else
+        .navigationBarTitleDisplayMode(.inline)
+        // The editor is UIKit, which SwiftUI's keyboard toolbar doesn't reach: the
+        // formatting bar floats above the keyboard instead.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          if isShowingDocument, isEditing, isKeyboardShown { formattingBar }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+          withAnimation(.smooth(duration: 0.25)) { isKeyboardShown = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+          withAnimation(.smooth(duration: 0.25)) { isKeyboardShown = false }
+        }
+      #endif
+      .focusedSceneValue(\.editorCommands, isShowingDocument && isEditing ? commands : nil)
+      .focusedSceneValue(\.documentActions, documentActions)
+      .task(id: LoadKey(selection: navigator.selection, item: navigator.item, generation: library.generation)) {
         await load()
       }
       .onChange(of: scenePhase) { _, phase in
@@ -88,24 +119,29 @@ struct DocumentView: View {
     switch content {
     case .empty:
       ContentUnavailableView(
-        "No Selection", systemImage: "sidebar.left",
-        description: Text("Select a folder to read its README, or a markdown file."))
+        "No Note Selected", systemImage: "note.text",
+        description: Text("Choose a note in the list, or start a new one with ⌘N."))
     case .loading:
       ProgressView()
     case .document(let file, let text):
       MarkdownEditorView(
         text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
         isReadOnly: !isEditing, anchor: navigator.anchor,
-        onChange: { saver.edited($0) },
+        onChange: { text in
+          saver.edited(text)
+          countWords(text)
+        },
         onOpenURL: { open($0) },
-        startsEditing: navigator.startsEditing && isEditing
+        startsEditing: navigator.startsEditing && isEditing,
+        commands: commands
       )
       .id(file)
+      .onAppear { countWords(text, now: true) }
     case .noReadme(let folder):
       ContentUnavailableView(
         "No README", systemImage: "doc.questionmark",
         description: Text(
-          "“\(folder.lastPathComponent)” has no README.md. Pick a markdown file in the sidebar."))
+          "“\(folder.lastPathComponent)” has no README.md. Choose a note in the list."))
     case .failed(let file, let message):
       ContentUnavailableView(
         "Couldn’t Open “\(file.lastPathComponent)”", systemImage: "exclamationmark.triangle",
@@ -114,78 +150,300 @@ struct DocumentView: View {
   }
 
   @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-    ToolbarItemGroup(placement: .navigation) {
-      Button("Back", systemImage: "chevron.left") { navigator.goBack() }
-        .disabled(navigator.back.isEmpty)
-        .keyboardShortcut("[", modifiers: .command)
-      Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
-        .disabled(navigator.forward.isEmpty)
-        .keyboardShortcut("]", modifiers: .command)
-    }
+    #if os(macOS)
+      // Back/forward and the note's title lead the editor's part of the toolbar, its
+      // actions trail it (a split view's `.navigation` items would sit over the list).
+      ToolbarItemGroup {
+        Button("Back", systemImage: "chevron.left") { navigator.goBack() }
+          .disabled(navigator.back.isEmpty)
+          .keyboardShortcut("[", modifiers: .command)
+          .help("Back (⌘[)")
+        Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
+          .disabled(navigator.forward.isEmpty)
+          .keyboardShortcut("]", modifiers: .command)
+          .help("Forward (⌘])")
+      }
+      if #available(macOS 26, *) {
+        ToolbarItem {
+          titleView
+        }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarSpacer(.flexible)
+      }
+    #endif
     ToolbarItemGroup {
       if case .failed = saver.state {
         Button("Not Saved", systemImage: "exclamationmark.triangle") { showsSaveError = true }
           .foregroundStyle(.yellow)
           .help("The last edit couldn’t be saved. Click for details.")
       }
-      if case .document = content {
-        Toggle(isOn: $isEditing) {
-          Label(isEditing ? "Editing" : "Preview", systemImage: isEditing ? "pencil" : "eye")
-        }
-        .help(isEditing ? "Switch to read-only preview" : "Edit this document")
-        Button("Save", systemImage: "square.and.arrow.down") { saver.flush() }
-          .keyboardShortcut("s", modifiers: .command)
-          .disabled(saver.state != .unsaved)
-          .help("Edits save automatically; ⌘S saves right away.")
+      if case .document(let file, _) = content {
+        #if os(macOS)
+          Picker("Mode", selection: $isEditing) {
+            Label("Edit", systemImage: "pencil").tag(true)
+            Label("Read", systemImage: "eye").tag(false)
+          }
+          .pickerStyle(.segmented)
+          .labelStyle(.titleAndIcon)
+          .fixedSize()
+          .help("Edit shows Markdown on the line you’re on; Read hides it (⇧⌘E)")
+        #else
+          Button(isEditing ? "Read" : "Edit", systemImage: isEditing ? "eye" : "pencil") {
+            isEditing.toggle()
+          }
+        #endif
+        ShareLink(item: file)
+        moreMenu(file)
       }
-      if case .document(let file, _) = content, isStandalone(file) {
+    }
+  }
+
+  #if os(macOS)
+    private var titleView: some View {
+      VStack(alignment: .leading, spacing: 0) {
+        Text(title).font(.headline).lineLimit(1)
+        if !subtitle.isEmpty {
+          Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+      }
+      .padding(.horizontal, 4)
+      .accessibilityElement(children: .combine)
+    }
+  #endif
+
+  private func moreMenu(_ file: URL) -> some View {
+    Menu("More", systemImage: "ellipsis.circle") {
+      if isNote(file) {
+        Button(preferences.isPinned(file) ? "Unpin Note" : "Pin Note", systemImage: preferences.isPinned(file) ? "pin.slash" : "pin") {
+          preferences.togglePin(file)
+        }
+        Button("Rename…", systemImage: "pencil") { actions.beginRename(file) }
+      }
+      #if os(macOS)
+        Button("Show in Finder", systemImage: "folder") {
+          NSWorkspace.shared.activateFileViewerSelecting([file])
+        }
+      #endif
+      if isStandalone(file) {
         Button("Add Enclosing Folder…", systemImage: "folder.badge.plus") {
           addEnclosingFolder(of: file)
         }
-        .help(
-          "Add “\(file.deletingLastPathComponent().lastPathComponent)” to the sidebar, so this file’s images and links work."
-        )
       }
+      Divider()
+      Button("Save Now", systemImage: "square.and.arrow.down") { saver.flush() }
+        .disabled(saver.state != .unsaved)
       Button("Reload", systemImage: "arrow.clockwise") { refresh() }
-        .keyboardShortcut("r", modifiers: .command)
-        .disabled(navigator.selection == nil)
-      #if os(macOS)
-        if case .document(let file, _) = content {
-          Button("Show in Finder", systemImage: "folder") {
-            NSWorkspace.shared.activateFileViewerSelecting([file])
-          }
+      #if os(iOS)
+        if !navigator.back.isEmpty || !navigator.forward.isEmpty {
+          Divider()
+          Button("Back", systemImage: "chevron.left") { navigator.goBack() }
+            .disabled(navigator.back.isEmpty)
+          Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
+            .disabled(navigator.forward.isEmpty)
         }
       #endif
     }
   }
 
-  private var title: String {
-    navigator.selection?.lastPathComponent ?? "Markdown"
+  #if os(iOS)
+    /// Above the keyboard: text styles, checklist, list, table, code, link — and a
+    /// button that puts the keyboard away.
+    private var formattingBar: some View {
+      HStack(spacing: 0) {
+        formattingButtons
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.borderless)
+      .font(.title3)
+      .tint(.primary)
+      .padding(.horizontal, 6)
+      .frame(height: 52)
+      .background(.regularMaterial, in: Capsule())
+      .overlay { Capsule().strokeBorder(.separator.opacity(0.5)) }
+      .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+      .padding(.horizontal, 12)
+      .padding(.bottom, 8)
+      .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    @ViewBuilder private var formattingButtons: some View {
+      Menu {
+        Button("Title", systemImage: "textformat.size.larger") { commands.apply(.heading(1)) }
+        Button("Heading", systemImage: "textformat.size") { commands.apply(.heading(2)) }
+        Button("Subheading", systemImage: "textformat.size.smaller") { commands.apply(.heading(3)) }
+        Divider()
+        Button("Bold", systemImage: "bold") { commands.apply(.bold) }
+        Button("Italic", systemImage: "italic") { commands.apply(.italic) }
+        Button("Strikethrough", systemImage: "strikethrough") { commands.apply(.strikethrough) }
+        Button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { commands.apply(.inlineCode) }
+        Divider()
+        Button("Quote", systemImage: "text.quote") { commands.apply(.quote) }
+        Button("Numbered List", systemImage: "list.number") { commands.apply(.numberedList) }
+      } label: {
+        Label("Text Style", systemImage: "textformat")
+      }
+      .frame(maxWidth: .infinity, minHeight: 44)
+      Group {
+        Button("Checklist", systemImage: "checklist") { commands.apply(.checklist) }
+        Button("Bulleted List", systemImage: "list.bullet") { commands.apply(.bulletList) }
+        Button("Table", systemImage: "tablecells") { commands.apply(.table) }
+        Button("Code Block", systemImage: "curlybraces") { commands.apply(.codeBlock) }
+        Button("Link", systemImage: "link") { commands.apply(.link) }
+        Button("Hide Keyboard", systemImage: "keyboard.chevron.compact.down") {
+          UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+      }
+      .frame(maxWidth: .infinity, minHeight: 44)
+    }
+  #endif
+
+  #if os(macOS)
+    /// Under the editor: whether edits are saved (and where), and the note's length.
+    private var statusBar: some View {
+      HStack(spacing: 12) {
+        saveStatus
+        Spacer()
+        Text(wordCountText)
+          .monospacedDigit()
+          .contentTransition(.numericText())
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 16)
+      .frame(height: 28)
+      .background(.bar)
+      .overlay(alignment: .top) { Divider() }
+    }
+
+    @ViewBuilder private var saveStatus: some View {
+      switch saver.state {
+      case .saved:
+        Label(isInICloud ? "Saved to iCloud Drive" : "Saved", systemImage: isInICloud ? "checkmark.icloud" : "checkmark.circle")
+      case .unsaved:
+        Label("Edited", systemImage: "pencil.circle")
+      case .failed:
+        Button {
+          showsSaveError = true
+        } label: {
+          Label("Not Saved", systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.red)
+        }
+        .buttonStyle(.plain)
+        .help("The last edit couldn’t be saved. Click for details.")
+      }
+    }
+
+    private var isInICloud: Bool {
+      guard notes.isICloud, let root = notes.url, let file = saver.file else { return false }
+      return file.path.hasPrefix(root.path + "/")
+    }
+  #endif
+
+  private var wordCountText: String {
+    let words = wordCount == 1 ? "1 word" : "\(wordCount.formatted()) words"
+    let minutes = max(1, Int((Double(wordCount) / 230).rounded()))
+    return wordCount == 0 ? "No words" : "\(words) · \(minutes) min read"
   }
 
-  /// The file actually shown when it differs from the selection (a folder's README).
+  /// Counts after typing pauses (a long note is a lot of text to scan per keystroke).
+  private func countWords(_ text: String, now: Bool = false) {
+    wordCountTask?.cancel()
+    wordCountTask = Task {
+      if !now { try? await Task.sleep(for: .milliseconds(400)) }
+      guard !Task.isCancelled else { return }
+      let count = await Task.detached(priority: .utility) { Self.words(in: text) }.value
+      guard !Task.isCancelled else { return }
+      wordCount = count
+    }
+  }
+
+  nonisolated private static func words(in text: String) -> Int {
+    var count = 0
+    var inWord = false
+    for scalar in text.unicodeScalars {
+      let isWordCharacter = CharacterSet.alphanumerics.contains(scalar)
+      if isWordCharacter, !inWord { count += 1 }
+      inWord = isWordCharacter || (inWord && (scalar == "'" || scalar == "’" || scalar == "-"))
+    }
+    return count
+  }
+
+  private var isShowingDocument: Bool {
+    if case .document = content { return true }
+    return false
+  }
+
+  /// Save, Reload and the Edit/Read switch for the menu bar.
+  private var documentActions: DocumentActions? {
+    guard case .document = content else { return nil }
+    return DocumentActions(
+      save: { saver.flush() }, reload: { refresh() }, toggleMode: { isEditing.toggle() },
+      isEditing: isEditing)
+  }
+
+  /// A note the user can rename and pin: inside one of the app's folders.
+  private func isNote(_ file: URL) -> Bool {
+    library.root(of: file, roots: roots) != nil
+  }
+
+  /// The note's name, or the folder's for its README.
+  private var title: String {
+    guard case .document(let file, _) = content else { return "" }
+    if file != navigator.selection, FolderLibrary.isDirectory(file.deletingLastPathComponent()),
+      file.deletingPathExtension().lastPathComponent.lowercased() == "readme"
+    {
+      return readmeFolder(of: file)?.lastPathComponent ?? file.lastPathComponent
+    }
+    return file.deletingPathExtension().lastPathComponent
+  }
+
+  /// Where the note is: "Projects · iCloud Drive", "README.md · v57/website".
   private var subtitle: String {
-    guard case .document(let file, _) = content, file != navigator.selection else { return "" }
-    return file.lastPathComponent
+    guard case .document(let file, _) = content else { return "" }
+    let folder = file.deletingLastPathComponent()
+    let root = library.root(of: file, roots: roots)
+    let place: String
+    if let notesRoot = notes.url, root == notesRoot {
+      place = notes.isICloud ? "iCloud Drive" : "Notes"
+    } else if let root, let repository = repositories.repositories.first(where: { repositories.directory(for: $0) == root }) {
+      place = repository.fullName
+    } else {
+      place = root?.lastPathComponent ?? folder.lastPathComponent
+    }
+    if file != navigator.selection, title != file.deletingPathExtension().lastPathComponent {
+      return "\(file.lastPathComponent) · \(place)"
+    }
+    let folderName = folder == root ? nil : folder.lastPathComponent
+    return [folderName, place].compactMap { $0 }.joined(separator: " · ")
+  }
+
+  /// The folder a README belongs to (it may sit in .github/ or docs/).
+  private func readmeFolder(of file: URL) -> URL? {
+    let folder = file.deletingLastPathComponent()
+    return [".github", "docs"].contains(folder.lastPathComponent) ? folder.deletingLastPathComponent() : folder
   }
 
   // MARK: - Loading
 
   private func load() async {
     saver.flush()  // the previous document's pending edits
-    guard let selection = navigator.selection else {
-      content = .empty
-      return
-    }
     let file: URL
-    if FolderLibrary.isDirectory(selection) {
-      guard let readme = library.readme(in: selection) else {
-        content = .noReadme(folder: selection)
-        return
+    if let selection = navigator.selection {
+      if FolderLibrary.isDirectory(selection) {
+        guard let readme = library.readme(in: selection) else {
+          content = .noReadme(folder: selection)
+          return
+        }
+        file = readme
+      } else {
+        file = selection
       }
+    } else if case .folder(let folder) = navigator.item, let readme = library.readme(in: folder) {
+      // Nothing chosen in the list yet: the folder's README, as on GitHub.
       file = readme
     } else {
-      file = selection
+      content = .empty
+      return
     }
     if case .document(let shown, _) = content, shown != file { content = .loading }
     if case .empty = content { content = .loading }

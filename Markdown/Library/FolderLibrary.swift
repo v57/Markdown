@@ -279,7 +279,9 @@ struct FileNode: Identifiable, Hashable {
 /// What the detail pane shows, with back/forward history. Selecting a folder shows its
 /// README; following a link pushes the previous selection.
 @Observable final class Navigator {
-  /// The selected sidebar item (folder or markdown file).
+  /// What the note list shows (the sidebar's selection).
+  var item: LibraryItem?
+  /// The shown note, or a folder whose README is shown (a link to a folder).
   var selection: URL? {
     didSet {
       guard selection != oldValue else { return }
