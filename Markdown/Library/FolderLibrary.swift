@@ -279,7 +279,9 @@ struct FileNode: Identifiable, Hashable {
 /// What the detail pane shows, with back/forward history. Selecting a folder shows its
 /// README; following a link pushes the previous selection.
 @Observable final class Navigator {
-  /// The selected sidebar item (folder or markdown file).
+  /// What the note list shows (the sidebar's selection).
+  var item: LibraryItem?
+  /// The shown note, or a folder whose README is shown (a link to a folder).
   var selection: URL? {
     didSet {
       guard selection != oldValue else { return }
@@ -308,8 +310,8 @@ struct FileNode: Identifiable, Hashable {
     selection = url
   }
 
-  /// Follows a rename or move: the selection and history entries at or inside `old`
-  /// point into `new` instead.
+  /// Follows a rename or move: the listed folder, the selection and history entries at
+  /// or inside `old` point into `new` instead.
   func replace(_ old: URL, with new: URL) {
     let root = FolderLibrary.canonical(old).path
     func moved(_ url: URL) -> URL {
@@ -319,6 +321,7 @@ struct FileNode: Identifiable, Hashable {
     }
     back = back.map(moved)
     forward = forward.map(moved)
+    if case .folder(let listed) = item { item = .folder(moved(listed)) }
     if let selection {
       isTraversing = true
       keepsAnchor = true
@@ -328,8 +331,8 @@ struct FileNode: Identifiable, Hashable {
     }
   }
 
-  /// Drops the selection and history entries inside `folder` (it left the sidebar, and
-  /// with it the app's access).
+  /// Drops the listed folder, the selection and history entries inside `folder` (it was
+  /// deleted, or left the sidebar and with it the app's access).
   func forget(under folder: URL) {
     let root = FolderLibrary.canonical(folder).path
     func isInside(_ url: URL) -> Bool {
@@ -338,6 +341,7 @@ struct FileNode: Identifiable, Hashable {
     }
     back.removeAll(where: isInside)
     forward.removeAll(where: isInside)
+    if case .folder(let listed) = item, isInside(listed) { item = nil }
     if let selection, isInside(selection) {
       isTraversing = true
       self.selection = nil

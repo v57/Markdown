@@ -24,6 +24,8 @@
     /// Puts the caret in the editor when it appears (a note just created): typing goes
     /// straight into it.
     public var startsEditing: Bool
+    /// Formatting commands from the host (toolbar buttons, a Format menu) go to this editor.
+    public var commands: MarkdownEditorCommands?
 
     public init(
       metrics: MarkdownMetrics = .standard,
@@ -33,7 +35,8 @@
       anchor: String? = nil,
       onChange: @escaping @MainActor (String) -> Void = { _ in },
       onOpenURL: (@MainActor (URL) -> Bool)? = nil,
-      startsEditing: Bool = false
+      startsEditing: Bool = false,
+      commands: MarkdownEditorCommands? = nil
     ) {
       self.metrics = metrics
       self.text = text
@@ -43,12 +46,14 @@
       self.onChange = onChange
       self.onOpenURL = onOpenURL
       self.startsEditing = startsEditing
+      self.commands = commands
     }
 
     /// Applies the non-text configuration (cheap when unchanged).
     @MainActor private func configure(_ textView: EditorTextView, coordinator: Coordinator) {
       textView.onChange = onChange
       textView.onOpenURL = onOpenURL
+      commands?.textView = textView
       if textView.isReadOnly != isReadOnly { textView.isReadOnly = isReadOnly }
       if coordinator.resolvedDocument != resolver.documentURL || !coordinator.hasResolver {
         coordinator.hasResolver = true

@@ -18,6 +18,8 @@ import Observation
   /// Runs before anything moves on disk: the open document's pending edits must reach
   /// its file while the file is still where the editor thinks it is.
   @ObservationIgnored var willChangeFiles: () -> Void = {}
+  /// Runs after an item moved or was renamed (pins and recents follow it).
+  @ObservationIgnored var didMove: (URL, URL) -> Void = { _, _ in }
 
   @ObservationIgnored private let library: FolderLibrary
   @ObservationIgnored private let navigator: Navigator
@@ -29,10 +31,15 @@ import Observation
 
   // MARK: - Create
 
-  /// Creates an empty note in `directory` and shows it.
+  /// Creates an empty note in `directory` (named `name`, else "Untitled") and shows it.
   @discardableResult
-  func newNote(in directory: URL) -> URL? {
-    let url = create(Self.availableURL(for: "Untitled.md", in: directory, isDirectory: false)) {
+  func newNote(in directory: URL, named name: String? = nil) -> URL? {
+    let base = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "/", with: "-")
+      .replacingOccurrences(of: ":", with: "-")
+    let title = base.map { $0.hasPrefix(".") ? String($0.drop { $0 == "." }) : $0 }
+    let fileName = (title?.isEmpty == false ? title! : "Untitled") + ".md"
+    let url = create(Self.availableURL(for: fileName, in: directory, isDirectory: false)) {
       try Data().write(to: $0, options: .withoutOverwriting)
     }
     if url != nil { navigator.startsEditing = true }
@@ -144,6 +151,7 @@ import Observation
     let target = FolderLibrary.canonical(target)
     library.expanded.insert(FolderLibrary.canonical(target.deletingLastPathComponent()))
     navigator.replace(FolderLibrary.canonical(url), with: target)
+    didMove(FolderLibrary.canonical(url), target)
     library.reload()
   }
 
