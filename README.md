@@ -98,7 +98,7 @@ App (Markdown.xcodeproj)
   UIViewControllerRepresentable on iOS.
 
   Three columns, as in Notes: the sidebar lists where notes live (All Notes, the
-  notes folder in iCloud Drive or on the device and its folders, GitHub
+  notes folder (synced through the vault) and its folders, GitHub
   repositories, folders dropped on the sidebar or added with Add Folder (⇧⌘O),
   files opened on their own); the note list shows the selected folder's notes,
   newest first, grouped by date (Pinned, Today, Yesterday, …) with each note's
@@ -130,14 +130,15 @@ App (Markdown.xcodeproj)
                            build settings)
 
   Notes: the sidebar's first section is the app's own notes folder —
-  NotesLocation resolves the iCloud Drive container's Documents ("Markdown" in
-  Finder and Files; entitlements in Markdown.entitlements and
-  Markdown-iOS.entitlements, NSUbiquitousContainers in Info.plist), falling
-  back to the local Documents folder when iCloud is unavailable, and moves
-  local notes into iCloud the first time it is. A file presenter on the folder
-  reloads the sidebar and the open note when a sync (or another app) changes
-  them; not-yet-downloaded notes (".Name.md.icloud") are listed by name and
-  downloaded by the coordinated read. FileActions creates notes (⌘N) and
+  NotesLocation uses the app's Documents (On My iPhone › Markdown in Files on
+  iOS) or a folder chosen with Choose Notes Folder… (macOS, a security-scoped
+  bookmark). The notes sync through the vault (../Vault: CloudKit, encrypted,
+  shared with Shell); NotesMirror keeps the folder and the vault's notes the
+  same both ways, so they stay plain files any editor can open. New notes are
+  encrypted `.mdenc` files unless Encrypt New Notes is off. Notes earlier
+  versions kept in the app's iCloud Drive folder are copied in once. A file
+  presenter on the folder reloads the sidebar and the open note when the mirror
+  (or another app) changes them. FileActions creates notes (⌘N) and
   folders (⇧⌘N), renames, moves (drag onto a folder; files dragged in from
   other apps are copied) and trashes (Delete in the sidebar on macOS; a
   confirmed delete on iOS) in any folder the app can write. A new note opens
