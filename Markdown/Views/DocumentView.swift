@@ -324,7 +324,7 @@ struct DocumentView: View {
     @ViewBuilder private var saveStatus: some View {
       switch saver.state {
       case .saved:
-        Label(isInICloud ? "Saved to iCloud Drive" : "Saved", systemImage: isInICloud ? "checkmark.icloud" : "checkmark.circle")
+        Label(isInICloud ? "Saved, syncs through iCloud" : "Saved", systemImage: isInICloud ? "checkmark.icloud" : "checkmark.circle")
       case .unsaved:
         Label("Edited", systemImage: "pencil.circle")
       case .failed:
@@ -403,14 +403,14 @@ struct DocumentView: View {
     return file.deletingPathExtension().lastPathComponent
   }
 
-  /// Where the note is: "Projects · iCloud Drive", "README.md · v57/website".
+  /// Where the note is: "Projects · Notes", "README.md · v57/website".
   private var subtitle: String {
     guard case .document(let file, _) = content else { return "" }
     let folder = file.deletingLastPathComponent()
     let root = library.root(of: file, roots: roots)
     let place: String
     if let notesRoot = notes.url, root == notesRoot {
-      place = notes.isICloud ? "iCloud Drive" : "Notes"
+      place = "Notes"
     } else if let root, let repository = repositories.repositories.first(where: { repositories.directory(for: $0) == root }) {
       place = repository.fullName
     } else {

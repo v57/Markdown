@@ -144,7 +144,7 @@ struct SidebarView: View {
         Text(notes.isICloud ? "iCloud" : storageName)
         if notes.isICloud {
           Image(systemName: "icloud")
-            .help("Notes are in iCloud Drive and sync to your other devices.")
+            .help("Notes sync through iCloud to your other devices and to Shell, encrypted.")
         }
       }
     }
@@ -196,12 +196,24 @@ struct SidebarView: View {
           .menuIndicator(.hidden)
           .fixedSize()
         Spacer()
-        if notes.url != nil {
-          Label(notes.isICloud ? "iCloud Drive" : "On This Mac", systemImage: notes.isICloud ? "checkmark.icloud" : "internaldrive")
-            .labelStyle(.titleAndIcon)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .help(notes.isICloud ? "Notes are saved in iCloud Drive." : "Notes are saved on this Mac. Turn on iCloud Drive to sync them.")
+        if let folder = notes.url {
+          // Where the notes are as files, and choosing another folder for them.
+          Menu {
+            Button("Show Notes Folder in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+            Button("Choose Notes Folder…") { chooseNotesFolder() }
+          } label: {
+            Label(notes.isICloud ? "iCloud" : "On This Mac", systemImage: notes.isICloud ? "checkmark.icloud" : "internaldrive")
+              .labelStyle(.titleAndIcon)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .menuStyle(.borderlessButton)
+          .menuIndicator(.hidden)
+          .fixedSize()
+          .help(
+            notes.isICloud
+              ? "Notes are files in \(folder.lastPathComponent) and sync through iCloud, encrypted."
+              : "Notes are files in \(folder.lastPathComponent) on this Mac. Sign in to iCloud to sync them.")
         }
       }
       .padding(.horizontal, 12)
@@ -317,6 +329,18 @@ struct SidebarView: View {
   }
 
   #if os(macOS)
+    /// Picks the folder the notes are kept in as files (the sandbox needs the user's pick).
+    private func chooseNotesFolder() {
+      let panel = NSOpenPanel()
+      panel.canChooseDirectories = true
+      panel.canChooseFiles = false
+      panel.canCreateDirectories = true
+      panel.prompt = "Use for Notes"
+      panel.message = "Your notes are written to this folder as Markdown files and stay in sync with it."
+      guard panel.runModal() == .OK, let folder = panel.url else { return }
+      notes.choose(folder)
+    }
+
     /// The projects the v57 apps share (added in Git and the others, through the vault) that aren't
     /// sidebar folders yet, live as they change. The sandbox only opens a folder the user picks, so adding
     /// one shows an open panel on it.

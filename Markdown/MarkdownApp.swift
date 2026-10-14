@@ -1,6 +1,7 @@
 import MarkdownKit
 import SwiftData
 import SwiftUI
+import VaultKit
 
 #if os(macOS) && DIRECT_DISTRIBUTION
   import UpdateKit
@@ -35,6 +36,8 @@ import SwiftUI
     #if os(macOS) && DIRECT_DISTRIBUTION
       updater.start()
     #endif
+    // Notes sync through the vault (iCloud, encrypted, shared with Shell).
+    Vault.shared.startSync()
   }
 
   /// The probes drive the live sample editor, so they get it instead of the library UI.

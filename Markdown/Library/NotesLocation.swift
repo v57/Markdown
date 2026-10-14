@@ -1,66 +1,124 @@
 import Foundation
 import Observation
+import VaultKit
 
-/// Where the app's own notes live: the app's iCloud Drive folder ("Markdown" in Finder
-/// and Files) when iCloud is available, otherwise the app's local Documents folder (on
-/// iOS that is On My iPhone › Markdown in Files).
+/// Where the app's own notes live, and how they sync.
 ///
-/// Notes are plain markdown files either way; iCloud Drive syncs them. The first time
-/// iCloud is available, notes written locally before are moved into it. A file presenter
-/// on the folder reports changes that arrive from other devices (and other apps), so the
-/// sidebar and the open note follow them.
+/// The notes sync through the vault (`../Vault`): CloudKit, encrypted, no iCloud Drive needed, shared with Shell.
+/// On each device they are also real files in a local folder (`NotesMirror` keeps the two the same both ways), so
+/// Finder, Files, other editors and git work on them. The folder is the app's Documents (on iOS: On My iPhone ›
+/// Markdown in Files) unless the user picked another one on the Mac (Choose Notes Folder…).
+///
+/// Notes kept in the app's iCloud Drive folder by earlier versions are copied in once; the originals stay. A file
+/// presenter on the folder reports changes (the mirror's writes, other apps), so the sidebar and the open note
+/// follow them.
 @Observable final class NotesLocation {
-  /// The notes folder, once resolved (resolving iCloud can take a moment at launch).
+  /// The notes folder, once resolved.
   private(set) var url: URL?
+  /// Whether the notes sync through iCloud (signed in, and the app has the vault's CloudKit container).
   private(set) var isICloud = false
-  /// Bumped when files in the folder change outside the app (sync, other apps).
+  /// Bumped when files in the folder change outside the editor (sync, other apps).
   private(set) var externalChanges = 0
+  /// The mirror's last problem, if any.
+  var syncError: String? { mirror?.lastError }
 
   @ObservationIgnored private var presenter: FolderPresenter?
+  @ObservationIgnored private var mirror: NotesMirror?
+  @ObservationIgnored private var scopedFolder: URL?
 
-  /// Resolves the folder (off the main thread: the first iCloud lookup can block) and
-  /// starts watching it.
+  private static let bookmarkKey = "NotesFolderBookmark"
+  private static let importedKey = "ImportedICloudDriveNotes"
+
+  /// Resolves the folder, starts mirroring it, and imports the old iCloud Drive notes once.
   func resolve() async {
     guard url == nil else { return }
-    let (folder, iCloud) = await Task.detached(priority: .userInitiated) {
-      Self.locate()
-    }.value
-    url = folder
-    isICloud = iCloud
-    let presenter = FolderPresenter(url: folder) { [weak self] in self?.externalChanges += 1 }
+    use(Self.chosenFolder() ?? URL.documentsDirectory)
+    isICloud = FileManager.default.ubiquityIdentityToken != nil && CloudSync.isEntitled
+    if !UserDefaults.standard.bool(forKey: Self.importedKey), let folder = url {
+      await Task.detached(priority: .utility) { Self.importICloudDriveNotes(into: folder) }.value
+      UserDefaults.standard.set(true, forKey: Self.importedKey)
+      mirror?.scheduleReconcile(after: 0)
+    }
+  }
+
+  /// Moves the notes to a folder the user picked: the notes are written there; the old folder keeps its files.
+  func choose(_ folder: URL) {
+    if let bookmark = try? folder.bookmarkData(options: Self.bookmarkOptions, includingResourceValuesForKeys: nil, relativeTo: nil) {
+      UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
+    }
+    use(folder)
+  }
+
+  private func use(_ folder: URL) {
+    stop()
+    if folder.startAccessingSecurityScopedResource() { scopedFolder = folder }
+    let canonical = FolderLibrary.canonical(folder)
+    url = canonical
+    let presenter = FolderPresenter(url: canonical) { [weak self] in self?.externalChanges += 1 }
     NSFileCoordinator.addFilePresenter(presenter)
     self.presenter = presenter
+    guard let store = VaultStore.shared else { return }
+    let mirror = NotesMirror(
+      folder: canonical, store: store, keys: NoteFiles.keys,
+      stateDirectory: URL.applicationSupportDirectory.appendingPathComponent("NotesMirror", isDirectory: true))
+    mirror.didChangeFiles = { [weak self] in
+      MainActor.assumeIsolated { self?.externalChanges += 1 }
+    }
+    mirror.start()
+    self.mirror = mirror
+  }
+
+  private func stop() {
+    mirror?.stop()
+    mirror = nil
+    if let presenter { NSFileCoordinator.removeFilePresenter(presenter) }
+    presenter = nil
+    scopedFolder?.stopAccessingSecurityScopedResource()
+    scopedFolder = nil
   }
 
   deinit {
     if let presenter { NSFileCoordinator.removeFilePresenter(presenter) }
   }
 
-  nonisolated private static func locate() -> (URL, Bool) {
-    let fm = FileManager.default
-    let local = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    try? fm.createDirectory(at: local, withIntermediateDirectories: true)
-    guard let container = fm.url(forUbiquityContainerIdentifier: nil) else {
-      return (FolderLibrary.canonical(local), false)
-    }
-    let documents = container.appendingPathComponent("Documents", isDirectory: true)
-    try? fm.createDirectory(at: documents, withIntermediateDirectories: true)
-    moveLocalNotes(from: local, to: documents)
-    return (FolderLibrary.canonical(documents), true)
+  #if os(macOS)
+    private static let bookmarkOptions: URL.BookmarkCreationOptions = .withSecurityScope
+    private static let resolveOptions: URL.BookmarkResolutionOptions = .withSecurityScope
+  #else
+    private static let bookmarkOptions: URL.BookmarkCreationOptions = []
+    private static let resolveOptions: URL.BookmarkResolutionOptions = []
+  #endif
+
+  private static func chosenFolder() -> URL? {
+    guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return nil }
+    var isStale = false
+    return try? URL(resolvingBookmarkData: data, options: resolveOptions, relativeTo: nil, bookmarkDataIsStale: &isStale)
   }
 
-  /// Moves notes written while iCloud was off into iCloud Drive (`setUbiquitous`, the
-  /// system's way to hand a file to iCloud). A name already taken there gets a number.
-  nonisolated private static func moveLocalNotes(from local: URL, to iCloud: URL) {
-    let fm = FileManager.default
+  /// Copies the notes earlier versions kept in the app's iCloud Drive folder into the notes folder, where the
+  /// mirror makes them vault notes. Files already there (same path) are skipped.
+  nonisolated private static func importICloudDriveNotes(into folder: URL) {
+    let fileManager = FileManager.default
+    guard let container = fileManager.url(forUbiquityContainerIdentifier: VaultConfiguration.notesContainer) else { return }
+    let documents = container.appendingPathComponent("Documents", isDirectory: true)
     guard
-      let items = try? fm.contentsOfDirectory(
-        at: local, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+      let enumerator = fileManager.enumerator(
+        at: documents, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
     else { return }
-    for item in items where FolderLibrary.isDirectory(item) || FolderLibrary.isText(item) {
-      let target = FileActions.availableURL(
-        for: item.lastPathComponent, in: iCloud, isDirectory: FolderLibrary.isDirectory(item))
-      try? fm.setUbiquitous(true, itemAt: item, destinationURL: target)
+    let root = documents.standardizedFileURL.resolvingSymlinksInPath().path
+    for case let url as URL in enumerator {
+      guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
+      let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+      guard path.hasPrefix(root + "/") else { continue }
+      let target = folder.appendingPathComponent(String(path.dropFirst(root.count + 1)))
+      guard !fileManager.fileExists(atPath: target.path) else { continue }
+      var error: NSError?
+      // Coordinated: a file iCloud hasn't downloaded is fetched first.
+      NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &error) { source in
+        guard let data = try? Data(contentsOf: source) else { return }
+        try? fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: target, options: .withoutOverwriting)
+      }
     }
   }
 }

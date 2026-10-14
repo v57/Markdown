@@ -66,7 +66,7 @@ struct WelcomeView: View {
 
       VStack(spacing: 4) {
         action(
-          "New Note", notes.isICloud ? "Start writing. Notes sync through iCloud Drive." : "Start writing. Notes are plain files on this \(deviceName).", systemImage: "square.and.pencil",
+          "New Note", notes.isICloud ? "Start writing. Notes are files on this \(deviceName) and sync through iCloud, encrypted." : "Start writing. Notes are plain files on this \(deviceName).", systemImage: "square.and.pencil",
           shortcut: "⌘N", command: .newNote(nil))
         action(
           "Open Folder…", "Edit the Markdown files already on your \(deviceName), in place.",

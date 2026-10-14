@@ -6,14 +6,17 @@
 	     The sandbox, user-selected-files and network entitlements come from build settings. -->
 	<key>com.apple.security.files.bookmarks.app-scope</key>
 	<true/>
-	<!-- Notes sync through the app's iCloud Drive folder (NotesLocation). -->
+	<!-- Notes sync through the vault's CloudKit container (iCloud.dev.v57). The app's iCloud Drive folder is
+	     where earlier versions kept notes: they are imported from it once (NotesLocation). -->
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.$(CFBundleIdentifier)</string>
+		<string>iCloud.dev.v57</string>
 	</array>
 	<key>com.apple.developer.icloud-services</key>
 	<array>
 		<string>CloudDocuments</string>
+		<string>CloudKit</string>
 	</array>
 	<key>com.apple.developer.ubiquity-container-identifiers</key>
 	<array>
@@ -29,5 +32,7 @@
 	<array>
 		<string>$(AppIdentifierPrefix)dev.v57.shared</string>
 	</array>
+	<key>com.apple.developer.aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>
