@@ -47,7 +47,8 @@ struct SidebarView: View {
         }
       }
       #if os(macOS)
-        projectsSection
+        // The vault's projects are the user's: never in the screenshot demo.
+        if !ScreenshotDemo.isOn { projectsSection }
       #endif
       if !openedFiles.isEmpty {
         Section("Files") {

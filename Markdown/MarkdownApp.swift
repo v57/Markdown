@@ -36,8 +36,12 @@ import VaultKit
     #if os(macOS) && DIRECT_DISTRIBUTION
       updater.start()
     #endif
-    // Notes sync through the vault (iCloud, encrypted, shared with Shell).
-    Vault.shared.startSync()
+    // Notes sync through the vault (iCloud, encrypted, shared with Shell); never the screenshot demo's.
+    if ScreenshotDemo.isOn {
+      ScreenshotDemo.write()
+    } else {
+      Vault.shared.startSync()
+    }
   }
 
   /// The probes drive the live sample editor, so they get it instead of the library UI.
@@ -55,7 +59,8 @@ import VaultKit
   private static let sidebarStore: ModelContainer = {
     do {
       return try ModelContainer(
-        for: SidebarFolder.self, configurations: ModelConfiguration(cloudKitDatabase: .none))
+        for: SidebarFolder.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: ScreenshotDemo.isOn, cloudKitDatabase: .none))
     } catch {
       fatalError("Could not open the sidebar store: \(error)")
     }

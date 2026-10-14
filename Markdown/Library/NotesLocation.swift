@@ -32,6 +32,11 @@ import VaultKit
   /// Resolves the folder, starts mirroring it, and imports the old iCloud Drive notes once.
   func resolve() async {
     guard url == nil else { return }
+    // The screenshot demo's notes: no bookmark, no mirror, no import.
+    if ScreenshotDemo.isOn {
+      url = FolderLibrary.canonical(ScreenshotDemo.notes)
+      return
+    }
     use(Self.chosenFolder() ?? URL.documentsDirectory)
     isICloud = FileManager.default.ubiquityIdentityToken != nil && CloudSync.isEntitled
     if !UserDefaults.standard.bool(forKey: Self.importedKey), let folder = url {

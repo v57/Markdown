@@ -1,0 +1,36 @@
+{
+  "build": { "scheme": "Markdown", "project": "Markdown.xcodeproj" },
+  "appearances": ["light", "dark"],
+  "watch": ["Markdown", "Sources"],
+  "mac": { "window": [1440, 900] },
+  "ios": { "devices": ["iPhone 18 Pro Max", "iPad Pro 13-inch (M5)"] },
+  "scenes": [
+    {
+      "id": "01-note",
+      "arguments": ["--screenshot-demo", "--open", "Notes/Trip to Lisbon.md"],
+      "delay": 3,
+      "caption": "Write Markdown and see it as you type"
+    },
+    {
+      "id": "02-docs",
+      "arguments": ["--screenshot-demo", "--open", "Atlas Docs/README.md"],
+      "platforms": ["mac", "ipad"],
+      "delay": 3,
+      "caption": "Code, tables and links, rendered in place"
+    },
+    {
+      "id": "03-quick-open",
+      "arguments": ["--screenshot-demo", "--open", "Notes/Meetings/Design review.md", "--quick-open"],
+      "platforms": ["mac", "ipad"],
+      "delay": 3,
+      "caption": "Jump to any note with Quick Open"
+    },
+    {
+      "id": "04-welcome",
+      "arguments": ["--screenshot-demo", "--welcome"],
+      "platforms": ["mac"],
+      "delay": 3,
+      "caption": "Start from a note, a folder or GitHub"
+    }
+  ]
+}

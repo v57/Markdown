@@ -24,7 +24,7 @@ import Observation
   init() {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     folder = support.appendingPathComponent("GitHub", isDirectory: true)
-    repositories = Self.loadStates(in: folder)
+    repositories = ScreenshotDemo.isOn ? [] : Self.loadStates(in: folder)
   }
 
   /// The local copy of a repository.

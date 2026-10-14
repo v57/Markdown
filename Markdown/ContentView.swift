@@ -13,7 +13,7 @@ struct ContentView: View {
   @State private var notes = NotesLocation()
   @State private var github = GitHubAuth()
   @State private var repositories = RepositoryStore()
-  @State private var preferences = NotePreferences()
+  @State private var preferences = NotePreferences(defaults: ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard)
   @State private var window = WindowState()
   @AppStorage("showsWelcome") private var showsWelcome = true
   @Environment(\.modelContext) private var context
@@ -65,7 +65,7 @@ struct ContentView: View {
       repositories.didChangeFiles = { [library] in library.reload() }
       actions.didMove = { [preferences] in preferences.replace($0, with: $1) }
       actions.notesFolder = { [notes] in notes.url }
-      if showsWelcome, !Self.hasWelcomed {
+      if ScreenshotDemo.isOn ? ScreenshotDemo.flag("--welcome") : showsWelcome, !Self.hasWelcomed {
         Self.hasWelcomed = true
         window.isWelcomeShown = true
       }
@@ -74,6 +74,7 @@ struct ContentView: View {
       updateRoots()
       if navigator.item == nil, navigator.selection == nil { navigator.item = .allNotes }
       repositories.refreshChanges()
+      if ScreenshotDemo.isOn { openScreenshotDemo() }
     }
     // Notes changed by sync or another app: re-list, and reload the open note.
     .onChange(of: notes.externalChanges) { library.reload() }
@@ -159,6 +160,16 @@ struct ContentView: View {
   }
 
   /// The app's own folders: notes and GitHub repositories.
+  /// `--screenshot-demo`: the docs folder in the sidebar, and the scene's note and panels.
+  private func openScreenshotDemo() {
+    library.add([ScreenshotDemo.docs], existing: folders, context: context)
+    navigator.item = .allNotes
+    if let path = ScreenshotDemo.value("--open") {
+      navigator.open(FolderLibrary.canonical(ScreenshotDemo.root.appendingPathComponent(path)))
+    }
+    if ScreenshotDemo.flag("--quick-open") { window.isQuickOpenShown = true }
+  }
+
   private func updateRoots() {
     library.builtInRoots = (notes.url.map { [$0] } ?? []) + repositories.directories
   }
