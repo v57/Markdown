@@ -3,6 +3,13 @@
 
 import PackageDescription
 
+/// Another v57 repository: GitHub's main branch, or the checkout next to this one with `V57_LOCAL=1` (in Xcode,
+/// open Markdown-Local.xcworkspace instead).
+func v57(_ name: String) -> Package.Dependency {
+  Context.environment["V57_LOCAL"] == nil
+    ? .package(url: "https://github.com/v57/\(name).git", branch: "main") : .package(path: "../\(name)")
+}
+
 let package = Package(
   name: "Markdown",
   platforms: [
@@ -17,8 +24,8 @@ let package = Package(
   dependencies: [
     // swift-markdown (also an Xcode SPM dependency) — provides the Markdown module (cmark AST).
     .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.8.0"),
-    // The Code repo next to this one — CodeHighlighting colors fenced code blocks.
-    .package(path: "../Code"),
+    // The Code repo: CodeHighlighting colors fenced code blocks.
+    v57("Code"),
   ],
   targets: [
     // The single target: every source under Sources/MarkdownKit/ compiles into the MarkdownKit
