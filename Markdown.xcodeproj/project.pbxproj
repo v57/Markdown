@@ -11,6 +11,7 @@
 		269C449B303192220055AD81 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 269C449A303192220055AD81 /* Markdown */; };
 		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = D5C0DE000000000000000002 /* UpdateKit */; };
 		61748B000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = 61748B000000000000000002 /* GitHubKit */; };
+		56CEAB805123C0D171E0708B /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 96BB9BDBE9F3D27B6AA11CDF /* VaultKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 				269C449B303192220055AD81 /* Markdown in Frameworks */,
 				267577A53037283100FB9989 /* MarkdownKit in Frameworks */,
 				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
+				56CEAB805123C0D171E0708B /* VaultKit in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -76,6 +78,7 @@
 				267577A43037283100FB9989 /* MarkdownKit */,
 				D5C0DE000000000000000002 /* UpdateKit */,
 				61748B000000000000000002 /* GitHubKit */,
+				96BB9BDBE9F3D27B6AA11CDF /* VaultKit */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Markdown.app */;
@@ -110,6 +113,7 @@
 				267577A33037283100FB9989 /* XCLocalSwiftPackageReference "../Markdown" */,
 				D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */,
 				61748B000000000000000001 /* XCLocalSwiftPackageReference "../Git" */,
+				1746C461A3ED129A1AA8F0BC /* XCLocalSwiftPackageReference "../Vault" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -404,6 +408,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Git;
 		};
+		1746C461A3ED129A1AA8F0BC /* XCLocalSwiftPackageReference "../Vault" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Vault;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -436,6 +444,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 61748B000000000000000001 /* XCLocalSwiftPackageReference "../Git" */;
 			productName = GitHubKit;
+		};
+		96BB9BDBE9F3D27B6AA11CDF /* VaultKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1746C461A3ED129A1AA8F0BC /* XCLocalSwiftPackageReference "../Vault" */;
+			productName = VaultKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

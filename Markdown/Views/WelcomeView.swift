@@ -11,6 +11,7 @@ struct WelcomeView: View {
   @Environment(NotesLocation.self) private var notes
   @Environment(\.dismiss) private var dismiss
   @AppStorage("showsWelcome") private var showsWelcome = true
+  @AppStorage(NoteFiles.encryptNewNotesKey) private var encryptsNewNotes = true
 
   var body: some View {
     #if os(macOS)
@@ -75,6 +76,16 @@ struct WelcomeView: View {
 
       Spacer(minLength: 24)
 
+      // New notes are encrypted with the key the v57 apps share (Shell opens them too).
+      Toggle("Encrypt new notes", isOn: $encryptsNewNotes)
+        #if os(macOS)
+          .toggleStyle(.checkbox)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        #endif
+        .padding(.horizontal, 32)
+        .padding(.bottom, 6)
       Toggle(showsWelcomeLabel, isOn: $showsWelcome)
         #if os(macOS)
           .toggleStyle(.checkbox)

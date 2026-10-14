@@ -32,7 +32,8 @@ struct FileNode: Identifiable, Hashable {
   @ObservationIgnored private var accessing: Set<URL> = []
   @ObservationIgnored private var listings: [URL: [FileNode]] = [:]
 
-  nonisolated static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn"]
+  /// `mdenc` is an encrypted note (`NoteFiles`).
+  nonisolated static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn", "mdenc"]
 
   // MARK: - Folders
 

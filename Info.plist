@@ -20,6 +20,18 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Encrypted Note</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>dev.v57.md.encrypted</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Plain Text Document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
@@ -29,6 +41,28 @@
 			<array>
 				<string>public.plain-text</string>
 			</array>
+		</dict>
+	</array>
+	<!-- An encrypted note (Name.mdenc): Markdown sealed with the key the v57 apps share. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>dev.v57.md.encrypted</string>
+			<key>UTTypeDescription</key>
+			<string>Encrypted Note</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mdenc</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>

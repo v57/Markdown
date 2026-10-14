@@ -8,8 +8,9 @@ import Observation
 /// needed.
 ///
 /// The OAuth App's client ID comes from the `GITHUB_CLIENT_ID` build setting (Info.plist
-/// key `GitHubClientID`); the app must have Device Flow enabled on GitHub. The token is
-/// kept in the Keychain.
+/// key `GitHubClientID`); the app must have Device Flow enabled on GitHub. The token is the
+/// sign-in the v57 apps share (`KeychainTokenStore.shared`: the shared keychain group, synced
+/// through iCloud Keychain), so signing in here or in Git or Dev signs in all three.
 @Observable final class GitHubAuth {
   enum State: Equatable {
     case signedOut
@@ -30,8 +31,8 @@ import Observation
   }
 
   init() {
-    let store = KeychainTokenStore(service: "dev.v57.md.github")
-    Self.migrateLegacyToken(in: store)
+    let store = KeychainTokenStore.shared
+    Self.migrateLegacyToken(into: store)
     // Without a client ID the saved token still works; only a new sign-in needs one.
     account = GitHubAccount(clientID: Self.clientID ?? "", store: store)
     // No request at launch: GitHub is contacted only when the user asks.
@@ -92,13 +93,17 @@ import Observation
     }
   }
 
-  /// Builds before GitHubKit kept the token under the account "token", with the login in
-  /// UserDefaults. Moves it to GitHubKit's layout so the user stays signed in.
-  private static func migrateLegacyToken(in store: KeychainTokenStore) {
-    guard let saved = try? store.load(), saved.login == "token" else { return }
-    let defaults = UserDefaults.standard
-    let login = defaults.string(forKey: "githubLogin") ?? "GitHub"
-    try? store.save(GitHubCredential(login: login, token: saved.token, scopes: ["repo"]))
-    defaults.removeObject(forKey: "githubLogin")
+  /// Moves a token saved by builds before the shared sign-in into it. The oldest builds kept it
+  /// under the account "token", with the login in UserDefaults.
+  private static func migrateLegacyToken(into store: KeychainTokenStore) {
+    let legacy = KeychainTokenStore(service: "dev.v57.md.github")
+    guard (try? store.load()) == nil, var saved = try? legacy.load() else { return }
+    if saved.login == "token" {
+      let defaults = UserDefaults.standard
+      saved = GitHubCredential(
+        login: defaults.string(forKey: "githubLogin") ?? "GitHub", token: saved.token, scopes: ["repo"])
+      defaults.removeObject(forKey: "githubLogin")
+    }
+    if (try? store.save(saved)) != nil { try? legacy.delete() }
   }
 }

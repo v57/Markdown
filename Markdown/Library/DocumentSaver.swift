@@ -92,19 +92,21 @@ import Observation
     file == self.file && (text == lastWritten || text == pending)
   }
 
+  /// Writes the text, sealed for an encrypted note (`NoteFiles`).
   nonisolated static func write(_ text: String, to url: URL) throws {
+    let data = try NoteFiles.data(for: text, at: url)
     var coordinationError: NSError?
     var writeError: Error?
     NSFileCoordinator().coordinate(
       writingItemAt: url, options: .forReplacing, error: &coordinationError
     ) { target in
       do {
-        try Data(text.utf8).write(to: target, options: .atomic)
+        try data.write(to: target, options: .atomic)
       } catch where isPermissionDenied(error) {
         // A file opened on its own ("Open with…"): the sandbox grants the file but not
         // its folder, where an atomic write puts its temporary copy. Write in place.
         do {
-          try Data(text.utf8).write(to: target)
+          try data.write(to: target)
         } catch {
           writeError = error
         }
@@ -113,5 +115,6 @@ import Observation
       }
     }
     if let error = coordinationError ?? writeError { throw error }
+    NoteFiles.remember(text, for: url)
   }
 }

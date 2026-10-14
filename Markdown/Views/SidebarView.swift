@@ -1,6 +1,7 @@
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+import VaultKit
 
 /// The sidebar: where notes live. All Notes and the notes folder (iCloud Drive or local)
 /// with its folders, connected GitHub repositories, folders added by dropping them here
@@ -18,6 +19,8 @@ struct SidebarView: View {
   @State private var isConnectingGitHub = false
   @State private var isDropTargeted = false
   @State private var allNotesCount: Int?
+  /// The shared projects section, collapsed until opened (it can be long).
+  @AppStorage("showsSharedProjects") private var showsProjects = false
 
   var body: some View {
     List(selection: itemBinding) {
@@ -43,6 +46,9 @@ struct SidebarView: View {
           #endif
         }
       }
+      #if os(macOS)
+        projectsSection
+      #endif
       if !openedFiles.isEmpty {
         Section("Files") {
           Label("Opened Files", systemImage: "doc.on.doc")
@@ -309,6 +315,44 @@ struct SidebarView: View {
     if let first = added.first { navigator.open(first) }
     return !added.isEmpty
   }
+
+  #if os(macOS)
+    /// The projects the v57 apps share (added in Git and the others, through the vault) that aren't
+    /// sidebar folders yet, live as they change. The sandbox only opens a folder the user picks, so adding
+    /// one shows an open panel on it.
+    @ViewBuilder private var projectsSection: some View {
+      let added = Set(rootFolders.map { FolderLibrary.canonical(URL(fileURLWithPath: $0.path)).path })
+      let projects = Vault.shared.localProjects.filter { project in
+        guard let url = project.localURL else { return false }
+        return !added.contains(FolderLibrary.canonical(url).path)
+      }
+      if !projects.isEmpty {
+        Section("Projects", isExpanded: $showsProjects) {
+          ForEach(projects) { project in
+            Button {
+              addProject(project)
+            } label: {
+              Label(project.name, systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(.plain)
+            .help("Add “\(project.name)” to the sidebar")
+          }
+        }
+      }
+    }
+
+    private func addProject(_ project: VaultProject) {
+      guard let url = project.localURL else { return }
+      let panel = NSOpenPanel()
+      panel.canChooseDirectories = true
+      panel.canChooseFiles = false
+      panel.directoryURL = url
+      panel.prompt = "Add"
+      panel.message = "Add “\(project.name)” to the sidebar. Markdown opens only folders you choose."
+      guard panel.runModal() == .OK, let chosen = panel.url else { return }
+      _ = add([chosen])
+    }
+  #endif
 }
 
 /// The rename prompt, the delete confirmation and file-operation errors.

@@ -218,6 +218,12 @@ struct DocumentView: View {
           preferences.togglePin(file)
         }
         Button("Rename…", systemImage: "pencil") { actions.beginRename(file) }
+        if actions.canToggleEncryption(file) {
+          let encrypted = NoteFiles.isEncrypted(file)
+          Button(encrypted ? "Decrypt Note" : "Encrypt Note", systemImage: encrypted ? "lock.open" : "lock") {
+            actions.setEncrypted(file, !encrypted)
+          }
+        }
       }
       #if os(macOS)
         Button("Show in Finder", systemImage: "folder") {
@@ -466,21 +472,21 @@ struct DocumentView: View {
   }
 
   /// UTF-8 first (what markdown nearly always is), else whatever encoding Foundation
-  /// detects. The read is coordinated: a note iCloud has not downloaded yet is fetched
-  /// first, and a sync in progress finishes before the text is read.
+  /// detects; an encrypted note is decrypted (`NoteFiles`). The read is coordinated: a note
+  /// iCloud has not downloaded yet is fetched first, a sync in progress finishes before the
+  /// text is read, and versions two devices saved apart are merged first.
   nonisolated private static func read(_ url: URL) throws -> String {
+    NoteFiles.resolveConflicts(at: url)
     var coordinationError: NSError?
     var result: Result<String, Error> = .failure(CocoaError(.fileReadUnknown))
     NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinationError) {
       url in
-      result = Result {
-        if let text = try? String(contentsOf: url, encoding: .utf8) { return text }
-        var encoding = String.Encoding.utf8
-        return try String(contentsOf: url, usedEncoding: &encoding)
-      }
+      result = Result { try NoteFiles.text(at: url) }
     }
     if let coordinationError { throw coordinationError }
-    return try result.get()
+    let text = try result.get()
+    NoteFiles.remember(text, for: url)
+    return text
   }
 
   private func refresh() {

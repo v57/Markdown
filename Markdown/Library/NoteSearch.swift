@@ -51,7 +51,7 @@ enum NoteSearch {
         else { continue }
         let name = url.deletingPathExtension().lastPathComponent
         let text: String? =
-          (values?.fileSize ?? 0) <= maxFileSize ? try? String(contentsOf: url, encoding: .utf8) : nil
+          (values?.fileSize ?? 0) <= maxFileSize ? try? NoteFiles.text(at: url) : nil
         // Every term somewhere: in the name or in the text.
         let all = terms.allSatisfy {
           name.range(of: $0, options: options) != nil

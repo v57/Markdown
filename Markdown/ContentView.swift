@@ -64,6 +64,7 @@ struct ContentView: View {
       repositories.willChangeFiles = { [actions] in actions.willChangeFiles() }
       repositories.didChangeFiles = { [library] in library.reload() }
       actions.didMove = { [preferences] in preferences.replace($0, with: $1) }
+      actions.notesFolder = { [notes] in notes.url }
       if showsWelcome, !Self.hasWelcomed {
         Self.hasWelcomed = true
         window.isWelcomeShown = true

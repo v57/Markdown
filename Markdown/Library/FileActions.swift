@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import VaultKit
 
 /// Organizing notes: create, rename, move and trash files and folders in any folder the
 /// app can write (the notes folder, sidebar folders, GitHub repositories).
@@ -20,6 +21,8 @@ import Observation
   @ObservationIgnored var willChangeFiles: () -> Void = {}
   /// Runs after an item moved or was renamed (pins and recents follow it).
   @ObservationIgnored var didMove: (URL, URL) -> Void = { _, _ in }
+  /// The app's notes folder, where new notes start encrypted (`NoteFiles.encryptsNewNotes`).
+  @ObservationIgnored var notesFolder: () -> URL? = { nil }
 
   @ObservationIgnored private let library: FolderLibrary
   @ObservationIgnored private let navigator: Navigator
@@ -31,16 +34,20 @@ import Observation
 
   // MARK: - Create
 
-  /// Creates an empty note in `directory` (named `name`, else "Untitled") and shows it.
+  /// Creates an empty note in `directory` (named `name`, else "Untitled") and shows it. In the notes
+  /// folder it's encrypted (`.mdenc`) unless the user turned that off.
   @discardableResult
   func newNote(in directory: URL, named name: String? = nil) -> URL? {
     let base = name?.trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: "/", with: "-")
       .replacingOccurrences(of: ":", with: "-")
     let title = base.map { $0.hasPrefix(".") ? String($0.drop { $0 == "." }) : $0 }
-    let fileName = (title?.isEmpty == false ? title! : "Untitled") + ".md"
+    let encrypted = NoteFiles.encryptsNewNotes && isInNotesFolder(directory)
+    let fileName =
+      (title?.isEmpty == false ? title! : "Untitled") + (encrypted ? "." + EncryptedNote.fileExtension : ".md")
+    let contents = encrypted ? (try? NoteFiles.data(for: "", at: URL(fileURLWithPath: fileName))) ?? Data() : Data()
     let url = create(Self.availableURL(for: fileName, in: directory, isDirectory: false)) {
-      try Data().write(to: $0, options: .withoutOverwriting)
+      try contents.write(to: $0, options: .withoutOverwriting)
     }
     if url != nil { navigator.startsEditing = true }
     return url
@@ -67,6 +74,63 @@ import Observation
     library.reload()
     navigator.open(url)
     return url
+  }
+
+  private func isInNotesFolder(_ directory: URL) -> Bool {
+    guard let notes = notesFolder() else { return false }
+    let root = FolderLibrary.canonical(notes).path
+    let path = FolderLibrary.canonical(directory).path
+    return path == root || path.hasPrefix(root + "/")
+  }
+
+  // MARK: - Encryption
+
+  /// Whether a note can be encrypted (a markdown file) or decrypted (an encrypted note).
+  func canToggleEncryption(_ url: URL) -> Bool {
+    !FolderLibrary.isDirectory(url) && FolderLibrary.isMarkdown(url)
+  }
+
+  /// Encrypts a note (`Name.md` → `Name.mdenc`, its text sealed with the vault key) or decrypts one back
+  /// to a plain file. The file keeps its place; the editor follows it.
+  func setEncrypted(_ url: URL, _ encrypted: Bool) {
+    guard NoteFiles.isEncrypted(url) != encrypted else { return }
+    willChangeFiles()
+    let name = EncryptedNote.url(for: url, encrypted: encrypted).lastPathComponent
+    let target = Self.availableURL(for: name, in: url.deletingLastPathComponent(), isDirectory: false)
+    do {
+      var text: Result<String, Error> = .failure(CocoaError(.fileReadUnknown))
+      var coordinationError: NSError?
+      NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinationError) { from in
+        text = Result { try NoteFiles.text(at: from) }
+      }
+      if let coordinationError { throw coordinationError }
+      let data = try NoteFiles.data(for: try text.get(), at: target)
+      var writeError: Error?
+      let coordinator = NSFileCoordinator()
+      coordinator.coordinate(
+        writingItemAt: url, options: .forMoving, writingItemAt: target, options: .forReplacing,
+        error: &coordinationError
+      ) { from, to in
+        do {
+          // Moved first, so iCloud sees one item renamed, then rewritten.
+          try FileManager.default.moveItem(at: from, to: to)
+          coordinator.item(at: from, didMoveTo: to)
+          try data.write(to: to, options: .atomic)
+        } catch {
+          writeError = error
+        }
+      }
+      if let failure = coordinationError ?? writeError { throw failure }
+    } catch {
+      self.error = error.localizedDescription
+      return
+    }
+    let old = FolderLibrary.canonical(url)
+    let new = FolderLibrary.canonical(target)
+    NoteFiles.bases.moveBase(from: old, to: new)
+    navigator.replace(old, with: new)
+    didMove(old, new)
+    library.reload()
   }
 
   // MARK: - Rename

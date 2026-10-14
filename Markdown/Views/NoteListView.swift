@@ -142,6 +142,12 @@ struct NoteListView: View {
     Divider()
     if isDeletable(url) {
       Button("Rename…", systemImage: "pencil") { actions.beginRename(url) }
+      if actions.canToggleEncryption(url) {
+        let encrypted = NoteFiles.isEncrypted(url)
+        Button(encrypted ? "Decrypt Note" : "Encrypt Note", systemImage: encrypted ? "lock.open" : "lock") {
+          actions.setEncrypted(url, !encrypted)
+        }
+      }
     }
     #if os(macOS)
       Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }

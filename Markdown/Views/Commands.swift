@@ -40,6 +40,7 @@ extension FocusedValues {
 /// The menu bar: Quick Open and Save in File, Edit/Read and Reload in View, the Format
 /// menu, and the welcome window under Window.
 struct MarkdownCommands: Commands {
+  @AppStorage(NoteFiles.encryptNewNotesKey) private var encryptsNewNotes = true
   @FocusedValue(\.windowState) private var window
   @FocusedValue(\.documentActions) private var document
   @FocusedValue(\.editorCommands) private var editor
@@ -49,6 +50,7 @@ struct MarkdownCommands: Commands {
       Button("Quick Open…") { window?.isQuickOpenShown = true }
         .keyboardShortcut("k", modifiers: .command)
         .disabled(window == nil)
+      Toggle("Encrypt New Notes", isOn: $encryptsNewNotes)
     }
     CommandGroup(replacing: .saveItem) {
       Button("Save") { document?.save() }

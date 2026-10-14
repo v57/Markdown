@@ -51,10 +51,17 @@ enum NoteSummaries {
   /// The first non-heading line of the file's first few kilobytes, without its block
   /// marker and inline symbols. A note that is only a heading shows that heading.
   nonisolated static func snippet(of url: URL) -> String {
-    guard let handle = try? FileHandle(forReadingFrom: url) else { return "" }
-    defer { try? handle.close() }
-    guard let data = try? handle.read(upToCount: 4096) else { return "" }
-    let text = String(decoding: data, as: UTF8.self)
+    let text: String
+    if NoteFiles.isEncrypted(url) {
+      // The whole note is one sealed box: it decrypts whole (notes are small).
+      guard let full = try? NoteFiles.text(at: url) else { return "" }
+      text = String(full.prefix(4096))
+    } else {
+      guard let handle = try? FileHandle(forReadingFrom: url) else { return "" }
+      defer { try? handle.close() }
+      guard let data = try? handle.read(upToCount: 4096) else { return "" }
+      text = String(decoding: data, as: UTF8.self)
+    }
     var heading: String?
     var inFence = false
     for raw in text.split(separator: "\n", omittingEmptySubsequences: true) {
