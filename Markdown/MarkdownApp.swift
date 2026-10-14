@@ -42,6 +42,7 @@ import VaultKit
     } else {
       Vault.shared.startSync()
     }
+    ScreenshotDemo.prepareCapture()
   }
 
   /// The probes drive the live sample editor, so they get it instead of the library UI.

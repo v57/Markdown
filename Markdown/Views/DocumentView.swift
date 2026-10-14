@@ -16,6 +16,7 @@ struct DocumentView: View {
   @Environment(NotesLocation.self) private var notes
   @Environment(NotePreferences.self) private var preferences
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(WindowState.self) private var window
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @Environment(\.modelContext) private var context
   @State private var content: Content = .empty
@@ -76,7 +77,9 @@ struct DocumentView: View {
       .focusedSceneValue(\.editorCommands, isShowingDocument && isEditing ? commands : nil)
       .focusedSceneValue(\.documentActions, documentActions)
       .task(id: LoadKey(selection: navigator.selection, item: navigator.item, generation: library.generation)) {
+        let shown = WindowState.Shown(selection: navigator.selection, item: navigator.item)
         await load()
+        if !Task.isCancelled { window.loadedDocument = shown }
       }
       .onChange(of: scenePhase) { _, phase in
         switch phase {

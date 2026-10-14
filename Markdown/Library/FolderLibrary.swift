@@ -350,6 +350,16 @@ struct FileNode: Identifiable, Hashable {
     }
   }
 
+  /// Shows nothing and forgets the history, as at launch (a screenshot scene opened in place).
+  func reset() {
+    isTraversing = true
+    selection = nil
+    isTraversing = false
+    back.removeAll()
+    forward.removeAll()
+    anchor = nil
+  }
+
   func goBack() {
     guard let previous = back.popLast() else { return }
     if let selection { forward.append(selection) }

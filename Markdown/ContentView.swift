@@ -1,3 +1,4 @@
+import DevScreenshots
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -61,6 +62,11 @@ struct ContentView: View {
     .environment(window)
     .focusedSceneValue(\.windowState, window)
     .task {
+      // Screenshots (.dev/screenshots.json): this window opens the later scenes of the launch.
+      ScreenshotDemo.openScene = { arguments in
+        openScreenshotDemo(arguments)
+        await screenshotSceneLoaded()
+      }
       repositories.willChangeFiles = { [actions] in actions.willChangeFiles() }
       repositories.didChangeFiles = { [library] in library.reload() }
       actions.didMove = { [preferences] in preferences.replace($0, with: $1) }
@@ -74,7 +80,11 @@ struct ContentView: View {
       updateRoots()
       if navigator.item == nil, navigator.selection == nil { navigator.item = .allNotes }
       repositories.refreshChanges()
-      if ScreenshotDemo.isOn { openScreenshotDemo() }
+      if ScreenshotDemo.isOn {
+        openScreenshotDemo()
+        await screenshotSceneLoaded()
+      }
+      Screenshots.ready()
     }
     // Notes changed by sync or another app: re-list, and reload the open note.
     .onChange(of: notes.externalChanges) { library.reload() }
@@ -159,17 +169,40 @@ struct ContentView: View {
     return notes.url
   }
 
-  /// The app's own folders: notes and GitHub repositories.
-  /// `--screenshot-demo`: the docs folder in the sidebar, and the scene's note and panels.
-  private func openScreenshotDemo() {
+  /// `--screenshot-demo`: the docs folder in the sidebar, and the scene's note and panels; with `arguments`, a later
+  /// screenshot scene in this launch, after undoing what the scene before opened.
+  private func openScreenshotDemo(_ arguments: [String]? = nil) {
+    if let arguments {
+      // The same scene in the other appearance: the kit switches that.
+      guard arguments != ScreenshotDemo.arguments else { return }
+      ScreenshotDemo.arguments = arguments
+      window.isQuickOpenShown = false
+      window.isWelcomeShown = ScreenshotDemo.flag("--welcome")
+      navigator.reset()
+      preferences.forgetRecents()
+      library.expanded.removeAll()
+    }
     library.add([ScreenshotDemo.docs], existing: folders, context: context)
     navigator.item = .allNotes
     if let path = ScreenshotDemo.value("--open") {
       navigator.open(FolderLibrary.canonical(ScreenshotDemo.root.appendingPathComponent(path)))
+      // Now rather than on the next update, which skips a scene showing the note the one before showed.
+      follow(navigator.selection)
     }
     if ScreenshotDemo.flag("--quick-open") { window.isQuickOpenShown = true }
   }
 
+  /// Until the sidebar's count, the note list and the document show the scene (at most 10 s), so its picture never
+  /// depends on a long delay.
+  private func screenshotSceneLoaded() async {
+    for _ in 0..<200 {
+      let shown = WindowState.Shown(selection: navigator.selection, item: navigator.item)
+      if window.hasCountedNotes, window.loadedList == .some(navigator.item), window.loadedDocument == shown { return }
+      try? await Task.sleep(for: .milliseconds(50))
+    }
+  }
+
+  /// The app's own folders: notes and GitHub repositories.
   private func updateRoots() {
     library.builtInRoots = (notes.url.map { [$0] } ?? []) + repositories.directories
   }

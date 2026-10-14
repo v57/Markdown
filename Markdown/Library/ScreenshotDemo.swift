@@ -1,3 +1,4 @@
+import DevScreenshots
 import Foundation
 
 /// Debug builds: `--screenshot-demo` runs the app on made-up notes for the screenshots (`.dev/screenshots.json`),
@@ -10,6 +11,8 @@ import Foundation
 ///   --open <path>            shows a note, relative to the demo folder (`Notes/Trip to Lisbon.md`)
 ///   --quick-open             opens Quick Open
 ///   --welcome                opens the welcome sheet
+///
+/// `dev-screenshots` takes every scene in one launch: the window opens each next scene's arguments in place.
 enum ScreenshotDemo {
   static let isOn: Bool = {
     #if DEBUG
@@ -19,13 +22,28 @@ enum ScreenshotDemo {
     #endif
   }()
 
+  /// The shown scene's arguments: the launch's, then each later scene's.
+  static var arguments = CommandLine.arguments
+
+  /// Opens a later scene's arguments in the window and returns once it has loaded (`ContentView`).
+  static var openScene: ((_ arguments: [String]) async -> Void)?
+
+  /// At launch, before any window: the capture's appearance and window, and in the demo every scene in this launch.
+  /// The window calls `Screenshots.ready()` once the first scene has loaded.
+  static func prepareCapture() {
+    if isOn {
+      Screenshots.prepare(waitsForReady: true) { scene in await openScene?(scene.arguments) }
+    } else {
+      Screenshots.prepare(waitsForReady: true)
+    }
+  }
+
   static func value(_ option: String) -> String? {
-    let arguments = CommandLine.arguments
     guard let index = arguments.firstIndex(of: option), index + 1 < arguments.count else { return nil }
     return arguments[index + 1]
   }
 
-  static func flag(_ option: String) -> Bool { isOn && CommandLine.arguments.contains(option) }
+  static func flag(_ option: String) -> Bool { isOn && arguments.contains(option) }
 
   static let root = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenshotDemo", isDirectory: true)
   static var notes: URL { root.appendingPathComponent("Notes", isDirectory: true) }

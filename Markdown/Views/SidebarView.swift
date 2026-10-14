@@ -97,7 +97,10 @@ struct SidebarView: View {
         ToolbarItem(placement: .primaryAction) { addMenu }
       }
     #endif
-    .task(id: CountKey(root: notes.url, generation: library.generation)) { await countAllNotes() }
+    .task(id: CountKey(root: notes.url, generation: library.generation)) {
+      await countAllNotes()
+      if !Task.isCancelled { window.hasCountedNotes = true }
+    }
     .sheet(isPresented: $isConnectingGitHub) { GitHubConnectView() }
     .alert(
       repositories.message?.title ?? "",

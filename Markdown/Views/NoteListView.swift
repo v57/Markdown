@@ -12,6 +12,7 @@ struct NoteListView: View {
   @Environment(NotePreferences.self) private var preferences
   @Environment(RepositoryStore.self) private var repositories
   @Environment(\.modelContext) private var context
+  @Environment(WindowState.self) private var window
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @State private var summaries: [NoteSummary]?
   /// The item `summaries` belong to.
@@ -38,7 +39,11 @@ struct NoteListView: View {
         .task(id: query) { await search() }
       #endif
       .toolbar { toolbar }
-      .task(id: LoadKey(item: navigator.item, generation: library.generation)) { await load() }
+      .task(id: LoadKey(item: navigator.item, generation: library.generation)) {
+        let item = navigator.item
+        await load()
+        if !Task.isCancelled { window.loadedList = .some(item) }
+      }
     }
 
   @ViewBuilder private var list: some View {

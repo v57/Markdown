@@ -7,6 +7,17 @@ import SwiftUI
   var isQuickOpenShown = false
   var isWelcomeShown = false
   var isAddingFolder = false
+
+  /// What a pane shows: the shown note (nil: the listed folder's README, or nothing) and the listed item.
+  struct Shown: Equatable {
+    var selection: URL?
+    var item: LibraryItem?
+  }
+
+  /// What the panes last finished loading: a screenshot is taken once they show its scene.
+  var loadedDocument: Shown?
+  var loadedList: LibraryItem??
+  var hasCountedNotes = false
 }
 
 /// The shown document's commands, for the menu bar.

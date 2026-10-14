@@ -35,6 +35,12 @@ import Observation
     save()
   }
 
+  /// Forgets the recent notes (a screenshot scene opened in place starts as a launch would).
+  func forgetRecents() {
+    recents.removeAll()
+    save()
+  }
+
   /// Recent notes that still exist.
   var existingRecents: [URL] {
     recents.filter { FileManager.default.fileExists(atPath: $0.path) }
