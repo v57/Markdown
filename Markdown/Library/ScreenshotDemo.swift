@@ -22,6 +22,16 @@ enum ScreenshotDemo {
     #endif
   }()
 
+  /// Quick Open's field takes focus, except in the demo on iOS: the simulator's software keyboard would cover half the
+  /// picture.
+  static var focusesFields: Bool {
+    #if os(iOS)
+      !isOn
+    #else
+      true
+    #endif
+  }
+
   /// The shown scene's arguments: the launch's, then each later scene's.
   static var arguments = CommandLine.arguments
 

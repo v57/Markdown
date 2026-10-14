@@ -69,7 +69,7 @@ struct QuickOpenView: View {
     }
     .shadow(color: .black.opacity(0.25), radius: 32, y: 16)
     .task(id: query) { await search() }
-    .onAppear { isFocused = true }
+    .onAppear { isFocused = ScreenshotDemo.focusesFields }
     .onChange(of: query) { selected = 0 }
   }
 
