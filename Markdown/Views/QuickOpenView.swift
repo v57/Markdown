@@ -43,13 +43,13 @@ struct QuickOpenView: View {
     let entries = entries
     KitPalette(
       query: $query, prompt: "Search notes and commands", status: status, hints: hints, maxHeight: 420,
-      dismiss: close
+      dismiss: close, focusesOnAppear: ScreenshotDemo.focusesFields
     ) {
       ForEach(sections(entries), id: \.title) { section in
         PaletteGroup(section.title, meta: section.meta, systemImage: section.systemImage, hue: section.hue) {
           ForEach(section.entries) { entry in
             PaletteItem(
-              entry.title, id: entry.id, systemImage: entry.systemImage, hue: entry.hue, detail: entry.subtitle,
+              entry.title, id: entry.id, systemImage: entry.systemImage, hue: entry.hue, subtitle: entry.subtitle,
               shortcut: entry.shortcut
             ) {
               activate(entry)

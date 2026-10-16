@@ -45,10 +45,10 @@ struct ContentView: View {
         DocumentView()
       }
     }
-    .overlay { quickOpen }
-    .animation(.kit, value: window.isQuickOpenShown)
+    .kitPaletteOverlay(isPresented: $window.isQuickOpenShown) { QuickOpenView(perform: perform) }
     #if os(macOS)
-      .modifier(HidesWindowTitle())
+      // Each pane names itself with its own rich title.
+      .kitHidesSystemTitle()
     #endif
     .sheet(isPresented: $window.isWelcomeShown) {
       WelcomeView(perform: perform) { urls in
@@ -111,22 +111,6 @@ struct ContentView: View {
     .onOpenURL { open($0) }
     // Opened files go to this window instead of a new one each.
     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-  }
-
-  @ViewBuilder private var quickOpen: some View {
-    if window.isQuickOpenShown {
-      ZStack(alignment: .top) {
-        Color.black.opacity(0.12)
-          .ignoresSafeArea()
-          .onTapGesture { window.isQuickOpenShown = false }
-          .accessibilityHidden(true)
-        QuickOpenView(perform: perform)
-          .frame(maxWidth: 560)
-          .padding(.horizontal, 16)
-          .padding(.top, 72)
-      }
-      .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-    }
   }
 
   // MARK: - Navigation
@@ -238,16 +222,3 @@ struct ContentView: View {
     }
   }
 }
-
-#if os(macOS)
-  /// Each pane names itself in its own rich title, so the window's title stays out of the toolbar.
-  private struct HidesWindowTitle: ViewModifier {
-    func body(content: Content) -> some View {
-      if #available(macOS 15, *) {
-        content.toolbar(removing: .title)
-      } else {
-        content
-      }
-    }
-  }
-#endif

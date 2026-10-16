@@ -121,10 +121,9 @@ struct NoteListView: View {
   @ToolbarContentBuilder private var toolbar: some ToolbarContent {
     #if os(macOS)
       // The pane's rich title: what is listed and how many notes (the window's title is hidden).
-      ToolbarItem(placement: .navigation) {
+      KitToolbarItem(placement: .navigation) {
         KitTitle(title, meta: subtitle, systemImage: itemImage, hue: itemHue)
       }
-      .kitBare()
     #endif
     ToolbarItem(placement: .primaryAction) {
       ToolGroup(iconOnly: true) {
@@ -144,7 +143,7 @@ struct NoteListView: View {
           .kitHelp("New Note", shortcut: "⌘N")
       }
     }
-    .kitBare()
+    .kitToolbarItem()
   }
 
   private var itemImage: String {
