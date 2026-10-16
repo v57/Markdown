@@ -47,6 +47,7 @@ struct SidebarView: View {
         .disabled(notes.url == nil)
         .kitHelp("New Folder", shortcut: "⇧⌘N")
     }
+    .status { Label(storageStatus, systemImage: notes.isICloud ? "icloud" : deviceSymbol).labelStyle(.titleOnly) }
     // Folders dropped anywhere on the sidebar join it.
     .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
     .dropDestination(for: URL.self) { urls, _ in
@@ -199,6 +200,17 @@ struct SidebarView: View {
     #endif
   }
 
+  /// Where the notes are, at the start of the bottom bar.
+  private var storageStatus: String { notes.isICloud ? "iCloud" : "On This \(deviceName)" }
+
+  private var deviceSymbol: String {
+    #if os(macOS)
+      "laptopcomputer"
+    #else
+      UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+    #endif
+  }
+
   private var deviceName: String {
     #if os(macOS)
       "Mac"
@@ -341,7 +353,7 @@ struct SidebarView: View {
           ForEach(projects) { project in
             // Not a place to list: a tap asks for the folder and adds it.
             SidebarRow(project.name, systemImage: "folder.badge.plus")
-              .simultaneousGesture(TapGesture().onEnded { addProject(project) })
+              .action { addProject(project) }
               .help("Add “\(project.name)” to the sidebar")
           }
         }
@@ -455,7 +467,6 @@ struct FileTreeRow: View {
 
   /// How deep in the sidebar's tree the folder is (its root is 0).
   var depth = 0
-  @Environment(\.kitIdiom) private var idiom
 
   var body: some View {
     // `generation` re-lists after a reload.
@@ -463,7 +474,7 @@ struct FileTreeRow: View {
     let children = library.children(of: node.url)
     let subfolders = showsChildren ? children.filter(\.isDirectory) : []
     row(noteCount: children.count - children.filter(\.isDirectory).count, isExpandable: !subfolders.isEmpty)
-    if isExpanded {
+    if isExpanded.wrappedValue {
       ForEach(subfolders) { child in
         FileTreeRow(node: child, depth: depth + 1)
       }
@@ -472,11 +483,10 @@ struct FileTreeRow: View {
 
   private func row(noteCount: Int, isExpandable: Bool) -> some View {
     label(
-      SidebarRow(value: LibraryItem.folder(node.url), title ?? node.name) {
-        HStack(spacing: 2) {
-          if isExpandable { disclosure }
-          RowTile(systemImage: systemImage)
-        }
+      SidebarRow(
+        value: LibraryItem.folder(node.url), title ?? node.name, isExpanded: isExpandable ? isExpanded : nil
+      ) {
+        RowTile(systemImage: systemImage)
       } trailing: {
         if let activity {
           LiveIcon(systemImage: "arrow.down", status: .working, size: 16).help(activity)
@@ -488,22 +498,6 @@ struct FileTreeRow: View {
     )
     .kitDropTarget(isDropTargeted)
     .dropDestination(for: URL.self) { urls, _ in drop(urls) } isTargeted: { isDropTargeted = $0 }
-  }
-
-  /// Opens and closes the folder's subfolders.
-  private var disclosure: some View {
-    Button {
-      withKitAnimation { isExpanded.toggle() }
-    } label: {
-      Image(systemName: "chevron.right")
-        .font(.system(size: idiom.isTouch ? 12 : 9, weight: .bold))
-        .foregroundStyle(.kitTertiary)
-        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-        .frame(width: idiom.isTouch ? 18 : 12, height: idiom.isTouch ? 28 : 18)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
   }
 
   /// Notes and folders from the app's own folders move here, files from other apps are
@@ -553,11 +547,13 @@ struct FileTreeRow: View {
     #endif
   }
 
-  private var isExpanded: Bool {
-    get { library.expanded.contains(node.url) }
-    nonmutating set {
-      if newValue { library.expanded.insert(node.url) } else { library.expanded.remove(node.url) }
-    }
+  /// Opens and closes the folder's subfolders (the row's disclosure chevron, ← →).
+  private var isExpanded: Binding<Bool> {
+    Binding(
+      get: { library.expanded.contains(node.url) },
+      set: { open in
+        if open { library.expanded.insert(node.url) } else { library.expanded.remove(node.url) }
+      })
   }
 }
 
