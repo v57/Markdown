@@ -12,6 +12,8 @@ import VaultKit
 struct SidebarView: View {
   /// On iPhone: picking a place pushes the note list.
   @Binding var compactColumn: NavigationSplitViewColumn
+  /// On iPad: the split's columns, for the bar's sidebar toggle.
+  var columnVisibility: Binding<NavigationSplitViewVisibility>?
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(NotesLocation.self) private var notes
@@ -29,7 +31,8 @@ struct SidebarView: View {
   var body: some View {
     @Bindable var window = window
     KitSidebar(
-      selection: itemBinding, searchText: $window.searchQuery, searchPrompt: "Search Notes"
+      selection: itemBinding, searchText: $window.searchQuery, searchPrompt: "Search Notes",
+      columnVisibility: columnVisibility
     ) {
       notesSection
       if !repositories.repositories.isEmpty { gitHubSection }
@@ -82,11 +85,9 @@ struct SidebarView: View {
       Text(library.lastError ?? "")
     }
     .navigationTitle("Markdown")
-    #if os(macOS)
-      // The bottom bar has the toggle (and View › Show Sidebar brings it back). On iPad the bar
-      // has none: the split view's own toggle is what shows a hidden sidebar again.
-      .toolbar(removing: .sidebarToggle)
-    #endif
+    // The bottom bar has the toggle; View › Show Sidebar on the Mac, and the note list's Show Sidebar
+    // button on iPad, bring it back.
+    .toolbar(removing: .sidebarToggle)
     #if DEBUG && targetEnvironment(simulator)
       .task { addLaunchArgumentFolders() }
     #endif

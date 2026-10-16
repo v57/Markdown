@@ -19,6 +19,9 @@ struct ContentView: View {
   @State private var window = WindowState()
   /// On iPhone: the column shown, which follows the sidebar's and the list's picks.
   @State private var compactColumn = NavigationSplitViewColumn.sidebar
+  /// The split's columns, for the kit's sidebar toggles on iPad.
+  @State private var columns = NavigationSplitViewVisibility.automatic
+  @Environment(\.kitIdiom) private var idiom
   @AppStorage("showsWelcome") private var showsWelcome = true
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
@@ -34,8 +37,9 @@ struct ContentView: View {
   }
 
   var body: some View {
-    NavigationSplitView(preferredCompactColumn: $compactColumn) {
-      SidebarView(compactColumn: $compactColumn)
+    NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
+      // On the Mac the bar's toggle works through the window's split view; on iPhone the columns are pushed.
+      SidebarView(compactColumn: $compactColumn, columnVisibility: idiom == .pad ? $columns : nil)
         .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
     } content: {
       NoteListView()
@@ -43,8 +47,11 @@ struct ContentView: View {
     } detail: {
       NavigationStack {
         DocumentView()
+          // On the note, not the list: in portrait the split shows the note alone.
+          .modifier(ShowSidebarButton(columns: $columns, isOn: idiom == .pad))
       }
     }
+    .kitThreeColumnSplit()
     .kitPaletteOverlay(isPresented: $window.isQuickOpenShown) { QuickOpenView(perform: perform) }
     #if os(macOS)
       // Each pane names itself with its own rich title.
@@ -219,6 +226,21 @@ struct ContentView: View {
     window.isWelcomeShown = false
     if let shown = library.add([url], existing: folders, context: context).first {
       navigator.open(shown)
+    }
+  }
+}
+
+/// The kit's Show Sidebar button while the sidebar is out (on iPad, where it stands in for the split view's own
+/// toggle).
+private struct ShowSidebarButton: ViewModifier {
+  @Binding var columns: NavigationSplitViewVisibility
+  let isOn: Bool
+
+  func body(content: Content) -> some View {
+    if isOn {
+      content.kitSidebarToggle(columnVisibility: $columns)
+    } else {
+      content
     }
   }
 }
