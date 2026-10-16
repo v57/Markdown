@@ -1,3 +1,4 @@
+import ComponentKit
 import MarkdownKit
 import SwiftData
 import SwiftUI
@@ -5,7 +6,7 @@ import UniformTypeIdentifiers
 
 /// The detail pane: the selected note, or a folder's README (a link to the folder, or the
 /// listed folder while no note is selected), edited in place or read (`Edit` / `Read`).
-/// Edits save themselves (see `DocumentSaver`); the status bar says so and counts words.
+/// Edits save themselves (see `DocumentSaver`); the title's meta line says so and counts words.
 /// Relative images resolve against the file; links to markdown files and folders open
 /// here (with back/forward), anything else opens externally.
 struct DocumentView: View {
@@ -19,6 +20,7 @@ struct DocumentView: View {
   @Environment(WindowState.self) private var window
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @Environment(\.modelContext) private var context
+  @Environment(\.kitIdiom) private var idiom
   @State private var content: Content = .empty
   @State private var saver = DocumentSaver()
   @State private var showsSaveError = false
@@ -51,16 +53,13 @@ struct DocumentView: View {
 
   var body: some View {
     contentView
-      .navigationTitle(title)
+      .kitPane(.content)
       #if os(macOS)
-        .navigationSubtitle(subtitle)
+        // The window's title (Window menu, Mission Control); the toolbar shows the rich title instead.
+        .navigationTitle(title)
       #endif
       .toolbar { toolbar }
-      #if os(macOS)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-          if case .document = content { statusBar }
-        }
-      #else
+      #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         // The editor is UIKit, which SwiftUI's keyboard toolbar doesn't reach: the
         // formatting bar floats above the keyboard instead.
@@ -68,10 +67,10 @@ struct DocumentView: View {
           if isShowingDocument, isEditing, isKeyboardShown { formattingBar }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-          withAnimation(.smooth(duration: 0.25)) { isKeyboardShown = true }
+          withAnimation(.kit) { isKeyboardShown = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-          withAnimation(.smooth(duration: 0.25)) { isKeyboardShown = false }
+          withAnimation(.kit) { isKeyboardShown = false }
         }
       #endif
       .focusedSceneValue(\.editorCommands, isShowingDocument && isEditing ? commands : nil)
@@ -121,11 +120,12 @@ struct DocumentView: View {
   @ViewBuilder private var contentView: some View {
     switch content {
     case .empty:
-      ContentUnavailableView(
-        "No Note Selected", systemImage: "note.text",
-        description: Text("Choose a note in the list, or start a new one with ⌘N."))
+      EmptyState(
+        systemImage: "note.text", title: "No Note Selected",
+        message: "Choose a note in the list, or start a new one with ⌘N.")
     case .loading:
-      ProgressView()
+      LiveIcon(systemImage: "doc.text", status: .working, size: 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     case .document(let file, let text):
       MarkdownEditorView(
         text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
@@ -141,78 +141,97 @@ struct DocumentView: View {
       .id(file)
       .onAppear { countWords(text, now: true) }
     case .noReadme(let folder):
-      ContentUnavailableView(
-        "No README", systemImage: "doc.questionmark",
-        description: Text(
-          "“\(folder.lastPathComponent)” has no README.md. Choose a note in the list."))
+      EmptyState(
+        systemImage: "doc.questionmark", title: "No README",
+        message: "“\(folder.lastPathComponent)” has no README.md. Choose a note in the list.")
     case .failed(let file, let message):
-      ContentUnavailableView(
-        "Couldn’t Open “\(file.lastPathComponent)”", systemImage: "exclamationmark.triangle",
-        description: Text(message))
+      EmptyState(
+        systemImage: "exclamationmark.triangle", title: "Couldn’t Open “\(file.lastPathComponent)”",
+        message: message)
     }
   }
 
   @ToolbarContentBuilder private var toolbar: some ToolbarContent {
     #if os(macOS)
-      // Back/forward and the note's title lead the editor's part of the toolbar, its
-      // actions trail it (a split view's `.navigation` items would sit over the list).
-      ToolbarItemGroup {
-        Button("Back", systemImage: "chevron.left") { navigator.goBack() }
-          .disabled(navigator.back.isEmpty)
-          .keyboardShortcut("[", modifiers: .command)
-          .help("Back (⌘[)")
-        Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
-          .disabled(navigator.forward.isEmpty)
-          .keyboardShortcut("]", modifiers: .command)
-          .help("Forward (⌘])")
-      }
-      if #available(macOS 26, *) {
-        ToolbarItem {
-          titleView
+      // Back/forward and the note's rich title lead the editor's part of the toolbar, the
+      // Edit/Read switch and its actions trail it (a split view's `.navigation` items would sit
+      // over the list).
+      ToolbarItem {
+        ToolGroup(iconOnly: true) {
+          Button("Back", systemImage: "chevron.left") { navigator.goBack() }
+            .disabled(navigator.back.isEmpty)
+            .keyboardShortcut("[", modifiers: .command)
+            .kitHelp("Back", shortcut: "⌘[")
+          Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
+            .disabled(navigator.forward.isEmpty)
+            .keyboardShortcut("]", modifiers: .command)
+            .kitHelp("Forward", shortcut: "⌘]")
         }
-        .sharedBackgroundVisibility(.hidden)
+      }
+      .kitBare()
+      ToolbarItem { titleView }
+        .kitBare()
+      if #available(macOS 26, *) {
         ToolbarSpacer(.flexible)
       }
+    #else
+      ToolbarItem(placement: .topBarLeading) {
+        titleView.fixedSize()
+      }
+      .kitBare()
     #endif
-    ToolbarItemGroup {
-      if case .failed = saver.state {
-        Button("Not Saved", systemImage: "exclamationmark.triangle") { showsSaveError = true }
-          .foregroundStyle(.yellow)
-          .help("The last edit couldn’t be saved. Click for details.")
+    if case .document(let file, _) = content {
+      if idiom != .phone {
+        ToolbarItem(placement: .primaryAction) {
+          KitSegmented(selection: $isEditing, options: [("Edit", true), ("Read", false)])
+            .kitHelp("Edit or Read", shortcut: "⇧⌘E", meta: "Edit shows Markdown on the line you’re on")
+        }
+        .kitBare()
       }
-      if case .document(let file, _) = content {
-        #if os(macOS)
-          Picker("Mode", selection: $isEditing) {
-            Label("Edit", systemImage: "pencil").tag(true)
-            Label("Read", systemImage: "eye").tag(false)
+      ToolbarItem(placement: .primaryAction) {
+        ToolGroup(iconOnly: true) {
+          if case .failed = saver.state {
+            Button("Not Saved", systemImage: "exclamationmark.triangle", role: .destructive) { showsSaveError = true }
+              .kitHelp("Not Saved", meta: "The last edit couldn’t be saved", hue: .red)
           }
-          .pickerStyle(.segmented)
-          .labelStyle(.titleAndIcon)
-          .fixedSize()
-          .help("Edit shows Markdown on the line you’re on; Read hides it (⇧⌘E)")
-        #else
-          Button(isEditing ? "Read" : "Edit", systemImage: isEditing ? "eye" : "pencil") {
-            isEditing.toggle()
+          if idiom == .phone {
+            Button(isEditing ? "Read" : "Edit", systemImage: isEditing ? "eye" : "pencil") { isEditing.toggle() }
           }
-        #endif
-        ShareLink(item: file)
-        moreMenu(file)
+          ShareLink(item: file)
+          moreMenu(file)
+        }
       }
+      .kitBare()
     }
   }
 
-  #if os(macOS)
-    private var titleView: some View {
-      VStack(alignment: .leading, spacing: 0) {
-        Text(title).font(.headline).lineLimit(1)
-        if !subtitle.isEmpty {
-          Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-        }
+  /// The note's rich title; its meta line is where it lives, then whether edits are saved and its length.
+  private var titleView: some View {
+    KitTitle(title, meta: titleMeta, systemImage: "doc.text", hue: .blue, status: titleStatus)
+      .opacity(title.isEmpty ? 0 : 1)
+  }
+
+  private var titleMeta: [String] {
+    let place = subtitle.components(separatedBy: " · ")
+    guard isShowingDocument else { return place }
+    let state =
+      switch saver.state {
+      case .saved: isInICloud ? "Synced" : "Saved"
+      case .unsaved: "Edited"
+      case .failed: "Not saved"
       }
-      .padding(.horizontal, 4)
-      .accessibilityElement(children: .combine)
-    }
-  #endif
+    return place + [state, wordCount == 0 ? "" : wordCount == 1 ? "1 word" : "\(wordCount.formatted()) words"]
+  }
+
+  private var titleStatus: WorkStatus {
+    if case .failed(let message, _) = saver.state { return .failed(message) }
+    return .idle
+  }
+
+  private var isInICloud: Bool {
+    guard notes.isICloud, let root = notes.url, let file = saver.file else { return false }
+    return file.path.hasPrefix(root.path + "/")
+  }
 
   private func moreMenu(_ file: URL) -> some View {
     Menu("More", systemImage: "ellipsis.circle") {
@@ -267,12 +286,10 @@ struct DocumentView: View {
       .tint(.primary)
       .padding(.horizontal, 6)
       .frame(height: 52)
-      .background(.regularMaterial, in: Capsule())
-      .overlay { Capsule().strokeBorder(.separator.opacity(0.5)) }
-      .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+      .kitSurface(.floating, cornerRadius: 26)
       .padding(.horizontal, 12)
       .padding(.bottom, 8)
-      .transition(.move(edge: .bottom).combined(with: .opacity))
+      .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     @ViewBuilder private var formattingButtons: some View {
@@ -305,54 +322,6 @@ struct DocumentView: View {
       .frame(maxWidth: .infinity, minHeight: 44)
     }
   #endif
-
-  #if os(macOS)
-    /// Under the editor: whether edits are saved (and where), and the note's length.
-    private var statusBar: some View {
-      HStack(spacing: 12) {
-        saveStatus
-        Spacer()
-        Text(wordCountText)
-          .monospacedDigit()
-          .contentTransition(.numericText())
-      }
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 16)
-      .frame(height: 28)
-      .background(.bar)
-      .overlay(alignment: .top) { Divider() }
-    }
-
-    @ViewBuilder private var saveStatus: some View {
-      switch saver.state {
-      case .saved:
-        Label(isInICloud ? "Saved, syncs through iCloud" : "Saved", systemImage: isInICloud ? "checkmark.icloud" : "checkmark.circle")
-      case .unsaved:
-        Label("Edited", systemImage: "pencil.circle")
-      case .failed:
-        Button {
-          showsSaveError = true
-        } label: {
-          Label("Not Saved", systemImage: "exclamationmark.triangle.fill")
-            .foregroundStyle(.red)
-        }
-        .buttonStyle(.plain)
-        .help("The last edit couldn’t be saved. Click for details.")
-      }
-    }
-
-    private var isInICloud: Bool {
-      guard notes.isICloud, let root = notes.url, let file = saver.file else { return false }
-      return file.path.hasPrefix(root.path + "/")
-    }
-  #endif
-
-  private var wordCountText: String {
-    let words = wordCount == 1 ? "1 word" : "\(wordCount.formatted()) words"
-    let minutes = max(1, Int((Double(wordCount) / 230).rounded()))
-    return wordCount == 0 ? "No words" : "\(words) · \(minutes) min read"
-  }
 
   /// Counts after typing pauses (a long note is a lot of text to scan per keystroke).
   private func countWords(_ text: String, now: Bool = false) {
