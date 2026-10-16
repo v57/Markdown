@@ -191,14 +191,7 @@ struct GitHubConnectView: View {
     }
   }
 
-  private func copy(_ text: String) {
-    #if os(macOS)
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(text, forType: .string)
-    #else
-      UIPasteboard.general.string = text
-    #endif
-  }
+  private func copy(_ text: String) { KitPasteboard.copy(text) }
 }
 
 /// A connected repository in the sidebar: its file tree, the number of local changes,

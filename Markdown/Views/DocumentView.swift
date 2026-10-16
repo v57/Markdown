@@ -168,9 +168,9 @@ struct DocumentView: View {
             .kitHelp("Forward", shortcut: "⌘]")
         }
       }
-      .kitBare()
+      .kitToolbarItem()
       ToolbarItem { titleView }
-        .kitBare()
+        .kitToolbarItem()
       if #available(macOS 26, *) {
         ToolbarSpacer(.flexible)
       }
@@ -178,7 +178,7 @@ struct DocumentView: View {
       ToolbarItem(placement: .topBarLeading) {
         titleView.fixedSize()
       }
-      .kitBare()
+      .kitToolbarItem()
     #endif
     if case .document(let file, _) = content {
       if idiom != .phone {
@@ -186,7 +186,7 @@ struct DocumentView: View {
           KitSegmented(selection: $isEditing, options: [("Edit", true), ("Read", false)])
             .kitHelp("Edit or Read", shortcut: "⇧⌘E", meta: "Edit shows Markdown on the line you’re on")
         }
-        .kitBare()
+        .kitToolbarItem()
       }
       ToolbarItem(placement: .primaryAction) {
         ToolGroup(iconOnly: true) {
@@ -201,7 +201,7 @@ struct DocumentView: View {
           moreMenu(file)
         }
       }
-      .kitBare()
+      .kitToolbarItem()
     }
   }
 

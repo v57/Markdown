@@ -47,44 +47,36 @@ struct NoteListView: View {
 
   @ViewBuilder private var list: some View {
     if isSearching, let results {
-      List(selection: noteSelection) { searchResults(results) }
+      KitList(selection: noteSelection) { searchResults(results) }
     } else {
       notesList
     }
   }
 
+  /// The kit's list: on the Mac each date group is a card; on iPad and iPhone its rows sit under its header, so each
+  /// row takes its own swipe actions (Pin, Delete).
   private var notesList: some View {
-    List(selection: noteSelection) {
+    KitList(selection: noteSelection) {
       ForEach(groups) { group in
-        Section {
-          ForEach(group.notes) { note in
-            NoteRow(note: note, isPinned: preferences.isPinned(note.url))
-              .tag(note.url)
-              .draggable(note.url)
-              .contextMenu { menu(for: note.url) }
-              #if os(iOS)
-                .swipeActions(edge: .leading) {
-                  Button(preferences.isPinned(note.url) ? "Unpin" : "Pin", systemImage: preferences.isPinned(note.url) ? "pin.slash" : "pin") {
-                    withAnimation { preferences.togglePin(note.url) }
-                  }
-                  .tint(.orange)
-                }
-                .swipeActions(edge: .trailing) {
-                  Button("Delete", systemImage: "trash", role: .destructive) { actions.delete(note.url) }
-                }
-              #endif
+        #if os(macOS)
+          if group.title.isEmpty {
+            rows(group)
+          } else {
+            KitSection(
+              group.title, meta: headerMeta(group), systemImage: headerImage(group), hue: headerHue(group)
+            ) {
+              rows(group)
+            }
           }
-        } header: {
+        #else
           if !group.title.isEmpty { header(group) }
-        }
+          rows(group)
+        #endif
       }
     }
     // A fresh list per folder: on macOS, rows replaced while a selection moved into
     // them kept the height of a one-line row and lost their date and text.
     .id(loadedItem)
-    #if os(iOS)
-      .listStyle(.insetGrouped)
-    #endif
     #if os(macOS)
       .onDeleteCommand {
         if let url = navigator.selection, isDeletable(url) { actions.delete(url) }
@@ -92,15 +84,49 @@ struct NoteListView: View {
     #endif
   }
 
+  private func rows(_ group: NoteGroup) -> some View {
+    ForEach(group.notes) { note in
+      NoteRow(note: note, isPinned: preferences.isPinned(note.url))
+        .draggable(note.url)
+        .contextMenu { menu(for: note.url) }
+        #if os(iOS)
+          // A row of its own in the list there (on the Mac it sits in its group's card, one list row).
+          .swipeActions(edge: .leading) {
+            Button(
+              preferences.isPinned(note.url) ? "Unpin" : "Pin",
+              systemImage: preferences.isPinned(note.url) ? "pin.slash" : "pin"
+            ) {
+              withAnimation { preferences.togglePin(note.url) }
+            }
+            .tint(.orange)
+          }
+          .swipeActions(edge: .trailing) {
+            Button("Delete", systemImage: "trash", role: .destructive) { actions.delete(note.url) }
+              .tint(.red)
+          }
+        #endif
+    }
+  }
+
   /// A date group's header: when, how many, and when the newest was edited.
   private func header(_ group: NoteGroup) -> some View {
+    RichHeader(group.title, meta: headerMeta(group), systemImage: headerImage(group), hue: headerHue(group))
+      .padding(.horizontal, 6)
+      .padding(.top, 10)
+      .padding(.bottom, 2)
+  }
+
+  private func headerMeta(_ group: NoteGroup) -> [String] {
     let count = group.notes.count == 1 ? "1 note" : "\(group.notes.count) notes"
     let edited = group.notes.map(\.modified).max().map { "edited \($0.noteListText)" } ?? ""
-    let isPinned = group.title == "Pinned"
-    return RichHeader(
-      group.title, meta: [count, edited], systemImage: isPinned ? "pin" : sortsByTitle ? "textformat" : "clock",
-      hue: isPinned ? .orange : .accent)
+    return [count, edited]
   }
+
+  private func headerImage(_ group: NoteGroup) -> String {
+    group.title == "Pinned" ? "pin" : sortsByTitle ? "textformat" : "clock"
+  }
+
+  private func headerHue(_ group: NoteGroup) -> Hue { group.title == "Pinned" ? .orange : .accent }
 
   @ViewBuilder private var emptyState: some View {
     if let summaries, summaries.isEmpty, !isSearching, navigator.item != nil {
@@ -121,10 +147,9 @@ struct NoteListView: View {
   @ToolbarContentBuilder private var toolbar: some ToolbarContent {
     #if os(macOS)
       // The pane's rich title: what is listed and how many notes (the window's title is hidden).
-      ToolbarItem(placement: .navigation) {
+      KitToolbarItem(placement: .navigation) {
         KitTitle(title, meta: subtitle, systemImage: itemImage, hue: itemHue)
       }
-      .kitBare()
     #endif
     ToolbarItem(placement: .primaryAction) {
       ToolGroup(iconOnly: true) {
@@ -144,7 +169,7 @@ struct NoteListView: View {
           .kitHelp("New Note", shortcut: "⌘N")
       }
     }
-    .kitBare()
+    .kitToolbarItem()
   }
 
   private var itemImage: String {
@@ -284,22 +309,21 @@ struct NoteListView: View {
   }
 
   @ViewBuilder private func searchResults(_ results: [SearchResult]) -> some View {
-    Section {
-      ForEach(results) { result in
-        VStack(alignment: .leading, spacing: 2) {
-          Text(result.name).kitFont(.headline).lineLimit(1)
-          if let snippet = result.snippet {
-            Text(snippet).kitFont(.callout).foregroundStyle(.kitSecondary).lineLimit(2)
+    RichHeader(
+      "Search", meta: results.isEmpty ? "No results" : results.count == 1 ? "1 result" : "\(results.count) results",
+      systemImage: "magnifyingglass", status: results.isEmpty ? .failed : .idle
+    )
+    .padding(.horizontal, 6)
+    .padding(.top, 10)
+    .padding(.bottom, 2)
+    ForEach(results) { result in
+      SidebarRow(value: result.url, result.name) { EmptyView() }
+        .subtitle {
+          VStack(alignment: .leading, spacing: 1) {
+            if let snippet = result.snippet { Text(snippet).foregroundStyle(.kitSecondary) }
+            Text(result.location).foregroundStyle(.kitTertiary)
           }
-          Text(result.location).kitFont(.caption).foregroundStyle(.kitTertiary).lineLimit(1)
         }
-        .padding(.vertical, 3)
-        .tag(result.url)
-      }
-    } header: {
-      RichHeader(
-        "Search", meta: results.isEmpty ? "No results" : results.count == 1 ? "1 result" : "\(results.count) results",
-        systemImage: "magnifyingglass", status: results.isEmpty ? .failed : .idle)
     }
   }
 
@@ -319,17 +343,18 @@ struct NoteListView: View {
   }
 }
 
-/// A note in the list: its name, then its date and the start of its text.
+/// A note in the list: its name (a pin when pinned), then its date and the start of its text.
 private struct NoteRow: View {
   let note: NoteSummary
   let isPinned: Bool
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      HStack(spacing: 4) {
-        Text(note.title)
-          .kitFont(.headline)
-          .lineLimit(1)
+    SidebarRow(value: note.url, note.title) { EmptyView() }
+      .subtitle {
+        Text(note.modified.noteListText).foregroundStyle(.kitLabel)
+          + Text("  " + (note.snippet.isEmpty ? "No additional text" : note.snippet))
+      }
+      .titleAccessory {
         if isPinned {
           Image(systemName: "pin.fill")
             .font(.system(size: 9))
@@ -337,15 +362,5 @@ private struct NoteRow: View {
             .accessibilityLabel("Pinned")
         }
       }
-      HStack(spacing: 6) {
-        Text(note.modified.noteListText)
-          .kitFont(.caption)
-          .foregroundStyle(.kitLabel)
-        Text(note.snippet.isEmpty ? "No additional text" : note.snippet)
-          .kitFont(.caption)
-          .lineLimit(1)
-      }
-    }
-    .padding(.vertical, 3)
   }
 }
