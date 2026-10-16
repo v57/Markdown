@@ -13,6 +13,7 @@
 		61748B000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = 61748B000000000000000002 /* GitHubKit */; };
 		56CEAB805123C0D171E0708B /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 96BB9BDBE9F3D27B6AA11CDF /* VaultKit */; };
 		DE5C0DE00000000000000003 /* DevScreenshots in Frameworks */ = {isa = PBXBuildFile; productRef = DE5C0DE00000000000000002 /* DevScreenshots */; };
+		C0C0DE000000000000000003 /* ComponentKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0DE000000000000000002 /* ComponentKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
 				56CEAB805123C0D171E0708B /* VaultKit in Frameworks */,
 				DE5C0DE00000000000000003 /* DevScreenshots in Frameworks */,
+				C0C0DE000000000000000003 /* ComponentKit in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -82,6 +84,7 @@
 				61748B000000000000000002 /* GitHubKit */,
 				96BB9BDBE9F3D27B6AA11CDF /* VaultKit */,
 				DE5C0DE00000000000000002 /* DevScreenshots */,
+				C0C0DE000000000000000002 /* ComponentKit */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Markdown.app */;
@@ -118,6 +121,7 @@
 				61748B000000000000000001 /* XCRemoteSwiftPackageReference "Git" */,
 				1746C461A3ED129A1AA8F0BC /* XCRemoteSwiftPackageReference "Vault" */,
 				DE5C0DE00000000000000001 /* XCRemoteSwiftPackageReference "Dev" */,
+				C0C0DE000000000000000001 /* XCRemoteSwiftPackageReference "Component" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -449,6 +453,14 @@
 				kind = branch;
 			};
 		};
+		C0C0DE000000000000000001 /* XCRemoteSwiftPackageReference "Component" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/v57/Component.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -480,6 +492,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DE5C0DE00000000000000001 /* XCRemoteSwiftPackageReference "Dev" */;
 			productName = DevScreenshots;
+		};
+		C0C0DE000000000000000002 /* ComponentKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0C0DE000000000000000001 /* XCRemoteSwiftPackageReference "Component" */;
+			productName = ComponentKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

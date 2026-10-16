@@ -1,3 +1,4 @@
+import ComponentKit
 import MarkdownKit
 import SwiftData
 import SwiftUI
@@ -84,6 +85,7 @@ import VaultKit
       #if os(macOS) || os(visionOS)
         .frame(minWidth: 640, minHeight: 400)
       #endif
+      .componentKit(accent: .blue)
     }
     .defaultSize(width: 1280, height: 800)
     .commands { MarkdownCommands() }
