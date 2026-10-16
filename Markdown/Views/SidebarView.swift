@@ -1,3 +1,4 @@
+import ComponentKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -6,8 +7,11 @@ import VaultKit
 /// The sidebar: where notes live. All Notes and the notes folder (iCloud Drive or local)
 /// with its folders, connected GitHub repositories, folders added by dropping them here
 /// (Finder, Files) or with Add Folder (persisted in SwiftData), and files opened on their
-/// own. Selecting one lists its notes in the note list.
+/// own. Selecting one lists its notes in the note list. The kit's sidebar: a card per place,
+/// and the bar at the bottom (search, new note and folder, the sidebar toggle).
 struct SidebarView: View {
+  /// On iPhone: picking a place pushes the note list.
+  @Binding var compactColumn: NavigationSplitViewColumn
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(NotesLocation.self) private var notes
@@ -23,78 +27,34 @@ struct SidebarView: View {
   @AppStorage("showsSharedProjects") private var showsProjects = false
 
   var body: some View {
-    List(selection: itemBinding) {
+    @Bindable var window = window
+    KitSidebar(
+      selection: itemBinding, searchText: $window.searchQuery, searchPrompt: "Search Notes"
+    ) {
       notesSection
-      if !repositories.repositories.isEmpty {
-        Section("GitHub") {
-          ForEach(repositories.repositories, id: \.fullName) { repository in
-            RepositoryRow(repository: repository)
-          }
-        }
-      }
-      if !rootFolders.isEmpty {
-        Section("Folders") {
-          ForEach(rootFolders) { folder in
-            FolderRootRow(folder: folder)
-          }
-          #if os(iOS)
-            .onDelete { offsets in
-              for index in offsets {
-                remove(rootFolders[index], library: library, navigator: navigator, context: context)
-              }
-            }
-          #endif
-        }
-      }
+      if !repositories.repositories.isEmpty { gitHubSection }
+      if !rootFolders.isEmpty { foldersSection }
       #if os(macOS)
         // The vault's projects are the user's: never in the screenshot demo.
         if !ScreenshotDemo.isOn { projectsSection }
       #endif
-      if !openedFiles.isEmpty {
-        Section("Files") {
-          Label("Opened Files", systemImage: "doc.on.doc")
-            .badge(openedFiles.count)
-            .tag(LibraryItem.openedFiles)
-        }
-      }
-      #if os(macOS)
-        // On macOS a List hands drops only to its rows (one on the List itself never
-        // arrives), so the space under the rows is a row too, taking dropped folders.
-        Section {
-          Color.clear
-            .frame(height: 200)
-            .contentShape(Rectangle())
-            .dropDestination(for: URL.self) { urls, _ in
-              add(urls.filter(\.isFileURL))
-            } isTargeted: { isDropTargeted = $0 }
-            .listRowBackground(Color.clear)
-            .accessibilityHidden(true)
-        }
-      #endif
+      if !openedFiles.isEmpty { filesSection }
+    } bottomBar: {
+      Button("New Note", systemImage: "square.and.pencil") { newNote() }
+        .disabled(notes.url == nil)
+        .kitHelp("New Note", shortcut: "⌘N")
+      Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
+        .disabled(notes.url == nil)
+        .kitHelp("New Folder", shortcut: "⇧⌘N")
     }
-    #if os(macOS)
-      .safeAreaInset(edge: .top, spacing: 0) { searchField }
-      .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-    #endif
-    // Outside the insets, so the search field and the bar below take drops too.
-    .overlay {
-      if isDropTargeted {
-        RoundedRectangle(cornerRadius: 8)
-          .strokeBorder(Color.accentColor, lineWidth: 2)
-          .padding(4)
-          .allowsHitTesting(false)
-      }
-    }
+    // Folders dropped anywhere on the sidebar join it.
+    .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
     .dropDestination(for: URL.self) { urls, _ in
       add(urls.filter(\.isFileURL))
     } isTargeted: { isDropTargeted = $0 }
     #if os(macOS)
       .onDeleteCommand {
         if case .folder(let url) = navigator.item, isDeletable(url) { actions.delete(url) }
-      }
-    #else
-      .toolbar {
-        ToolbarItem(placement: .primaryAction) { addMenu }
       }
     #endif
     .task(id: CountKey(root: notes.url, generation: library.generation)) {
@@ -121,6 +81,11 @@ struct SidebarView: View {
       Text(library.lastError ?? "")
     }
     .navigationTitle("Markdown")
+    #if os(macOS)
+      // The bottom bar has the toggle (and View › Show Sidebar brings it back). On iPad the bar
+      // has none: the split view's own toggle is what shows a hidden sidebar again.
+      .toolbar(removing: .sidebarToggle)
+    #endif
     #if DEBUG && targetEnvironment(simulator)
       .task { addLaunchArgumentFolders() }
     #endif
@@ -129,27 +94,99 @@ struct SidebarView: View {
   // MARK: - Sections
 
   /// All Notes, the notes folder itself (notes not in a folder) and its folders.
-  @ViewBuilder private var notesSection: some View {
-    Section {
+  private var notesSection: some View {
+    KitSection(
+      storageName, meta: notesMeta, systemImage: notes.isICloud ? "icloud" : "doc.text", hue: .blue
+    ) {
       if let root = notes.url {
         let _ = library.generation
-        Label("All Notes", systemImage: "note.text")
-          .badge(allNotesCount ?? 0)
-          .tag(LibraryItem.allNotes)
+        SidebarRow(value: LibraryItem.allNotes, "All Notes", systemImage: "note.text") {
+          Text("\(allNotesCount ?? 0)")
+        }
         FileTreeRow(node: FileNode(url: root, isDirectory: true), isRoot: true, title: "Notes", showsChildren: false)
         ForEach(library.children(of: root).filter(\.isDirectory)) { child in
           FileTreeRow(node: child)
         }
       } else {
-        ProgressView().frame(maxWidth: .infinity)
+        LiveIcon(systemImage: "doc.text", status: .working, size: 18)
+          .frame(maxWidth: .infinity, minHeight: 32)
       }
-    } header: {
-      HStack(spacing: 4) {
-        Text(notes.isICloud ? "iCloud" : storageName)
-        if notes.isICloud {
-          Image(systemName: "icloud")
-            .help("Notes sync through iCloud to your other devices and to Shell, encrypted.")
+    } accessory: {
+      notesMenu
+    }
+    .help(
+      notes.isICloud
+        ? "Notes are files in \(notes.url?.lastPathComponent ?? "Notes") and sync through iCloud, encrypted."
+        : "Notes are plain files on this \(deviceName).")
+  }
+
+  private var notesMeta: [String] {
+    let count = allNotesCount.map { $0 == 1 ? "1 note" : "\($0) notes" }
+    return [count ?? "", notes.isICloud ? "iCloud" : "plain files"]
+  }
+
+  /// New notes and folders, and (on the Mac) where the notes are as files.
+  private var notesMenu: some View {
+    Menu {
+      Button("New Note", systemImage: "square.and.pencil") { newNote() }
+      Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
+      Divider()
+      Button("Add Folder to Sidebar…", systemImage: "plus.rectangle.on.folder") { window.isAddingFolder = true }
+      Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { isConnectingGitHub = true }
+      #if os(macOS)
+        if let folder = notes.url {
+          Divider()
+          Button("Show Notes Folder in Finder", systemImage: "folder") {
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
+          }
+          Button("Choose Notes Folder…", systemImage: "folder.badge.gearshape") { chooseNotesFolder() }
         }
+      #endif
+    } label: {
+      Label("Add", systemImage: "plus")
+    }
+    .menuStyle(.button)
+    .menuIndicator(.hidden)
+    .labelStyle(.iconOnly)
+    .disabled(notes.url == nil)
+  }
+
+  private var gitHubSection: some View {
+    let changes = repositories.changeCounts.values.reduce(0, +)
+    let count = repositories.repositories.count
+    return KitSection(
+      "GitHub",
+      meta: [count == 1 ? "1 repository" : "\(count) repositories", changes == 0 ? "" : "\(changes) to push"],
+      systemImage: "arrow.triangle.branch", hue: .purple,
+      status: repositories.activity.isEmpty ? .idle : .working
+    ) {
+      ForEach(repositories.repositories, id: \.fullName) { repository in
+        RepositoryRow(repository: repository)
+      }
+    } accessory: {
+      Button("Connect GitHub Repository…", systemImage: "plus") { isConnectingGitHub = true }
+        .labelStyle(.iconOnly)
+    }
+  }
+
+  private var foldersSection: some View {
+    let names = rootFolders.map(\.name)
+    return KitSection(
+      "Folders", meta: names.count == 1 ? names : ["\(names.count) folders"], systemImage: "folder", hue: .teal
+    ) {
+      ForEach(rootFolders) { folder in
+        FolderRootRow(folder: folder)
+      }
+    } accessory: {
+      Button("Add Folder to Sidebar…", systemImage: "plus") { window.isAddingFolder = true }
+        .labelStyle(.iconOnly)
+    }
+  }
+
+  private var filesSection: some View {
+    KitSection("Files", meta: "opened on their own", systemImage: "doc.on.doc", hue: .gray) {
+      SidebarRow(value: LibraryItem.openedFiles, "Opened Files", systemImage: "doc.on.doc") {
+        Text("\(openedFiles.count)")
       }
     }
   }
@@ -162,92 +199,16 @@ struct SidebarView: View {
     #endif
   }
 
+  private var deviceName: String {
+    #if os(macOS)
+      "Mac"
+    #else
+      UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    #endif
+  }
+
   private var rootFolders: [SidebarFolder] { folders.filter { !$0.isFile } }
   private var openedFiles: [SidebarFolder] { folders.filter(\.isFile) }
-
-  #if os(macOS)
-    /// Opens Quick Open: looks like a search field, as in the sidebar of Mail or Notes.
-    private var searchField: some View {
-      Button {
-        window.isQuickOpenShown = true
-      } label: {
-        HStack(spacing: 6) {
-          Image(systemName: "magnifyingglass")
-          Text("Search")
-          Spacer()
-          Text("⌘K")
-            .font(.caption)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .frame(height: 28)
-        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .help("Find notes, text inside notes and commands (⌘K)")
-      .padding(.horizontal, 10)
-      .padding(.bottom, 6)
-    }
-
-    private var bottomBar: some View {
-      HStack {
-        addMenu
-          .menuStyle(.borderlessButton)
-          .menuIndicator(.hidden)
-          .fixedSize()
-        Spacer()
-        if let folder = notes.url {
-          // Where the notes are as files, and choosing another folder for them.
-          Menu {
-            Button("Show Notes Folder in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
-            Button("Choose Notes Folder…") { chooseNotesFolder() }
-          } label: {
-            Label(notes.isICloud ? "iCloud" : "On This Mac", systemImage: notes.isICloud ? "checkmark.icloud" : "internaldrive")
-              .labelStyle(.titleAndIcon)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-          .menuStyle(.borderlessButton)
-          .menuIndicator(.hidden)
-          .fixedSize()
-          .help(
-            notes.isICloud
-              ? "Notes are files in \(folder.lastPathComponent) and sync through iCloud, encrypted."
-              : "Notes are files in \(folder.lastPathComponent) on this Mac. Sign in to iCloud to sync them.")
-        }
-      }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
-      .overlay(alignment: .top) { Divider() }
-    }
-  #endif
-
-  private var addMenu: some View {
-    Menu {
-      Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
-        .keyboardShortcut("n", modifiers: [.command, .shift])
-      Button("Add Folder to Sidebar…", systemImage: "plus.rectangle.on.folder") {
-        window.isAddingFolder = true
-      }
-      .keyboardShortcut("o", modifiers: [.command, .shift])
-      Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") {
-        isConnectingGitHub = true
-      }
-    } label: {
-      #if os(macOS)
-        Label("New Folder", systemImage: "plus")
-      #else
-        Label("Add", systemImage: "folder.badge.plus")
-      #endif
-    } primaryAction: {
-      newFolder()
-    }
-    .disabled(notes.url == nil)
-  }
 
   // MARK: - Selection
 
@@ -257,6 +218,7 @@ struct SidebarView: View {
       get: { navigator.item },
       set: { item in
         navigator.item = item
+        if item != nil { compactColumn = .content }
         guard let selection = navigator.selection, let item else { return }
         if !contains(item, selection) { navigator.selection = nil }
       })
@@ -291,6 +253,23 @@ struct SidebarView: View {
   }
 
   // MARK: - Actions
+
+  /// A new note in the listed folder, otherwise in the notes folder.
+  private func newNote() {
+    guard let dir = newItemDirectory else { return }
+    if navigator.item == nil || navigator.item == .openedFiles { navigator.item = .folder(dir) }
+    actions.newNote(in: dir)
+  }
+
+  /// The listed folder when the app can write there, otherwise the notes folder.
+  private var newItemDirectory: URL? {
+    if case .folder(let dir) = navigator.item, FolderLibrary.isDirectory(dir),
+      library.root(of: dir, roots: library.roots(folders)) != nil
+    {
+      return dir
+    }
+    return notes.url
+  }
 
   /// Where a new folder goes: the listed folder, otherwise the notes folder.
   private func newFolder() {
@@ -355,15 +334,15 @@ struct SidebarView: View {
         return !added.contains(FolderLibrary.canonical(url).path)
       }
       if !projects.isEmpty {
-        Section("Projects", isExpanded: $showsProjects) {
+        KitSection(
+          "Projects", meta: projects.count == 1 ? "1 shared project" : "\(projects.count) shared projects",
+          systemImage: "square.stack", hue: .indigo, isExpanded: $showsProjects
+        ) {
           ForEach(projects) { project in
-            Button {
-              addProject(project)
-            } label: {
-              Label(project.name, systemImage: "folder.badge.plus")
-            }
-            .buttonStyle(.plain)
-            .help("Add “\(project.name)” to the sidebar")
+            // Not a place to list: a tap asks for the folder and adds it.
+            SidebarRow(project.name, systemImage: "folder.badge.plus")
+              .simultaneousGesture(TapGesture().onEnded { addProject(project) })
+              .help("Add “\(project.name)” to the sidebar")
           }
         }
       }
@@ -431,12 +410,8 @@ private struct FolderRootRow: View {
       if let url = library.url(for: folder) {
         FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true)
       } else {
-        Label {
-          Text(folder.name).foregroundStyle(.secondary)
-        } icon: {
-          Image(systemName: "exclamationmark.triangle").foregroundStyle(.yellow)
-        }
-        .help("\(folder.path) can’t be found. It may have been moved or deleted.")
+        SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
+          .help("\(folder.path) can’t be found. It may have been moved or deleted.")
       }
     }
     .contextMenu {
@@ -478,31 +453,57 @@ struct FileTreeRow: View {
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @State private var isDropTargeted = false
 
+  /// How deep in the sidebar's tree the folder is (its root is 0).
+  var depth = 0
+  @Environment(\.kitIdiom) private var idiom
+
   var body: some View {
     // `generation` re-lists after a reload.
     let _ = library.generation
     let children = library.children(of: node.url)
     let subfolders = showsChildren ? children.filter(\.isDirectory) : []
-    if subfolders.isEmpty {
-      row(noteCount: children.count - children.filter(\.isDirectory).count)
-    } else {
-      DisclosureGroup(isExpanded: expandedBinding) {
-        ForEach(subfolders) { child in
-          FileTreeRow(node: child)
-        }
-      } label: {
-        row(noteCount: children.count - children.filter(\.isDirectory).count)
+    row(noteCount: children.count - children.filter(\.isDirectory).count, isExpandable: !subfolders.isEmpty)
+    if isExpanded {
+      ForEach(subfolders) { child in
+        FileTreeRow(node: child, depth: depth + 1)
       }
     }
   }
 
-  private func row(noteCount: Int) -> some View {
-    label(Label(title ?? node.name, systemImage: systemImage))
-      .badge(badge ?? noteCount)
-      .dropDestination(for: URL.self) { urls, _ in drop(urls) } isTargeted: { isDropTargeted = $0 }
-      .listRowBackground(
-        isDropTargeted ? RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.2)) : nil)
-      .tag(LibraryItem.folder(node.url))
+  private func row(noteCount: Int, isExpandable: Bool) -> some View {
+    label(
+      SidebarRow(value: LibraryItem.folder(node.url), title ?? node.name) {
+        HStack(spacing: 2) {
+          if isExpandable { disclosure }
+          RowTile(systemImage: systemImage)
+        }
+      } trailing: {
+        if let activity {
+          LiveIcon(systemImage: "arrow.down", status: .working, size: 16).help(activity)
+        } else {
+          Text("\(badge ?? noteCount)")
+        }
+      }
+      .kitRowIndent(depth)
+    )
+    .kitDropTarget(isDropTargeted)
+    .dropDestination(for: URL.self) { urls, _ in drop(urls) } isTargeted: { isDropTargeted = $0 }
+  }
+
+  /// Opens and closes the folder's subfolders.
+  private var disclosure: some View {
+    Button {
+      withKitAnimation { isExpanded.toggle() }
+    } label: {
+      Image(systemName: "chevron.right")
+        .font(.system(size: idiom.isTouch ? 12 : 9, weight: .bold))
+        .foregroundStyle(.kitTertiary)
+        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+        .frame(width: idiom.isTouch ? 18 : 12, height: idiom.isTouch ? 28 : 18)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
   }
 
   /// Notes and folders from the app's own folders move here, files from other apps are
@@ -528,13 +529,7 @@ struct FileTreeRow: View {
   /// Roots keep their sidebar menu (FolderRootRow); everything inside gets the folder one.
   @ViewBuilder private func label(_ label: some View) -> some View {
     if isRoot {
-      HStack {
-        label
-        if let activity {
-          Spacer()
-          ProgressView().controlSize(.small).help(activity)
-        }
-      }
+      label
     } else {
       label
         .draggable(node.url)
@@ -558,12 +553,11 @@ struct FileTreeRow: View {
     #endif
   }
 
-  private var expandedBinding: Binding<Bool> {
-    Binding(
-      get: { library.expanded.contains(node.url) },
-      set: { isOpen in
-        if isOpen { library.expanded.insert(node.url) } else { library.expanded.remove(node.url) }
-      })
+  private var isExpanded: Bool {
+    get { library.expanded.contains(node.url) }
+    nonmutating set {
+      if newValue { library.expanded.insert(node.url) } else { library.expanded.remove(node.url) }
+    }
   }
 }
 

@@ -1,9 +1,10 @@
+import ComponentKit
 import SwiftData
 import SwiftUI
 
 /// The middle column: the notes of the sidebar's selection, newest first and grouped by
 /// date (Pinned, Today, Yesterday, …) as in Notes, each with its time and first line.
-/// On iOS it also searches every note.
+/// It also shows the notes that match the sidebar's search line (and on iOS, its own).
 struct NoteListView: View {
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
@@ -18,10 +19,7 @@ struct NoteListView: View {
   /// The item `summaries` belong to.
   @State private var loadedItem: LibraryItem?
   @AppStorage("noteListSortsByTitle") private var sortsByTitle = false
-  #if os(iOS)
-    @State private var query = ""
-    @State private var results: [SearchResult]?
-  #endif
+  @State private var results: [SearchResult]?
 
   private struct LoadKey: Equatable {
     var item: LibraryItem?
@@ -29,15 +27,16 @@ struct NoteListView: View {
   }
 
   var body: some View {
+    @Bindable var window = window
     list
+      .scrollContentBackground(.hidden)
+      .kitPane(.secondary)
       .overlay { emptyState }
       .navigationTitle(title)
-      #if os(macOS)
-        .navigationSubtitle(subtitle)
-      #else
-        .searchable(text: $query, prompt: "Search")
-        .task(id: query) { await search() }
+      #if os(iOS)
+        .searchable(text: $window.searchQuery, prompt: "Search")
       #endif
+      .task(id: window.searchQuery) { await search() }
       .toolbar { toolbar }
       .task(id: LoadKey(item: navigator.item, generation: library.generation)) {
         let item = navigator.item
@@ -47,15 +46,11 @@ struct NoteListView: View {
     }
 
   @ViewBuilder private var list: some View {
-    #if os(iOS)
-      if isSearching, let results {
-        List(selection: noteSelection) { searchResults(results) }
-      } else {
-        notesList
-      }
-    #else
+    if isSearching, let results {
+      List(selection: noteSelection) { searchResults(results) }
+    } else {
       notesList
-    #endif
+    }
   }
 
   private var notesList: some View {
@@ -80,7 +75,7 @@ struct NoteListView: View {
               #endif
           }
         } header: {
-          if !group.title.isEmpty { Text(group.title) }
+          if !group.title.isEmpty { header(group) }
         }
       }
     }
@@ -97,47 +92,76 @@ struct NoteListView: View {
     #endif
   }
 
+  /// A date group's header: when, how many, and when the newest was edited.
+  private func header(_ group: NoteGroup) -> some View {
+    let count = group.notes.count == 1 ? "1 note" : "\(group.notes.count) notes"
+    let edited = group.notes.map(\.modified).max().map { "edited \($0.noteListText)" } ?? ""
+    let isPinned = group.title == "Pinned"
+    return RichHeader(
+      group.title, meta: [count, edited], systemImage: isPinned ? "pin" : sortsByTitle ? "textformat" : "clock",
+      hue: isPinned ? .orange : .accent)
+  }
+
   @ViewBuilder private var emptyState: some View {
     if let summaries, summaries.isEmpty, !isSearching, navigator.item != nil {
-      ContentUnavailableView {
-        Label("No Notes", systemImage: "note.text")
-      } description: {
-        Text(navigator.item == .openedFiles ? "Files you open from Finder appear here." : "Notes you write here appear in this list.")
-      } actions: {
+      EmptyState(
+        systemImage: "note.text", title: "No Notes",
+        message: navigator.item == .openedFiles
+          ? "Files you open from Finder appear here." : "Notes you write here appear in this list."
+      ) {
         if newNoteDirectory != nil {
-          Button("New Note") { newNote() }
+          Button("New Note") { newNote() }.buttonStyle(.kitPrimary)
         }
       }
     } else if navigator.item == nil {
-      ContentUnavailableView("No Folder Selected", systemImage: "sidebar.left", description: Text("Choose a folder in the sidebar."))
+      EmptyState(systemImage: "sidebar.left", title: "No Folder Selected", message: "Choose a folder in the sidebar.")
     }
   }
 
   @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-    ToolbarItem {
-      Menu("Sort", systemImage: "line.3.horizontal.decrease") {
-        Picker("Sort By", selection: $sortsByTitle) {
-          Text("Date Edited").tag(false)
-          Text("Title").tag(true)
+    #if os(macOS)
+      // The pane's rich title: what is listed and how many notes (the window's title is hidden).
+      ToolbarItem(placement: .navigation) {
+        KitTitle(title, meta: subtitle, systemImage: itemImage, hue: itemHue)
+      }
+      .kitBare()
+    #endif
+    ToolbarItem(placement: .primaryAction) {
+      ToolGroup(iconOnly: true) {
+        Menu {
+          Picker("Sort By", selection: $sortsByTitle) {
+            Text("Date Edited").tag(false)
+            Text("Title").tag(true)
+          }
+          .pickerStyle(.inline)
+        } label: {
+          Label("Sort", systemImage: "line.3.horizontal.decrease")
         }
-        .pickerStyle(.inline)
-      }
-      .help("Sort notes by the date they were edited or by title")
-    }
-    #if os(iOS)
-      ToolbarItem(placement: .bottomBar) { Spacer() }
-      ToolbarItem(placement: .bottomBar) {
-        Button("New Note", systemImage: "square.and.pencil") { newNote() }
-          .disabled(newNoteDirectory == nil)
-      }
-    #else
-      ToolbarItem {
+        .kitHelp("Sort", meta: sortsByTitle ? "By title" : "By date edited")
         Button("New Note", systemImage: "square.and.pencil") { newNote() }
           .keyboardShortcut("n", modifiers: .command)
           .disabled(newNoteDirectory == nil)
-          .help("New Note (⌘N)")
+          .kitHelp("New Note", shortcut: "⌘N")
       }
-    #endif
+    }
+    .kitBare()
+  }
+
+  private var itemImage: String {
+    switch navigator.item {
+    case .allNotes, nil: "note.text"
+    case .openedFiles: "doc.on.doc"
+    case .folder(let url):
+      repositories.repositories.contains { repositories.directory(for: $0) == url } ? "arrow.triangle.branch" : "folder"
+    }
+  }
+
+  private var itemHue: Hue {
+    switch navigator.item {
+    case .allNotes, nil: .blue
+    case .openedFiles: .gray
+    case .folder: itemImage == "folder" ? .teal : .purple
+    }
   }
 
   @ViewBuilder private func menu(for url: URL) -> some View {
@@ -253,35 +277,35 @@ struct NoteListView: View {
     return library.root(of: url, roots: roots) != nil && !roots.contains(url)
   }
 
-  // MARK: - Search (iOS)
+  // MARK: - Search
 
   private var isSearching: Bool {
-    #if os(iOS)
-      !query.trimmingCharacters(in: .whitespaces).isEmpty
-    #else
-      false
-    #endif
+    !window.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
   }
 
-  #if os(iOS)
-    @ViewBuilder private func searchResults(_ results: [SearchResult]) -> some View {
-      Section(results.isEmpty ? "No Results" : results.count == 1 ? "1 Result" : "\(results.count) Results") {
-        ForEach(results) { result in
-          VStack(alignment: .leading, spacing: 2) {
-            Text(result.name).font(.headline).lineLimit(1)
-            if let snippet = result.snippet {
-              Text(snippet).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-            }
-            Text(result.location).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+  @ViewBuilder private func searchResults(_ results: [SearchResult]) -> some View {
+    Section {
+      ForEach(results) { result in
+        VStack(alignment: .leading, spacing: 2) {
+          Text(result.name).kitFont(.headline).lineLimit(1)
+          if let snippet = result.snippet {
+            Text(snippet).kitFont(.callout).foregroundStyle(.kitSecondary).lineLimit(2)
           }
-          .tag(result.url)
+          Text(result.location).kitFont(.caption).foregroundStyle(.kitTertiary).lineLimit(1)
         }
+        .padding(.vertical, 3)
+        .tag(result.url)
       }
+    } header: {
+      RichHeader(
+        "Search", meta: results.isEmpty ? "No results" : results.count == 1 ? "1 result" : "\(results.count) results",
+        systemImage: "magnifyingglass", status: results.isEmpty ? .failed : .idle)
     }
+  }
 
-    /// Searches every note a moment after typing pauses (the task restarts per keystroke).
-    private func search() async {
-      let query = query.trimmingCharacters(in: .whitespaces)
+  /// Searches every note a moment after typing pauses (the task restarts per keystroke).
+  private func search() async {
+      let query = window.searchQuery.trimmingCharacters(in: .whitespaces)
       guard !query.isEmpty else {
         results = nil
         return
@@ -292,8 +316,7 @@ struct NoteListView: View {
       let found = await scope.search(query)
       guard !Task.isCancelled else { return }
       results = found
-    }
-  #endif
+  }
 }
 
 /// A note in the list: its name, then its date and the start of its text.
@@ -302,27 +325,27 @@ private struct NoteRow: View {
   let isPinned: Bool
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 3) {
+    VStack(alignment: .leading, spacing: 2) {
       HStack(spacing: 4) {
         Text(note.title)
-          .font(.headline)
+          .kitFont(.headline)
           .lineLimit(1)
         if isPinned {
           Image(systemName: "pin.fill")
-            .font(.caption2)
-            .foregroundStyle(.orange)
+            .font(.system(size: 9))
+            .foregroundStyle(Hue.orange.fill)
             .accessibilityLabel("Pinned")
         }
       }
       HStack(spacing: 6) {
         Text(note.modified.noteListText)
-          .foregroundStyle(.primary)
+          .kitFont(.caption)
+          .foregroundStyle(.kitLabel)
         Text(note.snippet.isEmpty ? "No additional text" : note.snippet)
-          .foregroundStyle(.secondary)
+          .kitFont(.caption)
           .lineLimit(1)
       }
-      .font(.subheadline)
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, 3)
   }
 }

@@ -1,10 +1,13 @@
+import ComponentKit
 import SwiftUI
 
 /// The welcome sheet, shown when the app opens (unless turned off) and from Window ›
 /// Welcome to Markdown: start a note, open a folder of Markdown files, or go back to a
-/// recent note.
+/// recent note. The kit's welcome window; on iPhone, where it doesn't fit, a scrolling page.
 struct WelcomeView: View {
   var perform: (QuickOpenCommand) -> Void
+  /// Folders and files dropped on the window.
+  var open: ([URL]) -> Bool
   @Environment(NotePreferences.self) private var preferences
   @Environment(Navigator.self) private var navigator
   @Environment(FolderLibrary.self) private var library
@@ -12,27 +15,70 @@ struct WelcomeView: View {
   @Environment(\.dismiss) private var dismiss
   @AppStorage("showsWelcome") private var showsWelcome = true
   @AppStorage(NoteFiles.encryptNewNotesKey) private var encryptsNewNotes = true
+  @Environment(\.kitIdiom) private var idiom
 
   var body: some View {
     #if os(macOS)
-      HStack(spacing: 0) {
-        start
-          .frame(width: 440)
-        Divider()
-        recents
-          .frame(width: 280)
-          .background(.background.secondary)
-      }
-      .frame(height: 500)
-      .overlay(alignment: .topLeading) {
-        Button("Close", systemImage: "xmark") { dismiss() }
-          .labelStyle(.iconOnly)
-          .buttonStyle(.borderless)
-          .keyboardShortcut(.cancelAction)
-          .help("Close (Esc)")
-          .padding(14)
-      }
+      welcome
     #else
+      if idiom == .phone { page } else { welcome }
+    #endif
+  }
+
+  private var welcome: some View {
+    KitWelcome(
+      appName: "Markdown", version: "Notes in plain Markdown files", showAtLaunch: $showsWelcome,
+      emptyTitle: "No Recent Notes", emptyMessage: "Notes you open appear here.", close: { dismiss() },
+      onDrop: { urls in
+        dismiss()
+        return open(urls)
+      }
+    ) {
+      WelcomeAction("New Note", detail: newNoteDetail, systemImage: "square.and.pencil") { run(.newNote(nil)) }
+      WelcomeAction(
+        "Open Folder…", detail: "Edit the Markdown files already on your \(deviceName), in place.",
+        systemImage: "folder"
+      ) { run(.addFolder) }
+      // New notes are encrypted with the key the v57 apps share (Shell opens them too).
+      Toggle("Encrypt new notes", isOn: $encryptsNewNotes)
+        .toggleStyle(.kitCheckbox)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 10)
+        .padding(.top, 8)
+    } recents: {
+      ForEach(Array(preferences.existingRecents.prefix(8)), id: \.self) { url in
+        RecentItem(
+          url.deletingPathExtension().lastPathComponent, subtitle: subtitle(for: url), systemImage: "doc.text",
+          id: url.path
+        ) {
+          openRecent(url)
+        }
+      }
+    }
+    #if os(macOS)
+      .frame(height: 660)
+    #endif
+  }
+
+  private var newNoteDetail: String {
+    notes.isICloud
+      ? "Notes are files on this \(deviceName) and sync through iCloud."
+      : "Start writing. Notes are plain files on this \(deviceName)."
+  }
+
+  private func run(_ command: QuickOpenCommand) {
+    dismiss()
+    perform(command)
+  }
+
+  private func openRecent(_ url: URL) {
+    dismiss()
+    library.reveal(url, roots: library.builtInRoots)
+    navigator.open(url)
+  }
+
+  #if os(iOS)
+    private var page: some View {
       NavigationStack {
         ScrollView {
           VStack(spacing: 28) {
@@ -47,8 +93,7 @@ struct WelcomeView: View {
           }
         }
       }
-    #endif
-  }
+    }
 
   private var start: some View {
     VStack(spacing: 0) {
@@ -57,106 +102,59 @@ struct WelcomeView: View {
           .frame(width: 88, height: 88)
           .padding(.bottom, 10)
         Text("Markdown")
-          .font(.largeTitle.bold())
+          .kitFont(.largeTitle)
         Text("Notes in plain Markdown files")
-          .foregroundStyle(.secondary)
+          .kitFont(.callout)
+          .foregroundStyle(.kitSecondary)
       }
       .padding(.top, 36)
       .padding(.bottom, 28)
 
       VStack(spacing: 4) {
-        action(
-          "New Note", notes.isICloud ? "Start writing. Notes are files on this \(deviceName) and sync through iCloud, encrypted." : "Start writing. Notes are plain files on this \(deviceName).", systemImage: "square.and.pencil",
-          shortcut: "⌘N", command: .newNote(nil))
-        action(
-          "Open Folder…", "Edit the Markdown files already on your \(deviceName), in place.",
-          systemImage: "folder", shortcut: "⇧⌘O", command: .addFolder)
+        WelcomeAction("New Note", detail: newNoteDetail, systemImage: "square.and.pencil") { run(.newNote(nil)) }
+        WelcomeAction(
+          "Open Folder…", detail: "Edit the Markdown files already on your \(deviceName), in place.",
+          systemImage: "folder"
+        ) { run(.addFolder) }
       }
-      .padding(.horizontal, 32)
+      .padding(.horizontal, 24)
 
       Spacer(minLength: 24)
 
       // New notes are encrypted with the key the v57 apps share (Shell opens them too).
       Toggle("Encrypt new notes", isOn: $encryptsNewNotes)
-        #if os(macOS)
-          .toggleStyle(.checkbox)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        #endif
+        .toggleStyle(.kitSwitch)
         .padding(.horizontal, 32)
         .padding(.bottom, 6)
-      Toggle(showsWelcomeLabel, isOn: $showsWelcome)
-        #if os(macOS)
-          .toggleStyle(.checkbox)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        #endif
+      Toggle("Show when Markdown opens", isOn: $showsWelcome)
+        .toggleStyle(.kitSwitch)
         .padding(.horizontal, 32)
         .padding(.bottom, 20)
     }
   }
 
-  private func action(
-    _ title: String, _ detail: String, systemImage: String, shortcut: String, command: QuickOpenCommand
-  ) -> some View {
-    Button {
-      dismiss()
-      perform(command)
-    } label: {
-      HStack(spacing: 12) {
-        Image(systemName: systemImage)
-          .font(.title3)
-          .foregroundStyle(Color.accentColor)
-          .frame(width: 36, height: 36)
-          .background(Color.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        VStack(alignment: .leading, spacing: 2) {
-          Text(title).font(.headline)
-          Text(detail)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        Spacer(minLength: 8)
-        #if os(macOS)
-          Text(shortcut).foregroundStyle(.secondary)
-        #endif
-      }
-      .padding(10)
-      .contentShape(RoundedRectangle(cornerRadius: 10))
-    }
-    .buttonStyle(WelcomeButtonStyle())
-  }
-
   private var recents: some View {
     VStack(alignment: .leading, spacing: 2) {
       Text("Recent")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
+        .kitFont(.headline)
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
       let recents = preferences.existingRecents.prefix(8)
       if recents.isEmpty {
         Text("Notes you open appear here.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
+          .kitFont(.callout)
+          .foregroundStyle(.kitSecondary)
           .padding(.horizontal, 12)
       }
       ForEach(Array(recents), id: \.self) { url in
         Button {
-          dismiss()
-          library.reveal(url, roots: library.builtInRoots)
-          navigator.open(url)
+          openRecent(url)
         } label: {
           HStack(spacing: 10) {
-            Image(systemName: "doc.text").foregroundStyle(Color.accentColor)
+            Tile(systemImage: "doc.text", hue: .blue, size: 36)
             VStack(alignment: .leading, spacing: 1) {
-              Text(url.deletingPathExtension().lastPathComponent).lineLimit(1)
-              Text(subtitle(for: url))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+              Text(url.deletingPathExtension().lastPathComponent).kitFont(.headline).lineLimit(1)
+              Text(subtitle(for: url)).kitFont(.caption).lineLimit(1)
             }
             Spacer(minLength: 0)
           }
@@ -168,27 +166,14 @@ struct WelcomeView: View {
       }
       Spacer(minLength: 0)
     }
-    #if os(macOS)
-      .padding(.top, 44)
-      .padding(.horizontal, 8)
-      .padding(.bottom, 12)
-    #else
-      .padding(.horizontal)
-    #endif
+    .padding(.horizontal)
   }
+  #endif
 
   private func subtitle(for url: URL) -> String {
     let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     return [url.deletingLastPathComponent().lastPathComponent, modified?.noteListText]
       .compactMap { $0 }.joined(separator: " · ")
-  }
-
-  private var showsWelcomeLabel: String {
-    #if os(macOS)
-      "Show this window when Markdown opens"
-    #else
-      "Show when Markdown opens"
-    #endif
   }
 
   private var deviceName: String {
@@ -200,7 +185,8 @@ struct WelcomeView: View {
   }
 }
 
-/// A row that highlights when hovered or pressed.
+#if os(iOS)
+/// A row that highlights when pressed.
 private struct WelcomeButtonStyle: ButtonStyle {
   @State private var isHovered = false
 
@@ -214,16 +200,10 @@ private struct WelcomeButtonStyle: ButtonStyle {
   }
 }
 
-/// The app's icon: the real one on macOS; on iOS, where the icon can't be read back, the
-/// same mark drawn (a page in blush on v57 red).
+/// The app's mark, drawn: the icon can't be read back on iOS (a page in blush on v57 red).
 private struct AppIconView: View {
   var body: some View {
-    #if os(macOS)
-      Image(nsImage: NSApp.applicationIconImage)
-        .resizable()
-        .accessibilityHidden(true)
-    #else
-      RoundedRectangle(cornerRadius: 20, style: .continuous)
+    RoundedRectangle(cornerRadius: 20, style: .continuous)
         .fill(Color(red: 1, green: 0.153, blue: 0.251))
         .overlay {
           Image(systemName: "doc.text")
@@ -232,6 +212,6 @@ private struct AppIconView: View {
         }
         .shadow(color: Color(red: 1, green: 0.153, blue: 0.251).opacity(0.3), radius: 8, y: 4)
         .accessibilityHidden(true)
-    #endif
   }
 }
+#endif

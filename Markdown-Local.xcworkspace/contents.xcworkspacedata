@@ -19,4 +19,7 @@
    <FileRef
       location = "group:../Dev">
    </FileRef>
+   <FileRef
+      location = "group:../Component">
+   </FileRef>
 </Workspace>
