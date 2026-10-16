@@ -2,7 +2,7 @@ import Foundation
 
 /// What the note list shows: every note in the notes folder, one folder's notes, or the
 /// files opened on their own from Finder or Files.
-enum LibraryItem: Hashable {
+nonisolated enum LibraryItem: Hashable, Sendable {
   case allNotes
   case folder(URL)
   case openedFiles

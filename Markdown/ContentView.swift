@@ -1,3 +1,4 @@
+import ComponentKit
 import DevScreenshots
 import SwiftData
 import SwiftUI
@@ -16,6 +17,8 @@ struct ContentView: View {
   @State private var repositories = RepositoryStore()
   @State private var preferences = NotePreferences(defaults: ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard)
   @State private var window = WindowState()
+  /// On iPhone: the column shown, which follows the sidebar's and the list's picks.
+  @State private var compactColumn = NavigationSplitViewColumn.sidebar
   @AppStorage("showsWelcome") private var showsWelcome = true
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
@@ -31,20 +34,28 @@ struct ContentView: View {
   }
 
   var body: some View {
-    NavigationSplitView {
-      SidebarView()
-        .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
+    NavigationSplitView(preferredCompactColumn: $compactColumn) {
+      SidebarView(compactColumn: $compactColumn)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
     } content: {
       NoteListView()
-        .navigationSplitViewColumnWidth(min: 220, ideal: 290, max: 420)
+        .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 420)
     } detail: {
       NavigationStack {
         DocumentView()
       }
     }
     .overlay { quickOpen }
+    .animation(.kit, value: window.isQuickOpenShown)
+    #if os(macOS)
+      .modifier(HidesWindowTitle())
+    #endif
     .sheet(isPresented: $window.isWelcomeShown) {
-      WelcomeView(perform: perform)
+      WelcomeView(perform: perform) { urls in
+        let shown = library.add(urls, existing: folders, context: context)
+        if let first = shown.first { navigator.open(first) }
+        return !shown.isEmpty
+      }
     }
     .fileImporter(
       isPresented: $window.isAddingFolder, allowedContentTypes: [.folder], allowsMultipleSelection: true
@@ -67,6 +78,7 @@ struct ContentView: View {
         openScreenshotDemo(arguments)
         await screenshotSceneLoaded()
       }
+      window.perform = perform
       repositories.willChangeFiles = { [actions] in actions.willChangeFiles() }
       repositories.didChangeFiles = { [library] in library.reload() }
       actions.didMove = { [preferences] in preferences.replace($0, with: $1) }
@@ -91,7 +103,11 @@ struct ContentView: View {
     .onChange(of: repositories.repositories) { updateRoots() }
     // Edits saved, files moved: recount the repositories' local changes.
     .onChange(of: library.generation) { repositories.refreshChanges() }
-    .onChange(of: navigator.selection) { _, selection in follow(selection) }
+    .onChange(of: navigator.selection) { _, selection in
+      follow(selection)
+      if selection != nil { compactColumn = .detail }
+    }
+
     .onOpenURL { open($0) }
     // Opened files go to this window instead of a new one each.
     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
@@ -100,11 +116,12 @@ struct ContentView: View {
   @ViewBuilder private var quickOpen: some View {
     if window.isQuickOpenShown {
       ZStack(alignment: .top) {
-        Color.black.opacity(0.18)
+        Color.black.opacity(0.12)
           .ignoresSafeArea()
           .onTapGesture { window.isQuickOpenShown = false }
           .accessibilityHidden(true)
         QuickOpenView(perform: perform)
+          .frame(maxWidth: 560)
           .padding(.horizontal, 16)
           .padding(.top, 72)
       }
@@ -221,3 +238,16 @@ struct ContentView: View {
     }
   }
 }
+
+#if os(macOS)
+  /// Each pane names itself in its own rich title, so the window's title stays out of the toolbar.
+  private struct HidesWindowTitle: ViewModifier {
+    func body(content: Content) -> some View {
+      if #available(macOS 15, *) {
+        content.toolbar(removing: .title)
+      } else {
+        content
+      }
+    }
+  }
+#endif

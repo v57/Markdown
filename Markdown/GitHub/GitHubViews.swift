@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import SwiftUI
 
@@ -84,7 +85,7 @@ struct GitHubConnectView: View {
             copy(code)
             openURL(url)
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.kitPrimary)
           HStack {
             ProgressView().controlSize(.small)
             Text("Waiting for you to approve…").foregroundStyle(.secondary)

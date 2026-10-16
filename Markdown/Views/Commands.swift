@@ -7,6 +7,10 @@ import SwiftUI
   var isQuickOpenShown = false
   var isWelcomeShown = false
   var isAddingFolder = false
+  /// What the sidebar's search line holds: the note list shows the notes that match.
+  var searchQuery = ""
+  /// Runs one of Quick Open's commands in this window (the menu bar's New Folder and Add Folder).
+  @ObservationIgnored var perform: ((QuickOpenCommand) -> Void)?
 
   /// What a pane shows: the shown note (nil: the listed folder's README, or nothing) and the listed item.
   struct Shown: Equatable {
@@ -61,6 +65,13 @@ struct MarkdownCommands: Commands {
       Button("Quick Open…") { window?.isQuickOpenShown = true }
         .keyboardShortcut("k", modifiers: .command)
         .disabled(window == nil)
+      Button("New Folder") { window?.perform?(.newFolder) }
+        .keyboardShortcut("n", modifiers: [.command, .shift])
+        .disabled(window == nil)
+      Button("Add Folder to Sidebar…") { window?.isAddingFolder = true }
+        .keyboardShortcut("o", modifiers: [.command, .shift])
+        .disabled(window == nil)
+      Divider()
       Toggle("Encrypt New Notes", isOn: $encryptsNewNotes)
     }
     CommandGroup(replacing: .saveItem) {
