@@ -284,6 +284,63 @@
       return true
     }
 
+    // MARK: - Current line
+
+    /// Where the faint current-line fill was last drawn.
+    private var caretLineRect: NSRect?
+
+    /// The caret's line (its paragraph, where the Markdown marks show) gets a faint fill while
+    /// editing, so the revealed marks read as belonging to it.
+    public override func drawBackground(in rect: NSRect) {
+      super.drawBackground(in: rect)
+      guard let line = caretLineRect, line.intersects(rect) else { return }
+      NSColor.labelColor.withAlphaComponent(0.04).setFill()
+      NSBezierPath(roundedRect: line, xRadius: 6, yRadius: 6).fill()
+    }
+
+    public override func becomeFirstResponder() -> Bool {
+      let became = super.becomeFirstResponder()
+      updateCaretLine()
+      return became
+    }
+
+    public override func resignFirstResponder() -> Bool {
+      let resigned = super.resignFirstResponder()
+      if resigned { updateCaretLine(focused: false) }
+      return resigned
+    }
+
+    /// Recomputes the current line and redraws where it was and where it is.
+    private func updateCaretLine(focused: Bool? = nil) {
+      let isFocused = focused ?? (window?.firstResponder === self)
+      let new = isFocused ? currentLineRect() : nil
+      guard new != caretLineRect else { return }
+      if let old = caretLineRect { setNeedsDisplay(old.insetBy(dx: -1, dy: -1)) }
+      caretLineRect = new
+      if let new { setNeedsDisplay(new.insetBy(dx: -1, dy: -1)) }
+    }
+
+    /// The caret's paragraph across the text's width, in view coordinates; nil while reading or
+    /// with a selection.
+    private func currentLineRect() -> NSRect? {
+      let selection = selectedRange()
+      guard !isReadOnly, selection.length == 0 else { return nil }
+      let text = string as NSString
+      let paragraph = text.paragraphRange(for: NSRange(location: min(selection.location, text.length), length: 0))
+      let glyphs = markdownLayout.glyphRange(forCharacterRange: paragraph, actualCharacterRange: nil)
+      var rect = NSRect.null
+      if glyphs.length == 0 {
+        rect = markdownLayout.extraLineFragmentRect
+      } else {
+        markdownLayout.enumerateLineFragments(forGlyphRange: glyphs) { fragment, _, _, _, _ in
+          rect = rect.union(fragment)
+        }
+      }
+      guard !rect.isNull, !rect.isEmpty else { return nil }
+      let origin = textContainerOrigin
+      return rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -4, dy: 0)
+    }
+
     // MARK: - Selection / active line (drives syntax show/hide)
 
     /// Flips one table between the grid and its raw markdown source. VIEW state only:
@@ -306,6 +363,9 @@
     }
 
     public func textViewDidChangeSelection(_ notification: Notification) {
+      updateCaretLine()
+      // Again once the marks shown or hidden below have been laid out (a heading's line changes height).
+      DispatchQueue.main.async { [weak self] in self?.updateCaretLine() }
       guard let lm = layoutManager as? EditorLayoutManager else { return }
       let newSelection = selectedRange()
       guard newSelection != lm.activeCharacterRange else { return }
