@@ -12,7 +12,7 @@ the one `MarkdownKit` module on the host platform.
 
 Requirements: macOS 14+ and iOS 17+, for both the `MarkdownKit` library and the app.
 Fenced code is highlighted and colored by `CodeHighlighting` from the Code repo. The v57
-repositories it uses (Code, Git, Vault, UpdateKit) come from GitHub's `main` branch; to work on
+repositories it uses (Code, Git, Vault, UpdateKit, Component) come from GitHub's `main` branch; to work on
 them together, clone them next to this one and open `Markdown-Local.xcworkspace` instead of the
 project (or run SwiftPM commands with `V57_LOCAL=1`).
 
