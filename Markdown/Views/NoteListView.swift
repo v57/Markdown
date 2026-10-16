@@ -53,25 +53,23 @@ struct NoteListView: View {
     }
   }
 
-  /// The kit's list: on the Mac each date group is a card; on iPad and iPhone its rows sit under its header, so each
-  /// row takes its own swipe actions (Pin, Delete).
+  /// The kit's list: each date group is a card, whose rows stay rows of the list, so each takes its own swipe actions
+  /// (Pin, Delete). Before iOS 18 a card is one list row, so there the rows sit under the group's header instead.
   private var notesList: some View {
     KitList(selection: noteSelection) {
       ForEach(groups) { group in
-        #if os(macOS)
-          if group.title.isEmpty {
-            rows(group)
-          } else {
-            KitSection(
-              group.title, meta: headerMeta(group), systemImage: headerImage(group), hue: headerHue(group)
-            ) {
-              rows(group)
-            }
-          }
-        #else
-          if !group.title.isEmpty { header(group) }
+        if group.title.isEmpty {
           rows(group)
-        #endif
+        } else if Self.usesCards {
+          KitSection(
+            group.title, meta: headerMeta(group), systemImage: headerImage(group), hue: headerHue(group)
+          ) {
+            rows(group)
+          }
+        } else {
+          header(group)
+          rows(group)
+        }
       }
     }
     // A fresh list per folder: on macOS, rows replaced while a selection moved into
@@ -84,13 +82,22 @@ struct NoteListView: View {
     #endif
   }
 
+  /// Whether date groups are cards: everywhere a card's rows keep their own swipes (macOS 15, iOS 18), and on older
+  /// Macs, which have no swipe actions here.
+  private static var usesCards: Bool {
+    #if os(macOS)
+      true
+    #else
+      if #available(iOS 18.0, *) { true } else { false }
+    #endif
+  }
+
   private func rows(_ group: NoteGroup) -> some View {
     ForEach(group.notes) { note in
       NoteRow(note: note, isPinned: preferences.isPinned(note.url))
         .draggable(note.url)
         .contextMenu { menu(for: note.url) }
         #if os(iOS)
-          // A row of its own in the list there (on the Mac it sits in its group's card, one list row).
           .swipeActions(edge: .leading) {
             Button(
               preferences.isPinned(note.url) ? "Unpin" : "Pin",
