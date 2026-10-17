@@ -417,17 +417,18 @@ private struct FolderRootRow: View {
   @Environment(\.modelContext) private var context
 
   var body: some View {
-    if let url = library.url(for: folder) {
-      FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true, rootMenu: { AnyView(menu) })
-    } else {
-      SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
-        .help("\(folder.path) can’t be found. It may have been moved or deleted.")
-        .kitContextMenu { menu }
+    Group {
+      if let url = library.url(for: folder) {
+        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true)
+      } else {
+        SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
+          .help("\(folder.path) can’t be found. It may have been moved or deleted.")
+      }
     }
+    // On the folder and the folders inside it, whose own menus win.
+    .kitContextMenu { menu }
   }
 
-  /// On the folder's own row only: the kit's context menu catches secondary clicks over everything it is on, so on
-  /// the whole tree it would cover the menus of the folders inside.
   @ViewBuilder private var menu: some View {
     if let url = library.url(for: folder) {
       Button("New Note", systemImage: "square.and.pencil") { actions.newNote(in: url) }
@@ -459,8 +460,6 @@ struct FileTreeRow: View {
   /// False for the notes folder, whose folders the sidebar lists beside it.
   var showsChildren = true
   var systemImage = "folder"
-  /// Roots only: the root row's own menu (a sidebar folder's, a repository's), on that row alone.
-  var rootMenu: (() -> AnyView)?
   @Environment(FolderLibrary.self) private var library
   @Environment(FileActions.self) private var actions
   @Environment(Navigator.self) private var navigator
@@ -523,10 +522,10 @@ struct FileTreeRow: View {
     return dropped
   }
 
-  /// Roots take their sidebar menu (FolderRootRow, RepositoryRow); everything inside gets the folder one.
+  /// Roots keep their sidebar menu (FolderRootRow, RepositoryRow); everything inside gets the folder one.
   @ViewBuilder private func label(_ label: some View) -> some View {
     if isRoot {
-      if let rootMenu { label.kitContextMenu(content: rootMenu) } else { label }
+      label
     } else {
       label
         .draggable(node.url)

@@ -97,8 +97,8 @@ struct NoteListView: View {
     ForEach(group.notes) { note in
       NoteRow(note: note, isPinned: preferences.isPinned(note.url))
         .draggable(note.url)
-        // The system's menu, for its Share row: the kit's menu closes its window as a row runs, which would take a
-        // ShareLink's sheet with it.
+        // The system's menu: in a list (a KitList is one) the row's drag takes the long press on iPad and iPhone
+        // before the kit's menu opens.
         .contextMenu { menu(for: note.url) }
         #if os(iOS)
           .swipeActions(edge: .leading) {

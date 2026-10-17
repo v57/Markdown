@@ -214,9 +214,9 @@ struct RepositoryRow: View {
       badge: store.changeCounts[repository.fullName] ?? 0,
       activity: store.activity[repository.fullName],
       title: repository.fullName,
-      systemImage: "arrow.triangle.branch",
-      rootMenu: { AnyView(menu) }
+      systemImage: "arrow.triangle.branch"
     )
+    .kitContextMenu { menu }
     .alert("Commit and Push", isPresented: $isCommitting) {
       TextField("Message", text: $commitMessage)
       Button("Push") {
@@ -244,7 +244,6 @@ struct RepositoryRow: View {
     }
   }
 
-  /// On the repository's own row: its folders keep theirs.
   @ViewBuilder private var menu: some View {
     Button("Pull", systemImage: "arrow.down") { Task { await store.pull(repository, client: auth.api) } }
     Button("Commit and Push…", systemImage: "arrow.up") { beginCommit() }
