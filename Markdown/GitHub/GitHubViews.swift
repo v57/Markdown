@@ -70,7 +70,7 @@ struct GitHubConnectView: View {
           .font(.callout).foregroundStyle(.secondary)
       case .requesting:
         HStack {
-          ProgressView().controlSize(.small)
+          LiveIcon(systemImage: "person.badge.key", status: .working, size: 16)
           Text("Asking GitHub for a code…").foregroundStyle(.secondary)
           Spacer()
           Button("Cancel") { auth.cancelSignIn() }
@@ -87,7 +87,7 @@ struct GitHubConnectView: View {
           }
           .buttonStyle(.kitPrimary)
           HStack {
-            ProgressView().controlSize(.small)
+            LiveIcon(systemImage: "person.badge.key", status: .working, size: 16)
             Text("Waiting for you to approve…").foregroundStyle(.secondary)
             Spacer()
             Button("Cancel") { auth.cancelSignIn() }
@@ -108,7 +108,8 @@ struct GitHubConnectView: View {
     Section("Your Repositories") {
       TextField("Filter", text: $filter)
       if isLoading {
-        ProgressView().frame(maxWidth: .infinity)
+        LiveIcon(systemImage: "arrow.triangle.branch", status: .working, size: 18)
+          .frame(maxWidth: .infinity)
       }
       ForEach(filtered) { repository in
         let connected = store.repositories.contains { $0.fullName == repository.fullName }
@@ -130,7 +131,7 @@ struct GitHubConnectView: View {
             }
             Spacer()
             if let busy {
-              ProgressView().controlSize(.small)
+              LiveIcon(systemImage: "arrow.down", status: .working, size: 16)
               Text(busy).font(.caption).foregroundStyle(.secondary)
             } else if connected {
               Image(systemName: "checkmark").foregroundStyle(.secondary)
