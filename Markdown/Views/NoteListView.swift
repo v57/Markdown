@@ -97,9 +97,7 @@ struct NoteListView: View {
     ForEach(group.notes) { note in
       NoteRow(note: note, isPinned: preferences.isPinned(note.url))
         .draggable(note.url)
-        // The system's menu: in a list (a KitList is one) the row's drag takes the long press on iPad and iPhone
-        // before the kit's menu opens.
-        .contextMenu { menu(for: note.url) }
+        .kitContextMenu { menu(for: note.url) }
         #if os(iOS)
           .swipeActions(edge: .leading) {
             Button(
@@ -211,7 +209,7 @@ struct NoteListView: View {
     #if os(macOS)
       Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
     #endif
-    ShareLink(item: url)
+    KitMenuShare(items: [url])
     Divider()
     if let folder = folders.first(where: { $0.isFile && $0.path == url.path }) {
       Button("Remove from List", systemImage: "minus.circle") {
