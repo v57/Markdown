@@ -28,6 +28,7 @@ struct DocumentView: View {
   @State private var commands = MarkdownEditorCommands()
   @State private var wordCount = 0
   @State private var wordCountTask: Task<Void, Never>?
+  @State private var showsMoreMenu = false
   #if os(iOS)
     @State private var isKeyboardShown = false
   #endif
@@ -234,43 +235,46 @@ struct DocumentView: View {
   }
 
   private func moreMenu(_ file: URL) -> some View {
-    Menu("More", systemImage: "ellipsis.circle") {
-      if isNote(file) {
-        Button(preferences.isPinned(file) ? "Unpin Note" : "Pin Note", systemImage: preferences.isPinned(file) ? "pin.slash" : "pin") {
-          preferences.togglePin(file)
-        }
-        Button("Rename…", systemImage: "pencil") { actions.beginRename(file) }
-        if actions.canToggleEncryption(file) {
-          let encrypted = NoteFiles.isEncrypted(file)
-          Button(encrypted ? "Decrypt Note" : "Encrypt Note", systemImage: encrypted ? "lock.open" : "lock") {
-            actions.setEncrypted(file, !encrypted)
+    Button("More", systemImage: "ellipsis.circle") { showsMoreMenu = true }
+      .kitMenu(isPresented: $showsMoreMenu) {
+        if isNote(file) {
+          Button(preferences.isPinned(file) ? "Unpin Note" : "Pin Note", systemImage: preferences.isPinned(file) ? "pin.slash" : "pin") {
+            preferences.togglePin(file)
+          }
+          Button("Rename…", systemImage: "pencil") { actions.beginRename(file) }
+          if actions.canToggleEncryption(file) {
+            let encrypted = NoteFiles.isEncrypted(file)
+            Button(encrypted ? "Decrypt Note" : "Encrypt Note", systemImage: encrypted ? "lock.open" : "lock") {
+              actions.setEncrypted(file, !encrypted)
+            }
           }
         }
+        #if os(macOS)
+          Button("Show in Finder", systemImage: "folder") {
+            NSWorkspace.shared.activateFileViewerSelecting([file])
+          }
+        #endif
+        if isStandalone(file) {
+          Button("Add Enclosing Folder…", systemImage: "folder.badge.plus") {
+            addEnclosingFolder(of: file)
+          }
+        }
+        Divider()
+        Button("Save Now", systemImage: "square.and.arrow.down") { saver.flush() }
+          .disabled(saver.state != .unsaved)
+          .kitMenuHint(idiom == .mac ? "⌘S" : nil)
+        Button("Reload", systemImage: "arrow.clockwise") { refresh() }
+          .kitMenuHint(idiom == .mac ? "⌘R" : nil)
+        #if os(iOS)
+          if !navigator.back.isEmpty || !navigator.forward.isEmpty {
+            Divider()
+            Button("Back", systemImage: "chevron.left") { navigator.goBack() }
+              .disabled(navigator.back.isEmpty)
+            Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
+              .disabled(navigator.forward.isEmpty)
+          }
+        #endif
       }
-      #if os(macOS)
-        Button("Show in Finder", systemImage: "folder") {
-          NSWorkspace.shared.activateFileViewerSelecting([file])
-        }
-      #endif
-      if isStandalone(file) {
-        Button("Add Enclosing Folder…", systemImage: "folder.badge.plus") {
-          addEnclosingFolder(of: file)
-        }
-      }
-      Divider()
-      Button("Save Now", systemImage: "square.and.arrow.down") { saver.flush() }
-        .disabled(saver.state != .unsaved)
-      Button("Reload", systemImage: "arrow.clockwise") { refresh() }
-      #if os(iOS)
-        if !navigator.back.isEmpty || !navigator.forward.isEmpty {
-          Divider()
-          Button("Back", systemImage: "chevron.left") { navigator.goBack() }
-            .disabled(navigator.back.isEmpty)
-          Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
-            .disabled(navigator.forward.isEmpty)
-        }
-      #endif
-    }
   }
 
   #if os(iOS)
@@ -293,6 +297,8 @@ struct DocumentView: View {
     }
 
     @ViewBuilder private var formattingButtons: some View {
+      // The system’s menu: the kit’s makes its own window key, which can take the editor’s keyboard (and this bar)
+      // away.
       Menu {
         Button("Title", systemImage: "textformat.size.larger") { commands.apply(.heading(1)) }
         Button("Heading", systemImage: "textformat.size") { commands.apply(.heading(2)) }

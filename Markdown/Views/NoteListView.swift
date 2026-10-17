@@ -20,6 +20,7 @@ struct NoteListView: View {
   @State private var loadedItem: LibraryItem?
   @AppStorage("noteListSortsByTitle") private var sortsByTitle = false
   @State private var results: [SearchResult]?
+  @State private var showsSortMenu = false
 
   private struct LoadKey: Equatable {
     var item: LibraryItem?
@@ -96,6 +97,8 @@ struct NoteListView: View {
     ForEach(group.notes) { note in
       NoteRow(note: note, isPinned: preferences.isPinned(note.url))
         .draggable(note.url)
+        // The system's menu, for its Share row: the kit's menu closes its window as a row runs, which would take a
+        // ShareLink's sheet with it.
         .contextMenu { menu(for: note.url) }
         #if os(iOS)
           .swipeActions(edge: .leading) {
@@ -160,16 +163,11 @@ struct NoteListView: View {
     #endif
     ToolbarItem(placement: .primaryAction) {
       ToolGroup(iconOnly: true) {
-        Menu {
-          Picker("Sort By", selection: $sortsByTitle) {
-            Text("Date Edited").tag(false)
-            Text("Title").tag(true)
+        Button("Sort", systemImage: "line.3.horizontal.decrease") { showsSortMenu = true }
+          .kitMenu(isPresented: $showsSortMenu) {
+            KitMenuOptions(selection: $sortsByTitle, options: [("Date Edited", false), ("Title", true)])
           }
-          .pickerStyle(.inline)
-        } label: {
-          Label("Sort", systemImage: "line.3.horizontal.decrease")
-        }
-        .kitHelp("Sort", meta: sortsByTitle ? "By title" : "By date edited")
+          .kitHelp("Sort", meta: sortsByTitle ? "By title" : "By date edited")
         Button("New Note", systemImage: "square.and.pencil") { newNote() }
           .keyboardShortcut("n", modifiers: .command)
           .disabled(newNoteDirectory == nil)

@@ -213,19 +213,9 @@ struct RepositoryRow: View {
       badge: store.changeCounts[repository.fullName] ?? 0,
       activity: store.activity[repository.fullName],
       title: repository.fullName,
-      systemImage: "arrow.triangle.branch"
+      systemImage: "arrow.triangle.branch",
+      rootMenu: { AnyView(menu) }
     )
-    .contextMenu {
-      Button("Pull") { Task { await store.pull(repository, client: auth.api) } }
-      Button("Commit and Push…") { beginCommit() }
-        .disabled(repository.isAnonymous && auth.token == nil)
-      Divider()
-      Button("Open on GitHub") {
-        openURL(URL(string: "https://github.com/\(repository.fullName)/tree/\(repository.branch)")!)
-      }
-      Divider()
-      Button("Disconnect…", role: .destructive) { isDisconnecting = true }
-    }
     .alert("Commit and Push", isPresented: $isCommitting) {
       TextField("Message", text: $commitMessage)
       Button("Push") {
@@ -251,6 +241,19 @@ struct RepositoryRow: View {
           ? "The local copy is removed. The repository on GitHub is not affected."
           : "\(count) change\(count == 1 ? " hasn’t" : "s haven’t") been pushed and will be lost.")
     }
+  }
+
+  /// On the repository's own row: its folders keep theirs.
+  @ViewBuilder private var menu: some View {
+    Button("Pull", systemImage: "arrow.down") { Task { await store.pull(repository, client: auth.api) } }
+    Button("Commit and Push…", systemImage: "arrow.up") { beginCommit() }
+      .disabled(repository.isAnonymous && auth.token == nil)
+    Divider()
+    Button("Open on GitHub", systemImage: "safari") {
+      openURL(URL(string: "https://github.com/\(repository.fullName)/tree/\(repository.branch)")!)
+    }
+    Divider()
+    Button("Disconnect…", systemImage: "minus.circle", role: .destructive) { isDisconnecting = true }
   }
 
   private var changeSummary: String {

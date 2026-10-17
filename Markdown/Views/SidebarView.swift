@@ -25,6 +25,7 @@ struct SidebarView: View {
   @State private var isConnectingGitHub = false
   @State private var isDropTargeted = false
   @State private var allNotesCount: Int?
+  @State private var showsNotesMenu = false
   /// The shared projects section, collapsed until opened (it can be long).
   @AppStorage("showsSharedProjects") private var showsProjects = false
 
@@ -129,28 +130,25 @@ struct SidebarView: View {
 
   /// New notes and folders, and (on the Mac) where the notes are as files.
   private var notesMenu: some View {
-    Menu {
-      Button("New Note", systemImage: "square.and.pencil") { newNote() }
-      Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
-      Divider()
-      Button("Add Folder to Sidebar…", systemImage: "plus.rectangle.on.folder") { window.isAddingFolder = true }
-      Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { isConnectingGitHub = true }
-      #if os(macOS)
-        if let folder = notes.url {
-          Divider()
-          Button("Show Notes Folder in Finder", systemImage: "folder") {
-            NSWorkspace.shared.activateFileViewerSelecting([folder])
+    Button("Add", systemImage: "plus") { showsNotesMenu = true }
+      .labelStyle(.iconOnly)
+      .kitMenu(isPresented: $showsNotesMenu) {
+        Button("New Note", systemImage: "square.and.pencil") { newNote() }
+        Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
+        Divider()
+        Button("Add Folder to Sidebar…", systemImage: "plus.rectangle.on.folder") { window.isAddingFolder = true }
+        Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { isConnectingGitHub = true }
+        #if os(macOS)
+          if let folder = notes.url {
+            Divider()
+            Button("Show Notes Folder in Finder", systemImage: "folder") {
+              NSWorkspace.shared.activateFileViewerSelecting([folder])
+            }
+            Button("Choose Notes Folder…", systemImage: "folder.badge.gearshape") { chooseNotesFolder() }
           }
-          Button("Choose Notes Folder…", systemImage: "folder.badge.gearshape") { chooseNotesFolder() }
-        }
-      #endif
-    } label: {
-      Label("Add", systemImage: "plus")
-    }
-    .menuStyle(.button)
-    .menuIndicator(.hidden)
-    .labelStyle(.iconOnly)
-    .disabled(notes.url == nil)
+        #endif
+      }
+      .disabled(notes.url == nil)
   }
 
   private var gitHubSection: some View {
@@ -419,28 +417,30 @@ private struct FolderRootRow: View {
   @Environment(\.modelContext) private var context
 
   var body: some View {
-    Group {
-      if let url = library.url(for: folder) {
-        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true)
-      } else {
-        SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
-          .help("\(folder.path) can’t be found. It may have been moved or deleted.")
-      }
+    if let url = library.url(for: folder) {
+      FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true, rootMenu: { AnyView(menu) })
+    } else {
+      SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
+        .help("\(folder.path) can’t be found. It may have been moved or deleted.")
+        .kitContextMenu { menu }
     }
-    .contextMenu {
-      if let url = library.url(for: folder) {
-        Button("New Note") { actions.newNote(in: url) }
-        Button("New Folder") { actions.newFolder(in: url) }
-        Divider()
-        #if os(macOS)
-          Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-        #endif
-      }
-      Button("Reload") { library.reload() }
+  }
+
+  /// On the folder's own row only: the kit's context menu catches secondary clicks over everything it is on, so on
+  /// the whole tree it would cover the menus of the folders inside.
+  @ViewBuilder private var menu: some View {
+    if let url = library.url(for: folder) {
+      Button("New Note", systemImage: "square.and.pencil") { actions.newNote(in: url) }
+      Button("New Folder", systemImage: "folder.badge.plus") { actions.newFolder(in: url) }
       Divider()
-      Button("Remove from Sidebar", role: .destructive) {
-        remove(folder, library: library, navigator: navigator, context: context)
-      }
+      #if os(macOS)
+        Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+      #endif
+    }
+    Button("Reload", systemImage: "arrow.clockwise") { library.reload() }
+    Divider()
+    Button("Remove from Sidebar", systemImage: "minus.circle", role: .destructive) {
+      remove(folder, library: library, navigator: navigator, context: context)
     }
   }
 }
@@ -459,6 +459,8 @@ struct FileTreeRow: View {
   /// False for the notes folder, whose folders the sidebar lists beside it.
   var showsChildren = true
   var systemImage = "folder"
+  /// Roots only: the root row's own menu (a sidebar folder's, a repository's), on that row alone.
+  var rootMenu: (() -> AnyView)?
   @Environment(FolderLibrary.self) private var library
   @Environment(FileActions.self) private var actions
   @Environment(Navigator.self) private var navigator
@@ -521,30 +523,30 @@ struct FileTreeRow: View {
     return dropped
   }
 
-  /// Roots keep their sidebar menu (FolderRootRow); everything inside gets the folder one.
+  /// Roots take their sidebar menu (FolderRootRow, RepositoryRow); everything inside gets the folder one.
   @ViewBuilder private func label(_ label: some View) -> some View {
     if isRoot {
-      label
+      if let rootMenu { label.kitContextMenu(content: rootMenu) } else { label }
     } else {
       label
         .draggable(node.url)
-        .contextMenu { menu }
+        .kitContextMenu { menu }
     }
   }
 
   @ViewBuilder private var menu: some View {
-    Button("New Note") { actions.newNote(in: node.url) }
-    Button("New Folder") { actions.newFolder(in: node.url) }
+    Button("New Note", systemImage: "square.and.pencil") { actions.newNote(in: node.url) }
+    Button("New Folder", systemImage: "folder.badge.plus") { actions.newFolder(in: node.url) }
     Divider()
-    Button("Rename…") { actions.beginRename(node.url) }
+    Button("Rename…", systemImage: "pencil") { actions.beginRename(node.url) }
     #if os(macOS)
-      Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
+      Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
     #endif
     Divider()
     #if os(macOS)
-      Button("Move to Trash", role: .destructive) { actions.delete(node.url) }
+      Button("Move to Trash", systemImage: "trash", role: .destructive) { actions.delete(node.url) }
     #else
-      Button("Delete…", role: .destructive) { actions.delete(node.url) }
+      Button("Delete…", systemImage: "trash", role: .destructive) { actions.delete(node.url) }
     #endif
   }
 
