@@ -31,6 +31,7 @@ struct DocumentView: View {
   @State private var showsMoreMenu = false
   #if os(iOS)
     @State private var isKeyboardShown = false
+    @State private var showsTextStyles = false
   #endif
   /// Edit (default) or preview: preview never reveals syntax, and on iOS lets a tap
   /// follow a link instead of placing the caret.
@@ -297,24 +298,21 @@ struct DocumentView: View {
     }
 
     @ViewBuilder private var formattingButtons: some View {
-      // The system’s menu: the kit’s makes its own window key, which can take the editor’s keyboard (and this bar)
-      // away.
-      Menu {
-        Button("Title", systemImage: "textformat.size.larger") { commands.apply(.heading(1)) }
-        Button("Heading", systemImage: "textformat.size") { commands.apply(.heading(2)) }
-        Button("Subheading", systemImage: "textformat.size.smaller") { commands.apply(.heading(3)) }
-        Divider()
-        Button("Bold", systemImage: "bold") { commands.apply(.bold) }
-        Button("Italic", systemImage: "italic") { commands.apply(.italic) }
-        Button("Strikethrough", systemImage: "strikethrough") { commands.apply(.strikethrough) }
-        Button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { commands.apply(.inlineCode) }
-        Divider()
-        Button("Quote", systemImage: "text.quote") { commands.apply(.quote) }
-        Button("Numbered List", systemImage: "list.number") { commands.apply(.numberedList) }
-      } label: {
-        Label("Text Style", systemImage: "textformat")
-      }
-      .frame(maxWidth: .infinity, minHeight: 44)
+      Button("Text Style", systemImage: "textformat") { showsTextStyles = true }
+        .kitMenu(isPresented: $showsTextStyles) {
+          Button("Title", systemImage: "textformat.size.larger") { commands.apply(.heading(1)) }
+          Button("Heading", systemImage: "textformat.size") { commands.apply(.heading(2)) }
+          Button("Subheading", systemImage: "textformat.size.smaller") { commands.apply(.heading(3)) }
+          Divider()
+          Button("Bold", systemImage: "bold") { commands.apply(.bold) }
+          Button("Italic", systemImage: "italic") { commands.apply(.italic) }
+          Button("Strikethrough", systemImage: "strikethrough") { commands.apply(.strikethrough) }
+          Button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { commands.apply(.inlineCode) }
+          Divider()
+          Button("Quote", systemImage: "text.quote") { commands.apply(.quote) }
+          Button("Numbered List", systemImage: "list.number") { commands.apply(.numberedList) }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
       Group {
         Button("Checklist", systemImage: "checklist") { commands.apply(.checklist) }
         Button("Bulleted List", systemImage: "list.bullet") { commands.apply(.bulletList) }
