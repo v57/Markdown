@@ -52,6 +52,8 @@ struct ContentView: View {
       }
     }
     .kitThreeColumnSplit()
+    // Screenshots: every sidebar row built when the scene is ready, not a few a frame as they near the screen.
+    .kitLazyLoading(!ScreenshotDemo.isOn)
     .kitPaletteOverlay(isPresented: $window.isQuickOpenShown) { QuickOpenView(perform: perform) }
     #if os(macOS)
       // Each pane names itself with its own rich title.
