@@ -35,9 +35,12 @@ notarize() { # file
 case $mode in
 mac)
   rm -rf $out && mkdir -p $out
-  # DIRECT_DISTRIBUTION turns on the GitHub Releases update check (not in App Store builds).
+  # DIRECT_DISTRIBUTION turns on the GitHub Releases update check (not in App Store builds). LTO and
+  # ld-archive-prelink drop unused package code (Xcode's per-package `ld -r` would keep it).
   archive macOS $out/Markdown.xcarchive \
-    'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DIRECT_DISTRIBUTION'
+    'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DIRECT_DISTRIBUTION' \
+    SWIFT_LTO=YES ALTERNATE_LINKER_PATH=$PWD/Scripts/ld-archive-prelink \
+    'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -internalize-at-link -Xfrontend -conditional-runtime-records'
   xcodebuild -exportArchive -archivePath $out/Markdown.xcarchive -exportPath $out/export \
     -exportOptionsPlist Scripts/ExportOptions-DeveloperID.plist -allowProvisioningUpdates
   app=$out/export/Markdown.app
