@@ -371,7 +371,7 @@ struct SidebarView: View {
                 .help(row.node.projects.count == 1 ? "1 project" : "\(row.node.projects.count) projects")
               case .project(let project):
                 // Not a place to list: a tap asks for the folder and adds it.
-                SidebarRow(project.name, systemImage: "folder.badge.plus")
+                projectRow(project)
                   .disclosureSlot(hasGroups)
                   .action { addProject(project) }
                   .help("Add “\(project.name)” to the sidebar")
@@ -381,6 +381,17 @@ struct SidebarView: View {
           }
         }
         .animation(.kit, value: rows.map(\.id))
+      }
+    }
+
+    /// A shared project: its app icon from the vault (Code and Dev find them), else the add-folder tile.
+    private func projectRow(_ project: VaultProject) -> SidebarRow<some View, EmptyView> {
+      SidebarRow(project.name) {
+        if let icon = project.icon.flatMap(Image.init(data:)) {
+          Avatar(name: project.name, image: icon, kind: .thing, size: 18)
+        } else {
+          RowTile(systemImage: "folder.badge.plus")
+        }
       }
     }
 
@@ -485,7 +496,7 @@ private struct FolderRootRow: View {
   var body: some View {
     Group {
       if let url = library.url(for: folder) {
-        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true)
+        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true, icon: projectIcon(url))
       } else {
         SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
           .help("\(folder.path) can’t be found. It may have been moved or deleted.")
@@ -493,6 +504,14 @@ private struct FolderRootRow: View {
     }
     // On the folder and the folders inside it, whose own menus win.
     .kitContextMenu { menu }
+  }
+
+  /// The app icon of the vault's project in this folder, when it is one (Code and Dev find them).
+  private func projectIcon(_ url: URL) -> Data? {
+    let path = FolderLibrary.canonical(url).path
+    return Vault.shared.localProjects.first { project in
+      project.localURL.map { FolderLibrary.canonical($0).path } == path
+    }?.icon
   }
 
   @ViewBuilder private var menu: some View {
@@ -526,6 +545,8 @@ struct FileTreeRow: View {
   /// False for the notes folder, whose folders the sidebar lists beside it.
   var showsChildren = true
   var systemImage = "folder"
+  /// Roots only: the PNG of the app icon of the vault's project in the folder, shown instead of the folder tile.
+  var icon: Data?
   @Environment(FolderLibrary.self) private var library
   @Environment(FileActions.self) private var actions
   @Environment(Navigator.self) private var navigator
@@ -554,7 +575,11 @@ struct FileTreeRow: View {
       SidebarRow(
         value: LibraryItem.folder(node.url), title ?? node.name, isExpanded: isExpandable ? isExpanded : nil
       ) {
-        RowTile(systemImage: systemImage)
+        if let image = icon.flatMap(Image.init(data:)) {
+          Avatar(name: title ?? node.name, image: image, kind: .thing, size: 18)
+        } else {
+          RowTile(systemImage: systemImage)
+        }
       } trailing: {
         if let activity {
           LiveIcon(systemImage: "arrow.down", status: .working, size: 16).help(activity)
