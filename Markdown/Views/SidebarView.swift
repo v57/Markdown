@@ -28,6 +28,10 @@ struct SidebarView: View {
   @State private var showsNotesMenu = false
   /// The shared projects section, collapsed until opened (it can be long).
   @AppStorage("showsSharedProjects") private var showsProjects = false
+  #if os(macOS)
+    /// The project groups closed in the shared projects section (vault group ids).
+    @AppStorage("CollapsedProjectGroups") private var collapsedGroups = CollapsedGroups()
+  #endif
 
   var body: some View {
     @Bindable var window = window
@@ -336,27 +340,69 @@ struct SidebarView: View {
     }
 
     /// The projects the v57 apps share (added in Git and the others, through the vault) that aren't
-    /// sidebar folders yet, live as they change. The sandbox only opens a folder the user picks, so adding
-    /// one shows an open panel on it.
+    /// sidebar folders yet, in the vault's groups, live as they change. A group opens and closes; which are
+    /// closed is Markdown's own. The sandbox only opens a folder the user picks, so adding a project shows an
+    /// open panel on it.
     @ViewBuilder private var projectsSection: some View {
       let added = Set(rootFolders.map { FolderLibrary.canonical(URL(fileURLWithPath: $0.path)).path })
-      let projects = Vault.shared.localProjects.filter { project in
+      let tree = Vault.shared.localProjectTree.filter { project in
         guard let url = project.localURL else { return false }
         return !added.contains(FolderLibrary.canonical(url).path)
       }
-      if !projects.isEmpty {
+      let count = tree.projects().count
+      if count > 0 {
+        let rows = projectRows(tree)
+        let hasGroups = !tree.groups.isEmpty
         KitSection(
-          "Projects", meta: projects.count == 1 ? "1 shared project" : "\(projects.count) shared projects",
+          "Projects", meta: count == 1 ? "1 shared project" : "\(count) shared projects",
           systemImage: "square.stack", hue: .indigo, isExpanded: $showsProjects
         ) {
-          ForEach(projects) { project in
-            // Not a place to list: a tap asks for the folder and adds it.
-            SidebarRow(project.name, systemImage: "folder.badge.plus")
-              .action { addProject(project) }
-              .help("Add “\(project.name)” to the sidebar")
+          ForEach(rows) { row in
+            Group {
+              switch row.node {
+              case .group(let group, _):
+                let isOpen = !collapsedGroups.ids.contains(group.id)
+                SidebarRow(
+                  group.name, subtitle: group.note?.isEmpty == false ? group.note : nil,
+                  systemImage: isOpen ? "folder.fill" : "folder", hue: StableHue.pick(group.name)
+                )
+                .disclosure(isExpanded: groupIsExpanded(group.id))
+                .action { withAnimation(.kit) { toggleGroup(group.id) } }
+                .help(row.node.projects.count == 1 ? "1 project" : "\(row.node.projects.count) projects")
+              case .project(let project):
+                // Not a place to list: a tap asks for the folder and adds it.
+                SidebarRow(project.name, systemImage: "folder.badge.plus")
+                  .disclosureSlot(hasGroups)
+                  .action { addProject(project) }
+                  .help("Add “\(project.name)” to the sidebar")
+              }
+            }
+            .kitRowIndent(row.depth)
           }
         }
+        .animation(.kit, value: rows.map(\.id))
       }
+    }
+
+    /// The tree top to bottom, each item with how many groups it is in, without what closed groups hold.
+    private func projectRows(_ tree: VaultProjectTree) -> [ProjectRow] {
+      func rows(_ nodes: [VaultProjectTree.Node], depth: Int) -> [ProjectRow] {
+        nodes.flatMap { node in
+          let isOpen = node.group != nil && !collapsedGroups.ids.contains(node.id)
+          return [ProjectRow(node: node, depth: depth)] + (isOpen ? rows(node.children, depth: depth + 1) : [])
+        }
+      }
+      return rows(tree.roots, depth: 0)
+    }
+
+    private func groupIsExpanded(_ id: String) -> Binding<Bool> {
+      Binding(
+        get: { !collapsedGroups.ids.contains(id) },
+        set: { if $0 == collapsedGroups.ids.contains(id) { toggleGroup(id) } })
+    }
+
+    private func toggleGroup(_ id: String) {
+      if collapsedGroups.ids.contains(id) { collapsedGroups.ids.remove(id) } else { collapsedGroups.ids.insert(id) }
     }
 
     private func addProject(_ project: VaultProject) {
@@ -371,6 +417,26 @@ struct SidebarView: View {
       _ = add([chosen])
     }
   #endif
+}
+
+/// A row of the shared projects section: a group or a project, and how many groups it is in.
+private struct ProjectRow: Identifiable {
+  let node: VaultProjectTree.Node
+  let depth: Int
+  var id: String { node.id }
+}
+
+/// The ids of the closed groups, kept in one defaults string.
+struct CollapsedGroups: RawRepresentable {
+  var ids: Set<String>
+
+  init() { ids = [] }
+
+  init(rawValue: String) {
+    ids = Set(rawValue.split(separator: "\n").map(String.init))
+  }
+
+  var rawValue: String { ids.sorted().joined(separator: "\n") }
 }
 
 /// The rename prompt, the delete confirmation and file-operation errors.
