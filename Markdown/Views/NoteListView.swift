@@ -76,7 +76,7 @@ struct NoteListView: View {
     // A fresh list per folder: on macOS, rows replaced while a selection moved into
     // them kept the height of a one-line row and lost their date and text.
     .id(loadedItem)
-    #if os(macOS)
+    #if os(macOS) || os(Windows)
       .onDeleteCommand {
         if let url = navigator.selection, isDeletable(url) { actions.delete(url) }
       }
@@ -206,8 +206,8 @@ struct NoteListView: View {
         }
       }
     }
-    #if os(macOS)
-      Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    #if os(macOS) || os(Windows)
+      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([url]) }
     #endif
     KitMenuShare(items: [url])
     Divider()
@@ -216,7 +216,7 @@ struct NoteListView: View {
         remove(folder, library: library, navigator: navigator, context: context)
       }
     } else if isDeletable(url) {
-      #if os(macOS)
+      #if os(macOS) || os(Windows)
         Button("Move to Trash", systemImage: "trash", role: .destructive) { actions.delete(url) }
       #else
         Button("Delete…", systemImage: "trash", role: .destructive) { actions.delete(url) }

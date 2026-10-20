@@ -1,3 +1,5 @@
+// TextKit (AppKit, UIKit): native attributes for the editors' attributed text.
+#if canImport(AppKit) || canImport(UIKit)
 import CodeHighlighting
 import Foundation
 
@@ -264,4 +266,5 @@ public enum MarkdownRenderer {
         blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
   }
+#endif
 #endif

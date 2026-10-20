@@ -1,3 +1,5 @@
+// TextKit (AppKit, UIKit): the editors' layout and rendering. Elsewhere the portable editor draws with SwiftUI.
+#if canImport(AppKit) || canImport(UIKit)
 import Foundation
 import ImageIO
 
@@ -331,3 +333,4 @@ public final class MarkdownImageCache: @unchecked Sendable {
 
 /// The former name of the image cache.
 public typealias InlineImageCache = MarkdownImageCache
+#endif

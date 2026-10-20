@@ -4,12 +4,12 @@ import SwiftData
 import SwiftUI
 import VaultKit
 
-#if os(macOS) && DIRECT_DISTRIBUTION
+#if (os(macOS) && DIRECT_DISTRIBUTION) || os(Windows)
   import UpdateKit
 #endif
 
 @main struct MarkdownApp: App {
-  #if os(macOS) && DIRECT_DISTRIBUTION
+  #if (os(macOS) && DIRECT_DISTRIBUTION) || os(Windows)
     /// Updates for the direct download from GitHub Releases (Markdown.dmg, built by
     /// Scripts/release.sh; App Store builds leave this out): checked daily once the user
     /// turns on automatic checks (never before). The sandbox keeps the app from replacing
@@ -34,7 +34,7 @@ import VaultKit
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { SelfTest.typingProbe() }
       }
     #endif
-    #if os(macOS) && DIRECT_DISTRIBUTION
+    #if (os(macOS) && DIRECT_DISTRIBUTION) || os(Windows)
       updater.start()
     #endif
     // Notes sync through the vault (iCloud, encrypted, shared with Shell); never the screenshot demo's.
@@ -82,17 +82,17 @@ import VaultKit
       // On iOS the scene is the screen (or a Split View/Slide Over column), and a
       // 480 pt minimum on a narrower iPhone centers the oversized content, shifting
       // it left by half the overflow and pushing toolbars past the right edge.
-      #if os(macOS) || os(visionOS)
+      #if os(macOS) || os(visionOS) || os(Windows)
         .frame(minWidth: 640, minHeight: 400)
       #endif
       .componentKit(accent: .blue)
     }
     .defaultSize(width: 1280, height: 800)
     .commands { MarkdownCommands() }
-    #if os(macOS)
+    #if os(macOS) || os(Windows)
       .commands {
         TextEditingCommands()  // standard Edit menu so ⌘C/V/X/Z work
-        #if DIRECT_DISTRIBUTION
+        #if DIRECT_DISTRIBUTION || os(Windows)
           UpdaterCommands(updater: updater)
         #endif
       }

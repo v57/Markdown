@@ -1,3 +1,5 @@
+// TextKit (AppKit, UIKit): the editors' layout and rendering. Elsewhere the portable editor draws with SwiftUI.
+#if canImport(AppKit) || canImport(UIKit)
 import CoreText
 import Foundation
 
@@ -133,3 +135,4 @@ public enum TableColumnLayout {
     return total
   }
 }
+#endif

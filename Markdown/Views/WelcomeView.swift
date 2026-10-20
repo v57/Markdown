@@ -70,11 +70,5 @@ struct WelcomeView: View {
       .compactMap { $0 }.joined(separator: " · ")
   }
 
-  private var deviceName: String {
-    #if os(macOS)
-      "Mac"
-    #else
-      UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
-    #endif
-  }
+  private var deviceName: String { KitDevice.name }
 }

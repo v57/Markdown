@@ -28,9 +28,13 @@ struct SidebarView: View {
   @State private var showsNotesMenu = false
   /// The shared projects section, collapsed until opened (it can be long).
   @AppStorage("showsSharedProjects") private var showsProjects = false
-  #if os(macOS)
+  #if os(macOS) || os(Windows)
     /// The project groups closed in the shared projects section (vault group ids).
     @AppStorage("CollapsedProjectGroups") private var collapsedGroups = CollapsedGroups()
+  #endif
+  #if os(Windows)
+    /// Choose Notes Folder… shows the system's folder picker.
+    @State private var isChoosingNotesFolder = false
   #endif
 
   var body: some View {
@@ -42,7 +46,7 @@ struct SidebarView: View {
       notesSection
       if !repositories.repositories.isEmpty { gitHubSection }
       if !rootFolders.isEmpty { foldersSection }
-      #if os(macOS)
+      #if os(macOS) || os(Windows)
         // The vault's projects are the user's: never in the screenshot demo.
         if !ScreenshotDemo.isOn { projectsSection }
       #endif
@@ -61,9 +65,14 @@ struct SidebarView: View {
     .dropDestination(for: URL.self) { urls, _ in
       add(urls.filter(\.isFileURL))
     } isTargeted: { isDropTargeted = $0 }
-    #if os(macOS)
+    #if os(macOS) || os(Windows)
       .onDeleteCommand {
         if case .folder(let url) = navigator.item, isDeletable(url) { actions.delete(url) }
+      }
+    #endif
+    #if os(Windows)
+      .fileImporter(isPresented: $isChoosingNotesFolder, allowedContentTypes: [.folder]) { result in
+        if case .success(let folder) = result { notes.choose(folder) }
       }
     #endif
     .task(id: CountKey(root: notes.url, generation: library.generation)) {
@@ -142,11 +151,11 @@ struct SidebarView: View {
         Divider()
         Button("Add Folder to Sidebar…", systemImage: "plus.rectangle.on.folder") { window.isAddingFolder = true }
         Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { isConnectingGitHub = true }
-        #if os(macOS)
+        #if os(macOS) || os(Windows)
           if let folder = notes.url {
             Divider()
-            Button("Show Notes Folder in Finder", systemImage: "folder") {
-              NSWorkspace.shared.activateFileViewerSelecting([folder])
+            Button("Show Notes Folder in \(KitDesktop.fileManagerName)", systemImage: "folder") {
+              KitDesktop.reveal([folder])
             }
             Button("Choose Notes Folder…", systemImage: "folder.badge.gearshape") { chooseNotesFolder() }
           }
@@ -195,32 +204,14 @@ struct SidebarView: View {
     }
   }
 
-  private var storageName: String {
-    #if os(macOS)
-      "On My Mac"
-    #else
-      UIDevice.current.userInterfaceIdiom == .pad ? "On My iPad" : "On My iPhone"
-    #endif
-  }
+  private var storageName: String { "On My \(KitDevice.name)" }
 
   /// Where the notes are, at the start of the bottom bar.
   private var storageStatus: String { notes.isICloud ? "iCloud" : "On This \(deviceName)" }
 
-  private var deviceSymbol: String {
-    #if os(macOS)
-      "laptopcomputer"
-    #else
-      UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-    #endif
-  }
+  private var deviceSymbol: String { KitDevice.systemImage }
 
-  private var deviceName: String {
-    #if os(macOS)
-      "Mac"
-    #else
-      UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
-    #endif
-  }
+  private var deviceName: String { KitDevice.name }
 
   private var rootFolders: [SidebarFolder] { folders.filter { !$0.isFile } }
   private var openedFiles: [SidebarFolder] { folders.filter(\.isFile) }
@@ -326,17 +317,21 @@ struct SidebarView: View {
     return !added.isEmpty
   }
 
-  #if os(macOS)
+  #if os(macOS) || os(Windows)
     /// Picks the folder the notes are kept in as files (the sandbox needs the user's pick).
     private func chooseNotesFolder() {
-      let panel = NSOpenPanel()
-      panel.canChooseDirectories = true
-      panel.canChooseFiles = false
-      panel.canCreateDirectories = true
-      panel.prompt = "Use for Notes"
-      panel.message = "Your notes are written to this folder as Markdown files and stay in sync with it."
-      guard panel.runModal() == .OK, let folder = panel.url else { return }
-      notes.choose(folder)
+      #if os(Windows)
+        isChoosingNotesFolder = true
+      #else
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Use for Notes"
+        panel.message = "Your notes are written to this folder as Markdown files and stay in sync with it."
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        notes.choose(folder)
+      #endif
     }
 
     /// The projects the v57 apps share (added in Git and the others, through the vault) that aren't
@@ -418,14 +413,19 @@ struct SidebarView: View {
 
     private func addProject(_ project: VaultProject) {
       guard let url = project.localURL else { return }
-      let panel = NSOpenPanel()
-      panel.canChooseDirectories = true
-      panel.canChooseFiles = false
-      panel.directoryURL = url
-      panel.prompt = "Add"
-      panel.message = "Add “\(project.name)” to the sidebar. Markdown opens only folders you choose."
-      guard panel.runModal() == .OK, let chosen = panel.url else { return }
-      _ = add([chosen])
+      #if os(Windows)
+        // No sandbox: the project's folder is the one to add.
+        _ = add([url])
+      #else
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.directoryURL = url
+        panel.prompt = "Add"
+        panel.message = "Add “\(project.name)” to the sidebar. Markdown opens only folders you choose."
+        guard panel.runModal() == .OK, let chosen = panel.url else { return }
+        _ = add([chosen])
+      #endif
     }
   #endif
 }
@@ -519,8 +519,8 @@ private struct FolderRootRow: View {
       Button("New Note", systemImage: "square.and.pencil") { actions.newNote(in: url) }
       Button("New Folder", systemImage: "folder.badge.plus") { actions.newFolder(in: url) }
       Divider()
-      #if os(macOS)
-        Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+      #if os(macOS) || os(Windows)
+        Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([url]) }
       #endif
     }
     Button("Reload", systemImage: "arrow.clockwise") { library.reload() }
@@ -629,8 +629,8 @@ struct FileTreeRow: View {
     Button("New Folder", systemImage: "folder.badge.plus") { actions.newFolder(in: node.url) }
     Divider()
     Button("Rename…", systemImage: "pencil") { actions.beginRename(node.url) }
-    #if os(macOS)
-      Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
+    #if os(macOS) || os(Windows)
+      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([node.url]) }
     #endif
     Divider()
     #if os(macOS)

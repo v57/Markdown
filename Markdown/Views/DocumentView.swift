@@ -56,7 +56,7 @@ struct DocumentView: View {
   var body: some View {
     contentView
       .kitPane(.content)
-      #if os(macOS)
+      #if os(macOS) || os(Windows)
         // The window's title (Window menu, Mission Control); the toolbar shows the rich title instead.
         .navigationTitle(title)
       #endif
@@ -250,10 +250,8 @@ struct DocumentView: View {
             }
           }
         }
-        #if os(macOS)
-          Button("Show in Finder", systemImage: "folder") {
-            NSWorkspace.shared.activateFileViewerSelecting([file])
-          }
+        #if os(macOS) || os(Windows)
+          Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([file]) }
         #endif
         if isStandalone(file) {
           Button("Add Enclosing Folder…", systemImage: "folder.badge.plus") {
