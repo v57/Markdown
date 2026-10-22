@@ -7,13 +7,15 @@ import VaultKit
 /// The sidebar: where notes live. All Notes and the notes folder (iCloud Drive or local)
 /// with its folders, connected GitHub repositories, folders added by dropping them here
 /// (Finder, Files) or with Add Folder (persisted in SwiftData), and files opened on their
-/// own. Selecting one lists its notes in the note list. The kit's sidebar: a card per place,
-/// and the bar at the bottom (search, new note and folder, the sidebar toggle).
+/// own. Choosing one lists its notes below the places, in the same sidebar (`NoteSections`), and
+/// the note picked there shows beside it. The kit's sidebar: a card per place, then a card per
+/// group of notes, and the bar at the bottom (search, new note and folder, the sidebar toggle).
 struct SidebarView: View {
-  /// On iPhone: picking a place pushes the note list.
-  @Binding var compactColumn: NavigationSplitViewColumn
-  /// On iPad: the split's columns, for the bar's sidebar toggle.
+  /// The split's columns, for the bar's sidebar toggle (nil on iPhone, where the note is pushed).
   var columnVisibility: Binding<NavigationSplitViewVisibility>?
+  /// On iPhone: shows the note column, also for the note already shown before going back.
+  var showsNote: () -> Void = {}
+  @State private var list = NoteListModel()
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(NotesLocation.self) private var notes
@@ -40,17 +42,19 @@ struct SidebarView: View {
   var body: some View {
     @Bindable var window = window
     KitSidebar(
-      selection: itemBinding, searchText: $window.searchQuery, searchPrompt: "Search Notes",
+      selection: noteSelection, searchText: $window.searchQuery, searchPrompt: "Search Notes",
       columnVisibility: columnVisibility
     ) {
-      notesSection
-      if !repositories.repositories.isEmpty { gitHubSection }
-      if !rootFolders.isEmpty { foldersSection }
+      // A place with many folders keeps its title in view while they scroll by.
+      notesSection.kitSticky()
+      if !repositories.repositories.isEmpty { gitHubSection.kitSticky() }
+      if !rootFolders.isEmpty { foldersSection.kitSticky() }
       #if os(macOS) || os(Windows)
         // The vault's projects are the user's: never in the screenshot demo.
-        if !ScreenshotDemo.isOn { projectsSection }
+        if !ScreenshotDemo.isOn { projectsSection.kitSticky() }
       #endif
       if !openedFiles.isEmpty { filesSection }
+      NoteSections(model: list)
     } bottomBar: {
       Button("New Note", systemImage: "square.and.pencil") { newNote() }
         .disabled(notes.url == nil)
@@ -67,7 +71,7 @@ struct SidebarView: View {
     } isTargeted: { isDropTargeted = $0 }
     #if os(macOS) || os(Windows)
       .onDeleteCommand {
-        if case .folder(let url) = navigator.item, isDeletable(url) { actions.delete(url) }
+        if let url = noteSelection.wrappedValue, isDeletable(url) { actions.delete(url) }
       }
     #endif
     #if os(Windows)
@@ -78,6 +82,16 @@ struct SidebarView: View {
     .task(id: CountKey(root: notes.url, generation: library.generation)) {
       await countAllNotes()
       if !Task.isCancelled { window.hasCountedNotes = true }
+    }
+    .task(id: ListKey(item: navigator.item, generation: library.generation)) {
+      let item = navigator.item
+      await list.load(item, library: library, notes: notes, folders: folders)
+      if !Task.isCancelled { window.loadedList = .some(item) }
+    }
+    .task(id: window.searchQuery) {
+      await list.search(
+        window.searchQuery,
+        scope: SearchScope(library: library, notes: notes, repositories: repositories, folders: folders))
     }
     .sheet(isPresented: $isConnectingGitHub) { GitHubConnectView() }
     .alert(
@@ -99,8 +113,7 @@ struct SidebarView: View {
       Text(library.lastError ?? "")
     }
     .navigationTitle("Markdown")
-    // The bottom bar has the toggle; View › Show Sidebar on the Mac, and the note list's Show Sidebar
-    // button on iPad, bring it back.
+    // The bottom bar has the toggle; the note's Show Sidebar button brings it back.
     .toolbar(removing: .sidebarToggle)
     #if DEBUG && targetEnvironment(simulator)
       .task { addLaunchArgumentFolders() }
@@ -116,9 +129,10 @@ struct SidebarView: View {
     ) {
       if let root = notes.url {
         let _ = library.generation
-        SidebarRow(value: LibraryItem.allNotes, "All Notes", systemImage: "note.text") {
+        SidebarRow("All Notes", systemImage: "note.text") {
           Text("\(allNotesCount ?? 0)")
         }
+        .place(.allNotes)
         FileTreeRow(node: FileNode(url: root, isDirectory: true), isRoot: true, title: "Notes", showsChildren: false)
         ForEach(library.children(of: root).filter(\.isDirectory)) { child in
           FileTreeRow(node: child)
@@ -198,9 +212,10 @@ struct SidebarView: View {
 
   private var filesSection: some View {
     KitSection("Files", meta: "opened on their own", systemImage: "doc.on.doc", hue: .gray) {
-      SidebarRow(value: LibraryItem.openedFiles, "Opened Files", systemImage: "doc.on.doc") {
+      SidebarRow("Opened Files", systemImage: "doc.on.doc") {
         Text("\(openedFiles.count)")
       }
+      .place(.openedFiles)
     }
   }
 
@@ -218,34 +233,30 @@ struct SidebarView: View {
 
   // MARK: - Selection
 
-  /// Choosing a sidebar item lists its notes; the shown note stays when it's in the list.
-  private var itemBinding: Binding<LibraryItem?> {
+  /// The sidebar's selection is the shown note (not a folder shown by its README); the places are rows that list
+  /// their notes (`place(_:)`).
+  private var noteSelection: Binding<URL?> {
     Binding(
-      get: { navigator.item },
-      set: { item in
-        navigator.item = item
-        if item != nil { compactColumn = .content }
-        guard let selection = navigator.selection, let item else { return }
-        if !contains(item, selection) { navigator.selection = nil }
+      get: {
+        guard let selection = navigator.selection, !FolderLibrary.isDirectory(selection) else { return nil }
+        return selection
+      },
+      set: { url in
+        guard let url else { return }
+        navigator.selection = url
+        showsNote()
       })
-  }
-
-  private func contains(_ item: LibraryItem, _ url: URL) -> Bool {
-    switch item {
-    case .allNotes:
-      guard let root = notes.url else { return false }
-      return url.path.hasPrefix(root.path + "/")
-    case .folder(let folder):
-      return url.deletingLastPathComponent() == folder
-    case .openedFiles:
-      return openedFiles.contains { $0.path == url.path }
-    }
   }
 
   // MARK: - All Notes
 
   private struct CountKey: Equatable {
     var root: URL?
+    var generation: Int
+  }
+
+  private struct ListKey: Equatable {
+    var item: LibraryItem?
     var generation: Int
   }
 
@@ -573,9 +584,7 @@ struct FileTreeRow: View {
 
   private func row(noteCount: Int, isExpandable: Bool) -> some View {
     label(
-      SidebarRow(
-        value: LibraryItem.folder(node.url), title ?? node.name, isExpanded: isExpandable ? isExpanded : nil
-      ) {
+      SidebarRow(title ?? node.name, isExpanded: isExpandable ? isExpanded : nil) {
         if let image = icon.flatMap(Image.init(data:)) {
           Avatar(name: title ?? node.name, image: image, kind: .thing, size: 18)
         } else {
@@ -588,6 +597,7 @@ struct FileTreeRow: View {
           Text("\(badge ?? noteCount)")
         }
       }
+      .place(.folder(node.url))
       .kitRowIndent(depth)
     )
     .kitDropTarget(isDropTargeted)
@@ -648,6 +658,27 @@ struct FileTreeRow: View {
       set: { open in
         if open { library.expanded.insert(node.url) } else { library.expanded.remove(node.url) }
       })
+  }
+}
+
+extension SidebarRow {
+  /// A place: the current row while its notes are listed below it, and a click (a tap) lists them.
+  func place(_ item: LibraryItem) -> some View { PlaceRow(row: self, item: item) }
+}
+
+private struct PlaceRow<Icon: View, Trailing: View>: View {
+  let row: SidebarRow<Icon, Trailing>
+  let item: LibraryItem
+  @Environment(Navigator.self) private var navigator
+  @Environment(NotesLocation.self) private var notes
+  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
+
+  var body: some View {
+    row
+      .isCurrent(navigator.item == item)
+      .action {
+        navigator.choose(item, notesFolder: notes.url, openedFiles: Set(folders.filter(\.isFile).map(\.path)))
+      }
   }
 }
 

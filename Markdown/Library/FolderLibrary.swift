@@ -280,7 +280,7 @@ struct FileNode: Identifiable, Hashable {
 /// What the detail pane shows, with back/forward history. Selecting a folder shows its
 /// README; following a link pushes the previous selection.
 @Observable final class Navigator {
-  /// What the note list shows (the sidebar's selection).
+  /// The place whose notes the sidebar lists.
   var item: LibraryItem?
   /// The shown note, or a folder whose README is shown (a link to a folder).
   var selection: URL? {
@@ -302,6 +302,19 @@ struct FileNode: Identifiable, Hashable {
   private(set) var forward: [URL] = []
   @ObservationIgnored private var isTraversing = false
   @ObservationIgnored private var keepsAnchor = false
+
+  /// Lists `item`'s notes in the sidebar; the shown note stays when it is one of them.
+  func choose(_ item: LibraryItem, notesFolder: URL?, openedFiles: Set<String>) {
+    self.item = item
+    guard let selection else { return }
+    let isListed =
+      switch item {
+      case .allNotes: notesFolder.map { selection.path.hasPrefix($0.path + "/") } ?? false
+      case .folder(let folder): selection.deletingLastPathComponent() == folder
+      case .openedFiles: openedFiles.contains(selection.path)
+      }
+    if !isListed { self.selection = nil }
+  }
 
   /// Shows `url`, scrolled to `anchor` if given.
   func open(_ url: URL, anchor: String? = nil) {

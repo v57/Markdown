@@ -4,8 +4,8 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The library window, in three columns as in Notes: where notes live (sidebar), the
-/// notes there (list), the open note (detail). Quick Open (⌘K) floats above them and the
+/// The library window, in two columns as in the other v57 apps: the sidebar (where notes live,
+/// then the notes of the place chosen there) and the open note. Quick Open (⌘K) floats above them and the
 /// welcome sheet opens with the window. Files and folders opened from Finder or Files
 /// ("Open with…", a drop on the Dock icon) open here too.
 struct ContentView: View {
@@ -17,7 +17,7 @@ struct ContentView: View {
   @State private var repositories = RepositoryStore()
   @State private var preferences = NotePreferences(defaults: ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard)
   @State private var window = WindowState()
-  /// On iPhone: the column shown, which follows the sidebar's and the list's picks.
+  /// On iPhone: the column shown, which follows the sidebar's picks.
   @State private var compactColumn = NavigationSplitViewColumn.sidebar
   /// The split's columns, for the kit's sidebar toggles on iPad.
   @State private var columns = NavigationSplitViewVisibility.automatic
@@ -38,20 +38,15 @@ struct ContentView: View {
 
   var body: some View {
     NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
-      // On the Mac the bar's toggle works through the window's split view; on iPhone the columns are pushed.
-      SidebarView(compactColumn: $compactColumn, columnVisibility: idiom == .pad ? $columns : nil)
-        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
-    } content: {
-      NoteListView()
+      // On iPhone the note is pushed over the sidebar.
+      SidebarView(columnVisibility: idiom == .phone ? nil : $columns) { compactColumn = .detail }
         .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 420)
     } detail: {
       NavigationStack {
         DocumentView()
-          // On the note, not the list: in portrait the split shows the note alone.
-          .modifier(ShowSidebarButton(columns: $columns, isOn: idiom == .pad))
+          .modifier(ShowSidebarButton(columns: $columns, isOn: idiom != .phone))
       }
     }
-    .kitThreeColumnSplit()
     // Screenshots: every sidebar row built when the scene is ready, not a few a frame as they near the screen.
     .kitLazyLoading(!ScreenshotDemo.isOn)
     .kitPaletteOverlay(isPresented: $window.isQuickOpenShown) { QuickOpenView(perform: perform) }
@@ -86,6 +81,7 @@ struct ContentView: View {
       ScreenshotDemo.openScene = { arguments in
         openScreenshotDemo(arguments)
         await screenshotSceneLoaded()
+        showScreenshotPalette()
       }
       window.perform = perform
       repositories.willChangeFiles = { [actions] in actions.willChangeFiles() }
@@ -104,6 +100,7 @@ struct ContentView: View {
       if ScreenshotDemo.isOn {
         openScreenshotDemo()
         await screenshotSceneLoaded()
+        showScreenshotPalette()
       }
       Screenshots.ready()
     }
@@ -199,6 +196,11 @@ struct ContentView: View {
       // Now rather than on the next update, which skips a scene showing the note the one before showed.
       follow(navigator.selection)
     }
+  }
+
+  /// `--quick-open`: Quick Open over the scene's note, once the note shows (on the Mac an editor made as the palette
+  /// comes in stays blank under it).
+  private func showScreenshotPalette() {
     if ScreenshotDemo.flag("--quick-open") { window.isQuickOpenShown = true }
   }
 
@@ -232,8 +234,8 @@ struct ContentView: View {
   }
 }
 
-/// The kit's Show Sidebar button while the sidebar is out (on iPad, where it stands in for the split view's own
-/// toggle).
+/// The kit's Show Sidebar button while the sidebar is out (on the Mac and iPad, where it stands in for the split
+/// view's own toggle).
 private struct ShowSidebarButton: ViewModifier {
   @Binding var columns: NavigationSplitViewVisibility
   let isOn: Bool

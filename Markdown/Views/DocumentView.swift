@@ -124,7 +124,7 @@ struct DocumentView: View {
     case .empty:
       EmptyState(
         systemImage: "note.text", title: "No Note Selected",
-        message: "Choose a note in the list, or start a new one with ⌘N.")
+        message: "Choose a note in the sidebar, or start a new one with ⌘N.")
     case .loading:
       LiveIcon(systemImage: "doc.text", status: .working, size: 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -145,7 +145,7 @@ struct DocumentView: View {
     case .noReadme(let folder):
       EmptyState(
         systemImage: "doc.questionmark", title: "No README",
-        message: "“\(folder.lastPathComponent)” has no README.md. Choose a note in the list.")
+        message: "“\(folder.lastPathComponent)” has no README.md. Choose a note in the sidebar.")
     case .failed(let file, let message):
       EmptyState(
         systemImage: "exclamationmark.triangle", title: "Couldn’t Open “\(file.lastPathComponent)”",
