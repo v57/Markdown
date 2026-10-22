@@ -290,12 +290,19 @@
     private var caretLineRect: NSRect?
 
     /// The caret's line (its paragraph, where the Markdown marks show) gets a faint fill while
-    /// editing, so the revealed marks read as belonging to it.
+    /// editing, so the revealed marks read as belonging to it: 8pt wider than the text on each
+    /// side, 3pt taller, 7pt corners, half the kit's field fill (2.25% black, 4.5% white in Dark
+    /// Mode), drawn behind the text so the layout never moves.
     public override func drawBackground(in rect: NSRect) {
       super.drawBackground(in: rect)
       guard let line = caretLineRect, line.intersects(rect) else { return }
-      NSColor.labelColor.withAlphaComponent(0.04).setFill()
-      NSBezierPath(roundedRect: line, xRadius: 6, yRadius: 6).fill()
+      Self.currentLineFill.setFill()
+      NSBezierPath(roundedRect: line, xRadius: 7, yRadius: 7).fill()
+    }
+
+    private static let currentLineFill = NSColor(name: nil) { appearance in
+      appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        ? NSColor.white.withAlphaComponent(0.045) : NSColor.black.withAlphaComponent(0.0225)
     }
 
     public override func becomeFirstResponder() -> Bool {
@@ -338,7 +345,7 @@
       }
       guard !rect.isNull, !rect.isEmpty else { return nil }
       let origin = textContainerOrigin
-      return rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -4, dy: 0)
+      return rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -8, dy: -3)
     }
 
     // MARK: - Selection / active line (drives syntax show/hide)
