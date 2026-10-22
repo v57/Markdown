@@ -209,7 +209,7 @@ struct DocumentView: View {
 
   /// The note's rich title; its meta line is where it lives, then whether edits are saved and its length.
   private var titleView: some View {
-    KitTitle(title, meta: titleMeta, systemImage: "doc.text", hue: .blue, status: titleStatus)
+    KitTitle(title, meta: titleMeta, systemImage: "doc.text", hue: .accent, status: titleStatus)
       .opacity(title.isEmpty ? 0 : 1)
   }
 
