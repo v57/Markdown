@@ -24,7 +24,6 @@ struct SidebarView: View {
   @Environment(WindowState.self) private var window
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
-  @State private var isConnectingGitHub = false
   @State private var isDropTargeted = false
   @State private var allNotesCount: Int?
   @State private var showsNotesMenu = false
@@ -93,25 +92,12 @@ struct SidebarView: View {
         window.searchQuery,
         scope: SearchScope(library: library, notes: notes, repositories: repositories, folders: folders))
     }
-    .sheet(isPresented: $isConnectingGitHub) { GitHubConnectView() }
-    .alert(
+    .kitSheet(isPresented: $window.isConnectingGitHub) { GitHubConnectView() }
+    .notice(
       repositories.message?.title ?? "",
-      isPresented: Binding(
-        get: { repositories.message != nil }, set: { if !$0 { repositories.message = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(repositories.message?.text ?? "")
-    }
-    .alert(
-      "Couldn’t Add Folder",
-      isPresented: Binding(
-        get: { library.lastError != nil }, set: { if !$0 { library.lastError = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(library.lastError ?? "")
-    }
+      message: Binding(get: { repositories.message?.text }, set: { if $0 == nil { repositories.message = nil } }),
+      systemImage: "arrow.triangle.branch", hue: .purple)
+    .notice("Couldn’t Add Folder", message: Bindable(library).lastError)
     .navigationTitle("Markdown")
     // The bottom bar has the toggle; the note's Show Sidebar button brings it back.
     .toolbar(removing: .sidebarToggle)
@@ -164,7 +150,7 @@ struct SidebarView: View {
         Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
         Divider()
         Button("Add Folder to Sidebar…", systemImage: "plus.rectangle.on.folder") { window.isAddingFolder = true }
-        Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { isConnectingGitHub = true }
+        Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { window.isConnectingGitHub = true }
         #if os(macOS) || os(Windows)
           if let folder = notes.url {
             Divider()
@@ -191,7 +177,7 @@ struct SidebarView: View {
         RepositoryRow(repository: repository)
       }
     } accessory: {
-      Button("Connect GitHub Repository…", systemImage: "plus") { isConnectingGitHub = true }
+      Button("Connect GitHub Repository…", systemImage: "plus") { window.isConnectingGitHub = true }
         .labelStyle(.iconOnly)
     }
   }
@@ -461,38 +447,37 @@ struct CollapsedGroups: RawRepresentable {
   var rawValue: String { ids.sorted().joined(separator: "\n") }
 }
 
-/// The rename prompt, the delete confirmation and file-operation errors.
+/// The rename prompt, the delete confirmation and file-operation errors, as the kit's sheets (over the window on the
+/// Mac and iPad).
 struct FileActionPrompts: ViewModifier {
   @Environment(FileActions.self) private var actions
 
   func body(content: Content) -> some View {
     @Bindable var actions = actions
     content
-      .alert(
-        "Rename", isPresented: Binding(get: { actions.renaming != nil }, set: { if !$0 { actions.renaming = nil } })
-      ) {
-        TextField("Name", text: $actions.newName)
-        Button("Rename") { actions.commitRename() }
-          .keyboardShortcut(.defaultAction)
-        Button("Cancel", role: .cancel) { actions.renaming = nil }
+      .kitSheet(isPresented: Binding(get: { actions.renaming != nil }, set: { if !$0 { actions.renaming = nil } })) {
+        KitSheet(
+          title: "Rename", meta: actions.renaming.map { "“\($0.lastPathComponent)”" }, systemImage: "pencil", width: 400
+        ) {
+          FormCard {
+            FormRow("Name", systemImage: "doc.text", field: TextField("Name", text: $actions.newName))
+          }
+        } footer: {
+          Button("Cancel") { actions.renaming = nil }
+            .keyboardShortcut(.cancelAction)
+          Button("Rename") { actions.commitRename() }
+            .buttonStyle(.kitPrimary)
+            .keyboardShortcut(.defaultAction)
+        }
       }
-      .confirmationDialog(
+      .kitConfirmation(
         "Delete “\(actions.deleting?.lastPathComponent ?? "")”?",
         isPresented: Binding(get: { actions.deleting != nil }, set: { if !$0 { actions.deleting = nil } }),
-        titleVisibility: .visible
+        message: "This can’t be undone.", systemImage: "trash", confirm: "Delete"
       ) {
-        Button("Delete", role: .destructive) { actions.confirmDelete() }
-      } message: {
-        Text("This can’t be undone.")
+        actions.confirmDelete()
       }
-      .alert(
-        "Couldn’t Complete the Action",
-        isPresented: Binding(get: { actions.error != nil }, set: { if !$0 { actions.error = nil } })
-      ) {
-        Button("OK", role: .cancel) {}
-      } message: {
-        Text(actions.error ?? "")
-      }
+      .notice("Couldn’t Complete the Action", message: $actions.error)
   }
 }
 

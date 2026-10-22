@@ -10,7 +10,8 @@ import Foundation
 ///   --screenshot-demo        the demo notes and the "Atlas Docs" folder
 ///   --open <path>            shows a note, relative to the demo folder (`Notes/Trip to Lisbon.md`)
 ///   --quick-open             opens Quick Open
-///   --welcome                opens the welcome sheet
+///   --welcome                the welcome (no note open)
+///   --open-sheet <name>      over the note: `github` (Connect GitHub), `rename` or `delete` (the kit's overlays)
 ///
 /// `dev-screenshots` takes every scene in one launch: the window opens each next scene's arguments in place.
 enum ScreenshotDemo {

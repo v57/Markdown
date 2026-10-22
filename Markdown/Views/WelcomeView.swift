@@ -1,50 +1,43 @@
 import ComponentKit
+import SwiftData
 import SwiftUI
 
-/// The welcome sheet, shown when the app opens (unless turned off) and from Window ›
-/// Welcome to Markdown: start a note, open a folder of Markdown files, or go back to a
-/// recent note. The kit's welcome window (the whole width on iPhone), with Encrypt New Notes among its options.
+/// The welcome, the note pane's content while no note is open (and Window › Welcome to Markdown): start a note, open a
+/// folder of Markdown files, or go back to a recent note. The kit's inline welcome, with Encrypt New Notes among its
+/// options; a folder dropped on it joins the sidebar.
 struct WelcomeView: View {
-  var perform: (QuickOpenCommand) -> Void
-  /// Folders and files dropped on the window.
-  var open: ([URL]) -> Bool
   @Environment(NotePreferences.self) private var preferences
   @Environment(Navigator.self) private var navigator
   @Environment(FolderLibrary.self) private var library
   @Environment(NotesLocation.self) private var notes
-  @Environment(\.dismiss) private var dismiss
-  @AppStorage("showsWelcome") private var showsWelcome = true
+  @Environment(WindowState.self) private var window
+  @Environment(\.modelContext) private var context
+  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @AppStorage(NoteFiles.encryptNewNotesKey) private var encryptsNewNotes = true
 
   var body: some View {
     KitWelcome(
-      appName: "Markdown", version: "Notes in plain Markdown files", showAtLaunch: $showsWelcome,
-      emptyTitle: "No Recent Notes", emptyMessage: "Notes you open appear here.", close: { dismiss() },
-      onDrop: { urls in
-        dismiss()
-        return open(urls)
-      }
+      appName: "Markdown", version: "Notes in plain Markdown files", emptyTitle: "No Recent Notes",
+      emptyMessage: "Notes you open appear here.", onDrop: open
     ) {
-      WelcomeAction("New Note", detail: newNoteDetail, systemImage: "square.and.pencil") { run(.newNote(nil)) }
+      WelcomeAction("New Note", detail: newNoteDetail, systemImage: "square.and.pencil") { window.perform?(.newNote(nil)) }
       WelcomeAction(
         "Open Folder…", detail: "Edit the Markdown files already on your \(deviceName), in place.",
         systemImage: "folder"
-      ) { run(.addFolder) }
+      ) { window.perform?(.addFolder) }
     } recents: {
       ForEach(Array(preferences.existingRecents.prefix(8)), id: \.self) { url in
         RecentItem(
           url.deletingPathExtension().lastPathComponent, subtitle: subtitle(for: url), systemImage: "doc.text",
           id: url.path
         ) {
-          openRecent(url)
+          library.reveal(url, roots: library.builtInRoots)
+          navigator.open(url)
         }
       }
     }
     // New notes are encrypted with the key the v57 apps share (Shell opens them too).
     .options { Toggle("Encrypt new notes", isOn: $encryptsNewNotes) }
-    #if os(macOS)
-      .frame(height: 660)
-    #endif
   }
 
   private var newNoteDetail: String {
@@ -53,15 +46,11 @@ struct WelcomeView: View {
       : "Start writing. Notes are plain files on this \(deviceName)."
   }
 
-  private func run(_ command: QuickOpenCommand) {
-    dismiss()
-    perform(command)
-  }
-
-  private func openRecent(_ url: URL) {
-    dismiss()
-    library.reveal(url, roots: library.builtInRoots)
-    navigator.open(url)
+  /// Folders and files dropped on the welcome join the sidebar; the first shows.
+  private func open(_ urls: [URL]) -> Bool {
+    let shown = library.add(urls, existing: folders, context: context)
+    if let first = shown.first { navigator.open(first) }
+    return !shown.isEmpty
   }
 
   private func subtitle(for url: URL) -> String {

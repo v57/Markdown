@@ -107,24 +107,14 @@ struct DocumentView: View {
           addFolder(folder, showing: file)
         }
       }
-      .alert("Couldn’t Save", isPresented: $showsSaveError) {
-        #if os(macOS)
-          if case .failed(_, permissionDenied: true) = saver.state {
-            Button("Allow Editing…") { allowEditing() }
-          }
-        #endif
-        Button("OK", role: .cancel) {}
-      } message: {
-        if case .failed(let message, _) = saver.state { Text(message) }
-      }
+      .notice("Couldn’t Save", message: saveError, extra: allowEditingButton)
   }
 
   @ViewBuilder private var contentView: some View {
     switch content {
     case .empty:
-      EmptyState(
-        systemImage: "note.text", title: "No Note Selected",
-        message: "Choose a note in the sidebar, or start a new one with ⌘N.")
+      // Nothing open: the welcome is the main screen.
+      WelcomeView()
     case .loading:
       LiveIcon(systemImage: "doc.text", status: .working, size: 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -205,6 +195,26 @@ struct DocumentView: View {
       }
       .kitToolbarItem()
     }
+  }
+
+  /// Why the last edit couldn't be saved, while its notice shows.
+  private var saveError: Binding<String?> {
+    Binding(
+      get: {
+        guard showsSaveError, case .failed(let message, _) = saver.state else { return nil }
+        return message
+      },
+      set: { if $0 == nil { showsSaveError = false } })
+  }
+
+  /// Allow Editing… when the sandbox refused the save (the Mac).
+  private var allowEditingButton: NoticeButton? {
+    #if os(macOS)
+      if case .failed(_, permissionDenied: true) = saver.state {
+        return NoticeButton(title: "Allow Editing…") { allowEditing() }
+      }
+    #endif
+    return nil
   }
 
   /// The note's rich title; its meta line is where it lives, then whether edits are saved and its length.

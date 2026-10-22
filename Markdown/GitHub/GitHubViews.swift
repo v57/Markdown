@@ -2,13 +2,13 @@ import ComponentKit
 import GitHubKit
 import SwiftUI
 
-/// The Connect GitHub sheet: sign in (device flow), then pick one of your repositories —
+/// The Connect GitHub sheet (the kit's, over the window on the Mac and iPad): sign in (device flow), then pick one of your repositories —
 /// or add any public repository by name, signed in or not (read-only without sign-in).
 struct GitHubConnectView: View {
   @Environment(GitHubAuth.self) private var auth
   @Environment(RepositoryStore.self) private var store
   @Environment(Navigator.self) private var navigator
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @Environment(\.openURL) private var openURL
   @State private var repositories: [GitHubRepository] = []
   @State private var isLoading = false
@@ -16,64 +16,51 @@ struct GitHubConnectView: View {
   @State private var publicName = ""
 
   var body: some View {
-    NavigationStack {
-      Form {
-        account
-        if case .signedIn = auth.state {
-          yourRepositories
-        }
-        Section {
-          HStack {
-            TextField("owner/repository", text: $publicName)
-              .autocorrectionDisabled()
-              #if os(iOS)
-                .textInputAutocapitalization(.never)
-              #endif
-              .onSubmit(addPublic)
-            Button("Add", action: addPublic)
-              .disabled(parsed(publicName) == nil)
-          }
-        } header: {
-          Text("Any Public Repository")
-        } footer: {
-          Text("Only Markdown files and their images are downloaded.")
-        }
+    KitSheet(
+      title: "Connect GitHub", meta: "Notes from a repository's Markdown files, edited here and pushed back.",
+      systemImage: "arrow.triangle.branch", hue: .purple, width: 480
+    ) {
+      account
+      if case .signedIn = auth.state {
+        yourRepositories
       }
-      .formStyle(.grouped)
-      .navigationTitle("Connect GitHub")
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
-        }
+      FormCard("Any Public Repository", footer: "Only Markdown files and their images are downloaded.") {
+        FormRow(
+          "Repository", help: "owner/repository or a github.com address", systemImage: "globe", hue: .gray,
+          field: TextField("owner/repository", text: $publicName)
+            .autocorrectionDisabled()
+            #if os(iOS)
+              .textInputAutocapitalization(.never)
+            #endif
+            .onSubmit(addPublic))
+        GroupRow("Add", help: nil, action: addPublic)
+          .disabled(parsed(publicName) == nil)
       }
-      .task(id: auth.token) { await loadRepositories() }
-      .alert(
-        "GitHub",
-        isPresented: Binding(get: { auth.error != nil }, set: { if !$0 { auth.error = nil } })
-      ) {
-        Button("OK", role: .cancel) {}
-      } message: {
-        Text(auth.error ?? "")
-      }
+    } footer: {
+      Button("Done") { dismiss() }
+        .buttonStyle(.kitPrimary)
+        .keyboardShortcut(.defaultAction)
     }
-    #if os(macOS)
-      .frame(minWidth: 460, minHeight: 520)
-    #endif
+    .task(id: auth.token) { await loadRepositories() }
+    .notice("GitHub", message: Bindable(auth).error)
   }
 
   @ViewBuilder private var account: some View {
-    Section("Account") {
+    FormCard("Account") {
       switch auth.state {
       case .signedOut:
-        Button("Sign In with GitHub…") { auth.signIn() }
-        Text("Signing in lets you edit your repositories, including private ones, and push changes.")
-          .font(.callout).foregroundStyle(.secondary)
+        GroupRow(
+          "Sign In with GitHub…",
+          help: "Signing in lets you edit your repositories, including private ones, and push changes.",
+          action: { auth.signIn() })
       case .requesting:
-        HStack {
-          LiveIcon(systemImage: "person.badge.key", status: .working, size: 16)
-          Text("Asking GitHub for a code…").foregroundStyle(.secondary)
-          Spacer()
-          Button("Cancel") { auth.cancelSignIn() }
+        GroupRow {
+          HStack(spacing: 8) {
+            LiveIcon(systemImage: "person.badge.key", status: .working, size: 16)
+            Text("Asking GitHub for a code…").foregroundStyle(.kitSecondary)
+          }
+        } trailing: {
+          Button("Cancel") { auth.cancelSignIn() }.buttonStyle(.kit)
         }
       case .waiting(let code, let url):
         VStack(alignment: .leading, spacing: 10) {
@@ -88,58 +75,54 @@ struct GitHubConnectView: View {
           .buttonStyle(.kitPrimary)
           HStack {
             LiveIcon(systemImage: "person.badge.key", status: .working, size: 16)
-            Text("Waiting for you to approve…").foregroundStyle(.secondary)
+            Text("Waiting for you to approve…").foregroundStyle(.kitSecondary)
             Spacer()
-            Button("Cancel") { auth.cancelSignIn() }
+            Button("Cancel") { auth.cancelSignIn() }.buttonStyle(.kit)
           }
         }
-        .padding(.vertical, 4)
+        .padding(12)
       case .signedIn(let login):
-        HStack {
+        GroupRow {
           Label("@\(login)", systemImage: "person.crop.circle")
-          Spacer()
-          Button("Sign Out") { auth.signOut() }
+        } trailing: {
+          Button("Sign Out") { auth.signOut() }.buttonStyle(.kit)
         }
       }
     }
   }
 
   @ViewBuilder private var yourRepositories: some View {
-    Section("Your Repositories") {
-      TextField("Filter", text: $filter)
+    FormCard("Your Repositories") {
+      KitSearchField(text: $filter, prompt: "Filter your repositories", count: "\(filtered.count) of \(repositories.count)")
+        .padding(10)
       if isLoading {
         LiveIcon(systemImage: "arrow.triangle.branch", status: .working, size: 18)
           .frame(maxWidth: .infinity)
+          .padding(10)
       }
       ForEach(filtered) { repository in
         let connected = store.repositories.contains { $0.fullName == repository.fullName }
         let busy = store.activity[repository.fullName]
-        Button {
-          connect(owner: repository.owner, name: repository.name)
-        } label: {
-          HStack {
-            VStack(alignment: .leading, spacing: 2) {
-              HStack(spacing: 4) {
-                Text(repository.fullName)
-                if repository.isPrivate {
-                  Image(systemName: "lock.fill").font(.caption).foregroundStyle(.secondary)
-                }
-              }
-              if let description = repository.description, !description.isEmpty {
-                Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        GroupRow(action: { connect(owner: repository.owner, name: repository.name) }) {
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+              Text(repository.fullName)
+              if repository.isPrivate {
+                Image(systemName: "lock.fill").font(.caption).foregroundStyle(.kitSecondary)
               }
             }
-            Spacer()
-            if let busy {
-              LiveIcon(systemImage: "arrow.down", status: .working, size: 16)
-              Text(busy).font(.caption).foregroundStyle(.secondary)
-            } else if connected {
-              Image(systemName: "checkmark").foregroundStyle(.secondary)
+            if let description = repository.description, !description.isEmpty {
+              Text(description).font(.caption).foregroundStyle(.kitSecondary).lineLimit(1)
             }
           }
-          .contentShape(Rectangle())
+        } trailing: {
+          if let busy {
+            LiveIcon(systemImage: "arrow.down", status: .working, size: 16)
+            Text(busy).font(.caption).foregroundStyle(.kitSecondary)
+          } else if connected {
+            Image(systemName: "checkmark").foregroundStyle(.kitSecondary)
+          }
         }
-        .buttonStyle(.plain)
         .disabled(connected || busy != nil)
       }
     }
@@ -217,31 +200,37 @@ struct RepositoryRow: View {
       systemImage: "arrow.triangle.branch"
     )
     .kitContextMenu { menu }
-    .alert("Commit and Push", isPresented: $isCommitting) {
-      TextField("Message", text: $commitMessage)
-      Button("Push") {
-        let message = commitMessage
-        Task { await store.commitAndPush(repository, message: message, client: auth.api) }
+    .kitSheet(isPresented: $isCommitting) {
+      KitSheet(title: "Commit and Push", meta: changeSummary, systemImage: "arrow.up", hue: .purple) {
+        FormCard {
+          FormRow("Message", systemImage: "text.bubble", field: TextField("Message", text: $commitMessage))
+        }
+      } footer: {
+        Button("Cancel") { isCommitting = false }
+          .keyboardShortcut(.cancelAction)
+        Button("Push") {
+          let message = commitMessage
+          isCommitting = false
+          Task { await store.commitAndPush(repository, message: message, client: auth.api) }
+        }
+        .buttonStyle(.kitPrimary)
+        .keyboardShortcut(.defaultAction)
       }
-      .keyboardShortcut(.defaultAction)
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text(changeSummary)
     }
-    .confirmationDialog(
-      "Disconnect \(repository.fullName)?", isPresented: $isDisconnecting, titleVisibility: .visible
+    .kitConfirmation(
+      "Disconnect \(repository.fullName)?", isPresented: $isDisconnecting, message: disconnectMessage,
+      systemImage: "minus.circle", confirm: "Disconnect"
     ) {
-      Button("Disconnect", role: .destructive) {
-        navigator.forget(under: dir)
-        store.disconnect(repository)
-      }
-    } message: {
-      let count = store.changeCounts[repository.fullName] ?? 0
-      Text(
-        count == 0
-          ? "The local copy is removed. The repository on GitHub is not affected."
-          : "\(count) change\(count == 1 ? " hasn’t" : "s haven’t") been pushed and will be lost.")
+      navigator.forget(under: dir)
+      store.disconnect(repository)
     }
+  }
+
+  private var disconnectMessage: String {
+    let count = store.changeCounts[repository.fullName] ?? 0
+    return count == 0
+      ? "The local copy is removed. The repository on GitHub is not affected."
+      : "\(count) change\(count == 1 ? " hasn’t" : "s haven’t") been pushed and will be lost."
   }
 
   @ViewBuilder private var menu: some View {

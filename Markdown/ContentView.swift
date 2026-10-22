@@ -5,8 +5,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The library window, in two columns as in the other v57 apps: the sidebar (where notes live,
-/// then the notes of the place chosen there) and the open note. Quick Open (⌘K) floats above them and the
-/// welcome sheet opens with the window. Files and folders opened from Finder or Files
+/// then the notes of the place chosen there) and the open note, or the welcome while none is.
+/// Quick Open (⌘K) floats above them. Files and folders opened from Finder or Files
 /// ("Open with…", a drop on the Dock icon) open here too.
 struct ContentView: View {
   @State private var library: FolderLibrary
@@ -22,11 +22,8 @@ struct ContentView: View {
   /// The split's columns, for the kit's sidebar toggles on iPad.
   @State private var columns = NavigationSplitViewVisibility.automatic
   @Environment(\.kitIdiom) private var idiom
-  @AppStorage("showsWelcome") private var showsWelcome = true
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
-  /// The welcome sheet opens with the first window of a launch, not with each new one.
-  private static var hasWelcomed = false
 
   init() {
     let library = FolderLibrary()
@@ -54,13 +51,6 @@ struct ContentView: View {
       // Each pane names itself with its own rich title.
       .kitHidesSystemTitle()
     #endif
-    .sheet(isPresented: $window.isWelcomeShown) {
-      WelcomeView(perform: perform) { urls in
-        let shown = library.add(urls, existing: folders, context: context)
-        if let first = shown.first { navigator.open(first) }
-        return !shown.isEmpty
-      }
-    }
     .fileImporter(
       isPresented: $window.isAddingFolder, allowedContentTypes: [.folder], allowsMultipleSelection: true
     ) { result in
@@ -88,10 +78,6 @@ struct ContentView: View {
       repositories.didChangeFiles = { [library] in library.reload() }
       actions.didMove = { [preferences] in preferences.replace($0, with: $1) }
       actions.notesFolder = { [notes] in notes.url }
-      if ScreenshotDemo.isOn ? ScreenshotDemo.flag("--welcome") : showsWelcome, !Self.hasWelcomed {
-        Self.hasWelcomed = true
-        window.isWelcomeShown = true
-      }
       updateRoots()
       await notes.resolve()
       updateRoots()
@@ -150,7 +136,7 @@ struct ContentView: View {
 
   // MARK: - Commands
 
-  /// Quick Open's and the welcome sheet's commands.
+  /// Quick Open's and the welcome's commands.
   private func perform(_ command: QuickOpenCommand) {
     switch command {
     case .newNote(let name):
@@ -162,7 +148,10 @@ struct ContentView: View {
     case .addFolder:
       window.isAddingFolder = true
     case .welcome:
-      window.isWelcomeShown = true
+      // The welcome is the note pane's content while no note is open (on iPhone, pushed over the sidebar).
+      navigator.selection = nil
+      navigator.item = .allNotes
+      if idiom == .phone { compactColumn = .detail }
     }
   }
 
@@ -184,7 +173,6 @@ struct ContentView: View {
       guard arguments != ScreenshotDemo.arguments else { return }
       ScreenshotDemo.arguments = arguments
       window.isQuickOpenShown = false
-      window.isWelcomeShown = ScreenshotDemo.flag("--welcome")
       navigator.reset()
       preferences.forgetRecents()
       library.expanded.removeAll()
@@ -198,10 +186,17 @@ struct ContentView: View {
     }
   }
 
-  /// `--quick-open`: Quick Open over the scene's note, once the note shows (on the Mac an editor made as the palette
+  /// `--quick-open`: Quick Open over the scene's note, once the note shows; `--open-sheet`: one of the overlays (on the Mac an editor made as the palette
   /// comes in stays blank under it).
   private func showScreenshotPalette() {
     if ScreenshotDemo.flag("--quick-open") { window.isQuickOpenShown = true }
+    guard ScreenshotDemo.isOn, let sheet = ScreenshotDemo.value("--open-sheet") else { return }
+    switch sheet {
+    case "github": window.isConnectingGitHub = true
+    case "rename": if let note = navigator.selection { actions.beginRename(note) }
+    case "delete": actions.deleting = navigator.selection
+    default: break
+    }
   }
 
   /// Until the sidebar's count, the note list and the document show the scene (at most 10 s), so its picture never
@@ -227,7 +222,6 @@ struct ContentView: View {
 
   private func open(_ url: URL) {
     guard url.isFileURL else { return }
-    window.isWelcomeShown = false
     if let shown = library.add([url], existing: folders, context: context).first {
       navigator.open(shown)
     }

@@ -1,12 +1,12 @@
 import MarkdownKit
 import SwiftUI
 
-/// What a window shows above its columns: Quick Open, the welcome sheet, the folder
-/// picker. Shared by the sidebar, Quick Open and the menu bar.
+/// What a window shows above its columns: Quick Open and the folder picker. Shared by the
+/// sidebar, Quick Open and the menu bar.
 @Observable final class WindowState {
   var isQuickOpenShown = false
-  var isWelcomeShown = false
   var isAddingFolder = false
+  var isConnectingGitHub = false
   /// What the sidebar's search line holds: the note list shows the notes that match.
   var searchQuery = ""
   /// Runs one of Quick Open's commands in this window (the menu bar's New Folder and Add Folder).
@@ -109,7 +109,7 @@ struct MarkdownCommands: Commands {
     }
     CommandGroup(after: .windowArrangement) {
       Divider()
-      Button("Welcome to Markdown") { window?.isWelcomeShown = true }
+      Button("Welcome to Markdown") { window?.perform?(.welcome) }
         .keyboardShortcut("1", modifiers: [.command, .shift])
         .disabled(window == nil)
     }
