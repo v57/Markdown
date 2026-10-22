@@ -82,6 +82,22 @@ public enum TableColumnLayout {
     -advance(of: character, in: font)
   }
 
+  /// What a hidden syntax character still advances in `font`: nothing when the font has a
+  /// zero-width glyph for the layout manager to substitute, else the width of the space it
+  /// falls back to (SF Mono).
+  public static func hiddenAdvance(in font: PlatformFont) -> CGFloat {
+    for character: UniChar in [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF] {
+      var chars: [UniChar] = [character]
+      var glyphs = [CGGlyph](repeating: 0, count: 1)
+      if CTFontGetGlyphsForCharacters(font as CTFont, &chars, &glyphs, 1), glyphs[0] != 0 {
+        var advances = [CGSize](repeating: .zero, count: 1)
+        CTFontGetAdvancesForGlyphs(font as CTFont, .horizontal, glyphs, &advances, 1)
+        if advances[0].width == 0 { return 0 }
+      }
+    }
+    return advance(of: 0x20, in: font)
+  }
+
   /// Advance of a single character in `font` (0 when the font has no glyph for it).
   public static func advance(of character: UniChar, in font: PlatformFont) -> CGFloat {
     var chars: [UniChar] = [character]

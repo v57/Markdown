@@ -234,6 +234,24 @@
       #expect(doc.attributed.string == text)
     }
 
+    /// Inline code's hidden backticks are drawn as SF Mono's space (it has no zero-width
+    /// glyph): the cells after them land on the grid all the same.
+    @Test func cellsAfterInlineCodeAlign() {
+      let text = "| Module | What |\n|---|---|\n| `Core` | Trips |\n| `Sync` | Sync |"
+      let doc = MarkdownParser.parse(text)
+      let s = stack(text)
+      var xs: [CGFloat] = []
+      for line in [0, 2, 3] {
+        let idx = lineContentIndex(text, line: line, cell: 1)
+        if idx != NSNotFound, let px = x(of: idx, lm: s.lm) { xs.append(px) }
+      }
+      #expect(xs.count == 3)
+      for px in xs { #expect(abs(px - xs[0]) < 0.3) }
+      let grid = gridXs(doc.attributed)
+      #expect(grid.count == 3)
+      #expect(abs(xs[0] - (grid[1] + MarkdownMetrics.standard.tableCellPadding)) < 0.4)
+    }
+
     @Test func tableWithOuterPipesLessRowsAlign() {
       // Rows written without outer pipes: there is no character before column 0's content
       // to kern, so the row is shifted with a paragraph indent instead.

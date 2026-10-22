@@ -1287,15 +1287,23 @@ extension MarkdownParser {
       // Null every pipe in the block (header, separator and body rows alike): zero width,
       // still present in the string. SF Mono has no zero-width glyph for the layout
       // manager's substitution to use, so the advance is cancelled with a kern instead —
-      // the pipes keep their full advance and every row drifts.
+      // the pipes keep their full advance and every row drifts. The other hidden marks in
+      // the cells (an inline code span's backticks, `**`) get the space the layout
+      // manager substitutes for them in SF Mono, which `measuredWidth` counts as nothing:
+      // their advance is cancelled too, or the cells after them drift right.
       var pipeIdx = blockRange.location
       while pipeIdx < NSMaxRange(blockRange) {
-        if ns.character(at: pipeIdx) == 0x7C,
-          let font = snapshot.attribute(.font, at: pipeIdx, effectiveRange: nil) as? PlatformFont
-        {
-          native.addAttribute(
-            .kern, value: TableColumnLayout.nullingKern(of: 0x7C, in: font),
-            range: NSRange(location: pipeIdx, length: 1))
+        if let font = snapshot.attribute(.font, at: pipeIdx, effectiveRange: nil) as? PlatformFont {
+          if ns.character(at: pipeIdx) == 0x7C {
+            native.addAttribute(
+              .kern, value: TableColumnLayout.nullingKern(of: 0x7C, in: font),
+              range: NSRange(location: pipeIdx, length: 1))
+          } else if snapshot.attribute(.markdownSyntax, at: pipeIdx, effectiveRange: nil) != nil {
+            let advance = TableColumnLayout.hiddenAdvance(in: font)
+            if advance > 0 {
+              native.addAttribute(.kern, value: -advance, range: NSRange(location: pipeIdx, length: 1))
+            }
+          }
         }
         pipeIdx += 1
       }
