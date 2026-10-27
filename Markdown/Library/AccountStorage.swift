@@ -30,11 +30,10 @@ enum AccountStorage {
   }
 
   /// The account's GitHub sign-in: Personal's is the one the v57 apps share (`KeychainTokenStore.shared`), another
-  /// account's sits beside it under its own service, so signing in there leaves Personal's alone.
+  /// account's sits beside it under its own service (`KeychainTokenStore.forAccount`, as in Git and Dev), so signing
+  /// in there leaves Personal's alone.
   static func gitHubTokens(for vault: Vault) -> KeychainTokenStore {
-    let shared = KeychainTokenStore.shared
-    guard !vault.isPersonal else { return shared }
-    return KeychainTokenStore(service: "\(shared.service).\(vault.accountID)", accessGroup: shared.accessGroup)
+    KeychainTokenStore.forAccount(vault.accountID)
   }
 
   // MARK: Sidebar store
