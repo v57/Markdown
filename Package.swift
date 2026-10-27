@@ -75,5 +75,31 @@ package.targets.append(
         ["Combine", "FoundationNetworking", "SwiftUIPortability"].flatMap { ["-Xfrontend", "-import-module", "-Xfrontend", $0] }),
     ]))
 package.products.append(.library(name: "MarkdownWinUI", type: .dynamic, targets: ["MarkdownApp"]))
+#elseif os(Linux)
+// The app on SwiftUI's GTK backend: an executable built from the Xcode project's sources with its settings
+// (V57_LOCAL=1 swift build --product MarkdownApp; "Markdown" is swift-markdown's product).
+package.dependencies += [v57("Component"), v57("UpdateKit"), v57("Dev"), v57("Vault"), v57("Git")]
+package.targets.append(
+  .executableTarget(
+    name: "MarkdownApp",
+    dependencies: [
+      "MarkdownKit", .product(name: "Markdown", package: "swift-markdown"), .product(name: "SwiftUI", package: "SwiftUI"),
+      .product(name: "SwiftData", package: "SwiftUI"), .product(name: "ComponentKit", package: "Component"),
+      .product(name: "UpdateKit", package: "UpdateKit"), .product(name: "DevScreenshots", package: "Dev"),
+      .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
+      .product(name: "GitHubKit", package: "Git"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
+    ],
+    path: "Markdown", exclude: ["AppIcon.icon", "PrivacyInfo.xcprivacy"],
+    swiftSettings: [
+      .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
+      .enableUpcomingFeature("MemberImportVisibility"),
+      // On Apple platforms `import Foundation` brings Combine (ObservableObject, @Published), URLSession and the
+      // file APIs SwiftUIPortability adds along, and `import SwiftUI` brings Observation: every file gets them here too.
+      .unsafeFlags(
+        ["Combine", "FoundationNetworking", "Observation", "SwiftUIPortability"].flatMap {
+          ["-Xfrontend", "-import-module", "-Xfrontend", $0]
+        }),
+    ]))
+package.products.append(.executable(name: "MarkdownApp", targets: ["MarkdownApp"]))
 #endif
 #endif
