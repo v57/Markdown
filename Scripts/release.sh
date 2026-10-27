@@ -36,10 +36,14 @@ case $mode in
 mac)
   rm -rf $out && mkdir -p $out
   # DIRECT_DISTRIBUTION turns on the GitHub Releases update check (not in App Store builds). LTO and
-  # ld-archive-prelink drop unused package code (Xcode's per-package `ld -r` would keep it).
+  # ld-archive-prelink drop unused package code (Xcode's per-package `ld -r` would keep it). actool-icon-slim
+  # stores the flattened pictures of an Icon Composer icon as HEVC instead of lossless (Assets.car 1.7 MB ->
+  # 140 KB); Xcode reads a tool's version under its file name (com.apple.actool.version), so the copy is named actool.
+  install -d $out/icon-slim
+  install -m 755 Scripts/actool-icon-slim $out/icon-slim/actool
   archive macOS $out/Markdown.xcarchive \
     'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DIRECT_DISTRIBUTION' \
-    SWIFT_LTO=YES ALTERNATE_LINKER_PATH=$PWD/Scripts/ld-archive-prelink \
+    SWIFT_LTO=YES ALTERNATE_LINKER_PATH=$PWD/Scripts/ld-archive-prelink ASSETCATALOG_EXEC=$PWD/$out/icon-slim/actool \
     'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -internalize-at-link -Xfrontend -conditional-runtime-records'
   xcodebuild -exportArchive -archivePath $out/Markdown.xcarchive -exportPath $out/export \
     -exportOptionsPlist Scripts/ExportOptions-DeveloperID.plist -allowProvisioningUpdates
