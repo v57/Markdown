@@ -62,7 +62,8 @@ package.targets.append(
       "MarkdownKit", .product(name: "Markdown", package: "swift-markdown"), .product(name: "SwiftUI", package: "SwiftUI"),
       .product(name: "SwiftData", package: "SwiftUI"), .product(name: "ComponentKit", package: "Component"),
       .product(name: "UpdateKit", package: "UpdateKit"), .product(name: "DevScreenshots", package: "Dev"),
-      .product(name: "VaultKit", package: "Vault"), .product(name: "GitHubKit", package: "Git"),
+      .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
+      .product(name: "GitHubKit", package: "Git"),
     ],
     path: "Markdown", exclude: ["Assets.xcassets", "PrivacyInfo.xcprivacy"],
     swiftSettings: [

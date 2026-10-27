@@ -1,6 +1,7 @@
 import Foundation
 import GitHubKit
 import Observation
+import VaultKit
 
 /// Signing in to GitHub with the OAuth device flow (GitHubKit, `../Git`): the app shows a
 /// short code, the user enters it on github.com/login/device, and the app polls until GitHub
@@ -10,7 +11,8 @@ import Observation
 /// The OAuth App's client ID comes from the `GITHUB_CLIENT_ID` build setting (Info.plist
 /// key `GitHubClientID`); the app must have Device Flow enabled on GitHub. The token is the
 /// sign-in the v57 apps share (`KeychainTokenStore.shared`: the shared keychain group, synced
-/// through iCloud Keychain), so signing in here or in Git or Dev signs in all three.
+/// through iCloud Keychain), so signing in here or in Git or Dev signs in all three. Another vault account signs in
+/// on its own (`AccountStorage.gitHubTokens`).
 @Observable final class GitHubAuth {
   enum State: Equatable {
     case signedOut
@@ -30,9 +32,10 @@ import Observation
     return id
   }
 
-  init() {
-    let store = KeychainTokenStore.shared
-    Self.migrateLegacyToken(into: store)
+  /// The sign-in of the window's account.
+  init(vault: Vault) {
+    let store = AccountStorage.gitHubTokens(for: vault)
+    if vault.isPersonal { Self.migrateLegacyToken(into: store) }
     // Without a client ID the saved token still works; only a new sign-in needs one.
     account = GitHubAccount(clientID: Self.clientID ?? "", store: store)
     // No request at launch: GitHub is contacted only when the user asks.

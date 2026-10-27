@@ -12,6 +12,7 @@
 		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = D5C0DE000000000000000002 /* UpdateKit */; };
 		61748B000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = 61748B000000000000000002 /* GitHubKit */; };
 		56CEAB805123C0D171E0708B /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 96BB9BDBE9F3D27B6AA11CDF /* VaultKit */; };
+		A11C0A550000000000000011 /* VaultUI in Frameworks */ = {isa = PBXBuildFile; productRef = A11C0A550000000000000012 /* VaultUI */; };
 		DE5C0DE00000000000000003 /* DevScreenshots in Frameworks */ = {isa = PBXBuildFile; productRef = DE5C0DE00000000000000002 /* DevScreenshots */; };
 		C0C0DE000000000000000003 /* ComponentKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0DE000000000000000002 /* ComponentKit */; };
 /* End PBXBuildFile section */
@@ -37,6 +38,7 @@
 				267577A53037283100FB9989 /* MarkdownKit in Frameworks */,
 				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
 				56CEAB805123C0D171E0708B /* VaultKit in Frameworks */,
+				A11C0A550000000000000011 /* VaultUI in Frameworks */,
 				DE5C0DE00000000000000003 /* DevScreenshots in Frameworks */,
 				C0C0DE000000000000000003 /* ComponentKit in Frameworks */,
 			);
@@ -83,6 +85,7 @@
 				D5C0DE000000000000000002 /* UpdateKit */,
 				61748B000000000000000002 /* GitHubKit */,
 				96BB9BDBE9F3D27B6AA11CDF /* VaultKit */,
+				A11C0A550000000000000012 /* VaultUI */,
 				DE5C0DE00000000000000002 /* DevScreenshots */,
 				C0C0DE000000000000000002 /* ComponentKit */,
 			);
@@ -489,6 +492,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 1746C461A3ED129A1AA8F0BC /* XCRemoteSwiftPackageReference "Vault" */;
 			productName = VaultKit;
+		};
+		A11C0A550000000000000012 /* VaultUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1746C461A3ED129A1AA8F0BC /* XCRemoteSwiftPackageReference "Vault" */;
+			productName = VaultUI;
 		};
 		DE5C0DE00000000000000002 /* DevScreenshots */ = {
 			isa = XCSwiftPackageProductDependency;

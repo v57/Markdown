@@ -3,6 +3,7 @@ import DevScreenshots
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+import VaultKit
 
 /// The library window, in two columns as in the other v57 apps: the sidebar (where notes live,
 /// then the notes of the place chosen there) and the open note, or the welcome while none is.
@@ -12,9 +13,9 @@ struct ContentView: View {
   @State private var library: FolderLibrary
   @State private var navigator: Navigator
   @State private var actions: FileActions
-  @State private var notes = NotesLocation()
-  @State private var github = GitHubAuth()
-  @State private var repositories = RepositoryStore()
+  @State private var notes: NotesLocation
+  @State private var github: GitHubAuth
+  @State private var repositories: RepositoryStore
   @State private var preferences = NotePreferences(defaults: ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard)
   @State private var window = WindowState()
   /// On iPhone: the column shown, which follows the sidebar's picks.
@@ -25,7 +26,11 @@ struct ContentView: View {
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
 
-  init() {
+  /// The window's vault account (`MarkdownWindow`): its notes, GitHub sign-in and connected repositories.
+  init(vault: Vault) {
+    _notes = State(initialValue: NotesLocation(vault: vault))
+    _github = State(initialValue: GitHubAuth(vault: vault))
+    _repositories = State(initialValue: RepositoryStore(vault: vault))
     let library = FolderLibrary()
     let navigator = Navigator()
     _library = State(initialValue: library)

@@ -1,10 +1,12 @@
 import Foundation
 import GitHubKit
 import Observation
+import VaultKit
 
 /// The connected GitHub repositories: their local copies (in the app's Application
 /// Support, so always accessible) and sync state, and the pull/push/disconnect actions
-/// the sidebar offers. See `RepositorySync` for how syncing works.
+/// the sidebar offers. See `RepositorySync` for how syncing works. Each vault account connects its own
+/// (`AccountStorage`).
 @Observable final class RepositoryStore {
   private(set) var repositories: [RepositoryState] = []
   /// Repositories with an operation running, and what it is ("Pulling…").
@@ -21,9 +23,9 @@ import Observation
 
   @ObservationIgnored private let folder: URL
 
-  init() {
-    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    folder = support.appendingPathComponent("GitHub", isDirectory: true)
+  /// The repositories the window's account connected.
+  init(vault: Vault) {
+    folder = AccountStorage.directory(for: vault).appendingPathComponent("GitHub", isDirectory: true)
     repositories = ScreenshotDemo.isOn ? [] : Self.loadStates(in: folder)
   }
 

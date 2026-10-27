@@ -3,6 +3,7 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 import VaultKit
+import VaultUI
 
 /// The sidebar: where notes live. All Notes and the notes folder (iCloud Drive or local)
 /// with its folders, connected GitHub repositories, folders added by dropping them here
@@ -16,6 +17,8 @@ struct SidebarView: View {
   /// On iPhone: shows the note column, also for the note already shown before going back.
   var showsNote: () -> Void = {}
   @State private var list = NoteListModel()
+  /// The window's account (Personal outside a `VaultAccountScope`, as in the screenshot demo).
+  @Environment(\.vault) private var windowVault
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(NotesLocation.self) private var notes
@@ -44,6 +47,8 @@ struct SidebarView: View {
       selection: noteSelection, searchText: $window.searchQuery, searchPrompt: "Search Notes",
       columnVisibility: columnVisibility
     ) {
+      // The window's account, while there is more than Personal.
+      VaultAccountPicker(meta: allNotesCount.map { $0 == 1 ? "1 note" : "\($0) notes" })
       // A place with many folders keeps its title in view while they scroll by.
       notesSection.kitSticky()
       if !repositories.repositories.isEmpty { gitHubSection.kitSticky() }
@@ -337,7 +342,7 @@ struct SidebarView: View {
     /// open panel on it.
     @ViewBuilder private var projectsSection: some View {
       let added = Set(rootFolders.map { FolderLibrary.canonical(URL(fileURLWithPath: $0.path)).path })
-      let tree = Vault.shared.localProjectTree.filter { project in
+      let tree = (windowVault ?? .shared).localProjectTree.filter { project in
         guard let url = project.localURL else { return false }
         return !added.contains(FolderLibrary.canonical(url).path)
       }
@@ -488,6 +493,7 @@ private struct FolderRootRow: View {
   @Environment(Navigator.self) private var navigator
   @Environment(FileActions.self) private var actions
   @Environment(\.modelContext) private var context
+  @Environment(\.vault) private var windowVault
 
   var body: some View {
     Group {
@@ -505,7 +511,7 @@ private struct FolderRootRow: View {
   /// The app icon of the vault's project in this folder, when it is one (Code and Dev find them).
   private func projectIcon(_ url: URL) -> Data? {
     let path = FolderLibrary.canonical(url).path
-    return Vault.shared.localProjects.first { project in
+    return (windowVault ?? .shared).localProjects.first { project in
       project.localURL.map { FolderLibrary.canonical($0).path } == path
     }?.icon
   }

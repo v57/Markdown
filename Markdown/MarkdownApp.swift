@@ -1,6 +1,5 @@
 import ComponentKit
 import MarkdownKit
-import SwiftData
 import SwiftUI
 import VaultKit
 
@@ -55,27 +54,14 @@ import VaultKit
     #endif
   }
 
-  /// Sidebar folders hold security-scoped bookmarks, which only resolve on this device, so the
-  /// store stays local. The default configuration would mirror it to CloudKit because the app
-  /// has an iCloud container, and CloudKit traps at launch without the CloudKit service.
-  private static let sidebarStore: ModelContainer = {
-    do {
-      return try ModelContainer(
-        for: SidebarFolder.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: ScreenshotDemo.isOn, cloudKitDatabase: .none))
-    } catch {
-      fatalError("Could not open the sidebar store: \(error)")
-    }
-  }()
-
   var body: some Scene {
     WindowGroup("Markdown") {
       Group {
         if Self.runsProbes {
           MarkdownEditorView()
         } else {
-          ContentView()
-            .modelContainer(Self.sidebarStore)
+          // Each window shows one vault account, with its own sidebar store (AccountStorage).
+          MarkdownWindow()
         }
       }
       // A minimum window size only makes sense where windows are freely resizable.
@@ -95,6 +81,12 @@ import VaultKit
         #if DIRECT_DISTRIBUTION || os(Windows)
           UpdaterCommands(updater: updater)
         #endif
+      }
+    #endif
+    #if os(macOS)
+      Settings {
+        MarkdownSettings()
+          .componentKit(accent: .blue)
       }
     #endif
   }

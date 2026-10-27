@@ -2,12 +2,13 @@ import Foundation
 import Observation
 import VaultKit
 
-/// Where the app's own notes live, and how they sync.
+/// Where the window's account's notes live, and how they sync.
 ///
 /// The notes sync through the vault (`../Vault`): CloudKit, encrypted, no iCloud Drive needed, shared with Shell.
 /// On each device they are also real files in a local folder (`NotesMirror` keeps the two the same both ways), so
 /// Finder, Files, other editors and git work on them. The folder is the app's Documents (on iOS: On My iPhone ›
-/// Markdown in Files) unless the user picked another one on the Mac (Choose Notes Folder…).
+/// Markdown in Files) unless the user picked another one on the Mac (Choose Notes Folder…). Another vault account's
+/// notes mirror its own vault into a folder of their own (`AccountStorage`).
 ///
 /// Notes kept in the app's iCloud Drive folder by earlier versions are copied in once; the originals stay. A file
 /// presenter on the folder reports changes (the mirror's writes, other apps), so the sidebar and the open note
@@ -25,9 +26,16 @@ import VaultKit
   @ObservationIgnored private var presenter: FolderPresenter?
   @ObservationIgnored private var mirror: NotesMirror?
   @ObservationIgnored private var scopedFolder: URL?
+  /// The window's account (`VaultAccountScope`).
+  @ObservationIgnored private let vault: Vault
 
-  private static let bookmarkKey = "NotesFolderBookmark"
   private static let importedKey = "ImportedICloudDriveNotes"
+  /// The chosen folder's bookmark, kept per account on this device.
+  private var bookmarkKey: String { AccountStorage.key("NotesFolderBookmark", for: vault) }
+
+  init(vault: Vault) {
+    self.vault = vault
+  }
 
   /// Resolves the folder, starts mirroring it, and imports the old iCloud Drive notes once.
   func resolve() async {
@@ -37,9 +45,10 @@ import VaultKit
       url = FolderLibrary.canonical(ScreenshotDemo.notes)
       return
     }
-    use(Self.chosenFolder() ?? URL.documentsDirectory)
+    use(chosenFolder() ?? AccountStorage.defaultNotesFolder(for: vault))
     isICloud = FileManager.default.ubiquityIdentityToken != nil && CloudSync.isEntitled
-    if !UserDefaults.standard.bool(forKey: Self.importedKey), let folder = url {
+    // The iCloud Drive notes came before accounts: they are Personal's.
+    if vault.isPersonal, !UserDefaults.standard.bool(forKey: Self.importedKey), let folder = url {
       await Task.detached(priority: .utility) { Self.importICloudDriveNotes(into: folder) }.value
       UserDefaults.standard.set(true, forKey: Self.importedKey)
       mirror?.scheduleReconcile(after: 0)
@@ -49,7 +58,7 @@ import VaultKit
   /// Moves the notes to a folder the user picked: the notes are written there; the old folder keeps its files.
   func choose(_ folder: URL) {
     if let bookmark = try? folder.bookmarkData(options: Self.bookmarkOptions, includingResourceValuesForKeys: nil, relativeTo: nil) {
-      UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
+      UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
     }
     use(folder)
   }
@@ -62,10 +71,11 @@ import VaultKit
     let presenter = FolderPresenter(url: canonical) { [weak self] in self?.externalChanges += 1 }
     NSFileCoordinator.addFilePresenter(presenter)
     self.presenter = presenter
-    guard let store = VaultStore.shared else { return }
+    guard let store = vault.store else { return }
+    // Every account seals with the vault keys (`NoteFiles.keys`); its notes are its own vault's.
     let mirror = NotesMirror(
       folder: canonical, store: store, keys: NoteFiles.keys,
-      stateDirectory: URL.applicationSupportDirectory.appendingPathComponent("NotesMirror", isDirectory: true))
+      stateDirectory: AccountStorage.directory(for: vault).appendingPathComponent("NotesMirror", isDirectory: true))
     mirror.didChangeFiles = { [weak self] in
       MainActor.assumeIsolated { self?.externalChanges += 1 }
     }
@@ -94,10 +104,10 @@ import VaultKit
     private static let resolveOptions: URL.BookmarkResolutionOptions = []
   #endif
 
-  private static func chosenFolder() -> URL? {
+  private func chosenFolder() -> URL? {
     guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return nil }
     var isStale = false
-    return try? URL(resolvingBookmarkData: data, options: resolveOptions, relativeTo: nil, bookmarkDataIsStale: &isStale)
+    return try? URL(resolvingBookmarkData: data, options: Self.resolveOptions, relativeTo: nil, bookmarkDataIsStale: &isStale)
   }
 
   /// Copies the notes earlier versions kept in the app's iCloud Drive folder into the notes folder, where the
