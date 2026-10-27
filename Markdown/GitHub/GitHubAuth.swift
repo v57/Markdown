@@ -23,7 +23,16 @@ import VaultKit
     case signedIn(login: String)
   }
 
+  /// A GitHub sign-in another vault account has, which one without a sign-in can use too.
+  struct Offer: Identifiable {
+    var accountName: String
+    var credential: GitHubCredential
+    var id: String { credential.login }
+  }
+
   let account: GitHubAccount
+  /// The window's account.
+  private let accountID: String
   private var localError: String?
 
   static var clientID: String? {
@@ -34,6 +43,7 @@ import VaultKit
 
   /// The sign-in of the window's account.
   init(vault: Vault) {
+    accountID = vault.accountID
     let store = AccountStorage.gitHubTokens(for: vault)
     if vault.isPersonal { Self.migrateLegacyToken(into: store) }
     // Without a client ID the saved token still works; only a new sign-in needs one.
@@ -82,6 +92,25 @@ import VaultKit
     }
     account.signIn(
       requesting: GitHubPermissions(repositories: .all, organizations: false, workflows: false))
+  }
+
+  /// The sign-ins the other vault accounts have, one per GitHub login, Personal's first: a signed-out account
+  /// offers them, so the user needn't sign in to GitHub again.
+  @MainActor var offers: [Offer] {
+    guard !account.isSignedIn else { return [] }
+    let others = Vaults.shared.allAccounts.filter { $0.id != accountID }
+    return KeychainTokenStore.signIns(of: others.map(\.id)).compactMap { signIn in
+      others.first { $0.id == signIn.accountID }.map { Offer(accountName: $0.name, credential: signIn.credential) }
+    }
+  }
+
+  /// Signs in with another account's sign-in: this account keeps a copy of its own.
+  @MainActor func use(_ offer: Offer) {
+    do {
+      try account.signIn(with: offer.credential)
+    } catch {
+      self.error = (error as? GitHubError).map(Self.describe) ?? error.localizedDescription
+    }
   }
 
   func cancelSignIn() { account.cancelSignIn() }

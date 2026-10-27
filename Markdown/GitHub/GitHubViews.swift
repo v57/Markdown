@@ -14,6 +14,8 @@ struct GitHubConnectView: View {
   @State private var isLoading = false
   @State private var filter = ""
   @State private var publicName = ""
+  /// Other vault accounts' sign-ins, while this one has none.
+  @State private var offers: [GitHubAuth.Offer] = []
 
   var body: some View {
     KitSheet(
@@ -41,7 +43,10 @@ struct GitHubConnectView: View {
         .buttonStyle(.kitPrimary)
         .keyboardShortcut(.defaultAction)
     }
-    .task(id: auth.token) { await loadRepositories() }
+    .task(id: auth.token) {
+      offers = auth.offers
+      await loadRepositories()
+    }
     .notice("GitHub", message: Bindable(auth).error)
   }
 
@@ -53,6 +58,10 @@ struct GitHubConnectView: View {
           "Sign In with GitHub…",
           help: "Signing in lets you edit your repositories, including private ones, and push changes.",
           action: { auth.signIn() })
+        ForEach(offers) { offer in
+          GroupRow(
+            "Use @\(offer.credential.login)", help: "Signed in on \(offer.accountName).", action: { auth.use(offer) })
+        }
       case .requesting:
         GroupRow {
           HStack(spacing: 8) {
