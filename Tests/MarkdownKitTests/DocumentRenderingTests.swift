@@ -106,6 +106,8 @@ import Testing
       resolveLink: { [readme] in MarkdownURLResolver.resolveRelative($0, against: readme) })
   }
 
+  // The attributed rendering (MarkdownParser.parse) is the AppKit and UIKit stacks'.
+  #if canImport(AppKit) || canImport(UIKit)
   @Test func htmlImagesResolveAndCarrySize() {
     let md = "<p align=\"center\">\n  <img src=\"./assets/logo.png\" width=\"70\" valign=\"middle\">\n</p>\n\nText"
     let parsed = MarkdownParser.parse(md, resolver: githubLike)
@@ -218,6 +220,7 @@ import Testing
     ]
     for md in samples { #expect(MarkdownParser.parse(md).attributed.string == md) }
   }
+  #endif
 
   // MARK: - Anchors
 
