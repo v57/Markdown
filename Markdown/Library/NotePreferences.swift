@@ -1,22 +1,28 @@
 import Foundation
 import Observation
+import VaultKit
 
 /// Pinned notes and recently opened notes, kept in the app's defaults on this device
-/// (by path: the notes themselves stay plain files with nothing added to them).
+/// (by path: the notes themselves stay plain files with nothing added to them), per vault account: a window lists
+/// only its account's (Personal keeps the keys it had).
 @Observable final class NotePreferences {
   private(set) var pinned: Set<URL>
   /// Most recent first.
   private(set) var recents: [URL]
 
   @ObservationIgnored private let defaults: UserDefaults
-  private static let pinnedKey = "pinnedNotes"
-  private static let recentsKey = "recentNotes"
+  @ObservationIgnored private let pinnedKey: String
+  @ObservationIgnored private let recentsKey: String
   private static let recentsLimit = 12
 
-  init(defaults: UserDefaults = .standard) {
+  /// `account` is the window's vault account id (`Vault.accountID`).
+  init(defaults: UserDefaults = .standard, account: String = VaultAccount.personal.id) {
     self.defaults = defaults
-    pinned = Set((defaults.stringArray(forKey: Self.pinnedKey) ?? []).map { URL(fileURLWithPath: $0) })
-    recents = (defaults.stringArray(forKey: Self.recentsKey) ?? []).map { URL(fileURLWithPath: $0) }
+    let suffix = account == VaultAccount.personal.id ? "" : ".\(account)"
+    pinnedKey = "pinnedNotes" + suffix
+    recentsKey = "recentNotes" + suffix
+    pinned = Set((defaults.stringArray(forKey: pinnedKey) ?? []).map { URL(fileURLWithPath: $0) })
+    recents = (defaults.stringArray(forKey: recentsKey) ?? []).map { URL(fileURLWithPath: $0) }
   }
 
   func isPinned(_ url: URL) -> Bool { pinned.contains(url) }
@@ -59,7 +65,7 @@ import Observation
   }
 
   private func save() {
-    defaults.set(pinned.map(\.path).sorted(), forKey: Self.pinnedKey)
-    defaults.set(recents.map(\.path), forKey: Self.recentsKey)
+    defaults.set(pinned.map(\.path).sorted(), forKey: pinnedKey)
+    defaults.set(recents.map(\.path), forKey: recentsKey)
   }
 }

@@ -16,7 +16,8 @@ struct ContentView: View {
   @State private var notes: NotesLocation
   @State private var github: GitHubAuth
   @State private var repositories: RepositoryStore
-  @State private var preferences = NotePreferences(defaults: ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard)
+  /// The window's account's pinned and recent notes.
+  @State private var preferences: NotePreferences
   @State private var window = WindowState()
   /// On iPhone: the column shown, which follows the sidebar's picks.
   @State private var compactColumn = NavigationSplitViewColumn.sidebar
@@ -31,6 +32,9 @@ struct ContentView: View {
     _notes = State(initialValue: NotesLocation(vault: vault))
     _github = State(initialValue: GitHubAuth(vault: vault))
     _repositories = State(initialValue: RepositoryStore(vault: vault))
+    _preferences = State(
+      initialValue: NotePreferences(
+        defaults: ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard, account: vault.accountID))
     let library = FolderLibrary()
     let navigator = Navigator()
     _library = State(initialValue: library)
