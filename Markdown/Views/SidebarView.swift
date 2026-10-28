@@ -138,7 +138,7 @@ struct SidebarView: View {
     .help(
       notes.isICloud
         ? "Notes are files in \(notes.url?.lastPathComponent ?? "Notes") and sync through iCloud, encrypted."
-        : "Notes are plain files on this \(deviceName).")
+        : "Notes are plain files on this \(KitDevice.nameInSentence).")
   }
 
   private var notesMeta: [String] {

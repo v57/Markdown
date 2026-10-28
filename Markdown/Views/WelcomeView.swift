@@ -59,5 +59,5 @@ struct WelcomeView: View {
       .compactMap { $0 }.joined(separator: " · ")
   }
 
-  private var deviceName: String { KitDevice.name }
+  private var deviceName: String { KitDevice.nameInSentence }
 }
