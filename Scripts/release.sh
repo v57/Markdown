@@ -21,9 +21,9 @@ scheme=Markdown
 version=$(xcodebuild -project $project -scheme $scheme -showBuildSettings 2>/dev/null \
   | awk -F' = ' '/ MARKETING_VERSION /{print $2; exit}')
 
-archive() { # platform archive-path [extra build settings...]
+archive() { # platform archive-path [extra build settings...]; $xcodebuild: another xcodebuild
   local platform=$1 path=$2; shift 2
-  xcodebuild archive -project $project -scheme $scheme -configuration Release \
+  ${xcodebuild:-xcodebuild} archive -project $project -scheme $scheme -configuration Release \
     -destination "generic/platform=$platform" -archivePath "$path" \
     -allowProvisioningUpdates -quiet "$@"
 }
@@ -35,16 +35,14 @@ notarize() { # file
 case $mode in
 mac)
   rm -rf $out && mkdir -p $out
-  # DIRECT_DISTRIBUTION turns on the GitHub Releases update check (not in App Store builds). LTO and
-  # ld-archive-prelink drop unused package code (Xcode's per-package `ld -r` would keep it). actool-icon-slim
-  # stores the flattened pictures of an Icon Composer icon as HEVC instead of lossless (Assets.car 1.7 MB ->
-  # 140 KB); Xcode reads a tool's version under its file name (com.apple.actool.version), so the copy is named actool.
-  install -d $out/icon-slim
-  install -m 755 Scripts/actool-icon-slim $out/icon-slim/actool
-  archive macOS $out/Markdown.xcarchive \
-    'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DIRECT_DISTRIBUTION' \
-    SWIFT_LTO=YES ALTERNATE_LINKER_PATH=$PWD/Scripts/ld-archive-prelink ASSETCATALOG_EXEC=$PWD/$out/icon-slim/actool \
-    'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -internalize-at-link -Xfrontend -conditional-runtime-records'
+  # DIRECT_DISTRIBUTION turns on the GitHub Releases update check (not in App Store builds).
+  # xcodebuild-release is xcodebuild with the release link every v57 app ships with (LTO, ld-archive-prelink,
+  # actool-icon-slim: unused package code goes, the icon's fallbacks as HEVC), from the Code checkout beside this
+  # repo's main checkout (RELEASE_TOOLS: another copy of Code's Sources/CodeActions/Release).
+  release=${RELEASE_TOOLS:-${$(git rev-parse --path-format=absolute --git-common-dir):h:h}/Code/Sources/CodeActions/Release}/xcodebuild-release
+  [[ -x $release ]] || { echo "xcodebuild-release not found at $release (RELEASE_TOOLS: Code's Sources/CodeActions/Release)" >&2; exit 1 }
+  xcodebuild=$release archive macOS $out/Markdown.xcarchive \
+    'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DIRECT_DISTRIBUTION'
   xcodebuild -exportArchive -archivePath $out/Markdown.xcarchive -exportPath $out/export \
     -exportOptionsPlist Scripts/ExportOptions-DeveloperID.plist -allowProvisioningUpdates
   app=$out/export/Markdown.app
