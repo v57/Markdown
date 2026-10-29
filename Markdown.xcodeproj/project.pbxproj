@@ -7,24 +7,37 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		267577A53037283100FB9989 /* MarkdownKit in Frameworks */ = {isa = PBXBuildFile; productRef = 267577A43037283100FB9989 /* MarkdownKit */; };
-		269C449B303192220055AD81 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 269C449A303192220055AD81 /* Markdown */; };
-		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = D5C0DE000000000000000002 /* UpdateKit */; };
-		61748B000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = 61748B000000000000000002 /* GitHubKit */; };
-		56CEAB805123C0D171E0708B /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 96BB9BDBE9F3D27B6AA11CDF /* VaultKit */; };
-		A11C0A550000000000000011 /* VaultUI in Frameworks */ = {isa = PBXBuildFile; productRef = A11C0A550000000000000012 /* VaultUI */; };
-		DE5C0DE00000000000000003 /* DevScreenshots in Frameworks */ = {isa = PBXBuildFile; productRef = DE5C0DE00000000000000002 /* DevScreenshots */; };
-		C0C0DE000000000000000003 /* ComponentKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0DE000000000000000002 /* ComponentKit */; };
+		267577A63037283100FB9989 /* MarkdownApp in Frameworks */ = {isa = PBXBuildFile; productRef = 267577A73037283100FB9989 /* MarkdownApp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* Markdown.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Markdown.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		000000000000000000000012 /* Exceptions for "Resources" folder in "Markdown" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 000000000000000100000000 /* Markdown */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		000000000000000000000010 /* Markdown */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Markdown;
+			name = Markdown;
+			path = App/Sources/MarkdownEditor;
+			sourceTree = "<group>";
+		};
+		000000000000000000000011 /* Resources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				000000000000000000000012 /* Exceptions for "Resources" folder in "Markdown" target */,
+			);
+			name = Resources;
+			path = App/Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,14 +46,7 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				61748B000000000000000003 /* GitHubKit in Frameworks */,
-				269C449B303192220055AD81 /* Markdown in Frameworks */,
-				267577A53037283100FB9989 /* MarkdownKit in Frameworks */,
-				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
-				56CEAB805123C0D171E0708B /* VaultKit in Frameworks */,
-				A11C0A550000000000000011 /* VaultUI in Frameworks */,
-				DE5C0DE00000000000000003 /* DevScreenshots in Frameworks */,
-				C0C0DE000000000000000003 /* ComponentKit in Frameworks */,
+				267577A63037283100FB9989 /* MarkdownApp in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -50,6 +56,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000010 /* Markdown */,
+				000000000000000000000011 /* Resources */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -77,17 +84,11 @@
 			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* Markdown */,
+				000000000000000000000011 /* Resources */,
 			);
 			name = Markdown;
 			packageProductDependencies = (
-				269C449A303192220055AD81 /* Markdown */,
-				267577A43037283100FB9989 /* MarkdownKit */,
-				D5C0DE000000000000000002 /* UpdateKit */,
-				61748B000000000000000002 /* GitHubKit */,
-				96BB9BDBE9F3D27B6AA11CDF /* VaultKit */,
-				A11C0A550000000000000012 /* VaultUI */,
-				DE5C0DE00000000000000002 /* DevScreenshots */,
-				C0C0DE000000000000000002 /* ComponentKit */,
+				267577A73037283100FB9989 /* MarkdownApp */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Markdown.app */;
@@ -118,13 +119,8 @@
 			mainGroup = 000000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				269C4499303192220055AD81 /* XCRemoteSwiftPackageReference "swift-markdown" */,
-				267577A33037283100FB9989 /* XCLocalSwiftPackageReference "../Markdown" */,
-				D5C0DE000000000000000001 /* XCRemoteSwiftPackageReference "UpdateKit" */,
-				61748B000000000000000001 /* XCRemoteSwiftPackageReference "Git" */,
-				1746C461A3ED129A1AA8F0BC /* XCRemoteSwiftPackageReference "Vault" */,
-				DE5C0DE00000000000000001 /* XCRemoteSwiftPackageReference "Dev" */,
-				C0C0DE000000000000000001 /* XCRemoteSwiftPackageReference "Component" */,
+				267577A83037283100FB9989 /* XCLocalSwiftPackageReference "App" */,
+				267577A33037283100FB9989 /* XCLocalSwiftPackageReference "." */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -293,16 +289,16 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = AUCR797TMH;
-				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "Markdown-iOS.entitlements";
-				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "Markdown-iOS.entitlements";
-				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Markdown.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "App/Resources/Markdown-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "App/Resources/Markdown-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Resources/Markdown.entitlements;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				GITHUB_CLIENT_ID = "";
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = App/Resources/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -345,16 +341,16 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = AUCR797TMH;
-				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "Markdown-iOS.entitlements";
-				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "Markdown-iOS.entitlements";
-				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Markdown.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "App/Resources/Markdown-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "App/Resources/Markdown-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Resources/Markdown.entitlements;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				GITHUB_CLIENT_ID = "";
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = App/Resources/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -411,102 +407,20 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		267577A33037283100FB9989 /* XCLocalSwiftPackageReference "../Markdown" */ = {
+		267577A83037283100FB9989 /* XCLocalSwiftPackageReference "App" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = App;
+		};
+		267577A33037283100FB9989 /* XCLocalSwiftPackageReference "." */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = .;
 		};
 /* End XCLocalSwiftPackageReference section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		269C4499303192220055AD81 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/swiftlang/swift-markdown";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.8.0;
-			};
-		};
-		D5C0DE000000000000000001 /* XCRemoteSwiftPackageReference "UpdateKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/v57/UpdateKit.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-		61748B000000000000000001 /* XCRemoteSwiftPackageReference "Git" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/v57/Git.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-		1746C461A3ED129A1AA8F0BC /* XCRemoteSwiftPackageReference "Vault" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/v57/Vault.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-		DE5C0DE00000000000000001 /* XCRemoteSwiftPackageReference "Dev" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/v57/Dev.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-		C0C0DE000000000000000001 /* XCRemoteSwiftPackageReference "Component" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/v57/Component.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
 /* Begin XCSwiftPackageProductDependency section */
-		267577A43037283100FB9989 /* MarkdownKit */ = {
+		267577A73037283100FB9989 /* MarkdownApp */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = MarkdownKit;
-		};
-		269C449A303192220055AD81 /* Markdown */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 269C4499303192220055AD81 /* XCRemoteSwiftPackageReference "swift-markdown" */;
-			productName = Markdown;
-		};
-		D5C0DE000000000000000002 /* UpdateKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D5C0DE000000000000000001 /* XCRemoteSwiftPackageReference "UpdateKit" */;
-			productName = UpdateKit;
-		};
-		61748B000000000000000002 /* GitHubKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 61748B000000000000000001 /* XCRemoteSwiftPackageReference "Git" */;
-			productName = GitHubKit;
-		};
-		96BB9BDBE9F3D27B6AA11CDF /* VaultKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 1746C461A3ED129A1AA8F0BC /* XCRemoteSwiftPackageReference "Vault" */;
-			productName = VaultKit;
-		};
-		A11C0A550000000000000012 /* VaultUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 1746C461A3ED129A1AA8F0BC /* XCRemoteSwiftPackageReference "Vault" */;
-			productName = VaultUI;
-		};
-		DE5C0DE00000000000000002 /* DevScreenshots */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DE5C0DE00000000000000001 /* XCRemoteSwiftPackageReference "Dev" */;
-			productName = DevScreenshots;
-		};
-		C0C0DE000000000000000002 /* ComponentKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C0C0DE000000000000000001 /* XCRemoteSwiftPackageReference "Component" */;
-			productName = ComponentKit;
+			productName = MarkdownApp;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -89,10 +89,17 @@ Embedding
       parsed.attributed                          // native NSAttributedString
       parsed.blocks                              // [MarkdownParser.Block]
 
-App (Markdown.xcodeproj)
+App (App/, Markdown.xcodeproj)
 
-  The app is a SwiftUI app that builds and runs on BOTH macOS and iOS.
-  Entry is @main on MarkdownApp (Markdown/MarkdownApp.swift); the macOS CLI
+  The app is a SwiftUI app that builds and runs on BOTH macOS and iOS. It is
+  its own package in App/ (App/Package.swift, so MarkdownKit's users don't get
+  the app's dependencies): the MarkdownApp library (App/Sources/MarkdownApp)
+  holds all of it but the entry point, App/Sources/MarkdownEditor/
+  MarkdownMain.swift. Markdown.xcodeproj builds that file into Markdown.app
+  with App/Resources (icon, Info.plist, entitlements, privacy manifest) and
+  links MarkdownApp; on Linux and Windows App/Package.swift's MarkdownEditor
+  target builds it (the MarkdownEditor executable, the MarkdownWinUI DLL).
+  The MarkdownApp struct is the App (MarkdownApp.swift); the macOS CLI
   harness (--selftest / --smoke / --typingprobe) runs in MarkdownApp.init
   under #if os(macOS) and is absent on iOS (the probes get the sample editor
   instead of the library window). The single MarkdownEditorView symbol
@@ -124,12 +131,14 @@ App (Markdown.xcodeproj)
   against the file and "/" against the sidebar folder; links to markdown files
   and folders open in the app with back/forward (⌘[ ⌘]), Reload is ⌘R.
 
-    Markdown/Library/   SidebarFolder (SwiftData), FolderLibrary, Navigator,
-                        DocumentSaver, NoteList, NotePreferences, SearchScope
-    Markdown/Views/     SidebarView, NoteListView, DocumentView, QuickOpenView,
-                        WelcomeView, Commands (menu bar, window state)
-    Markdown.entitlements  bookmarks.app-scope (macOS; the rest comes from
-                           build settings)
+    App/Sources/MarkdownApp/Library/  SidebarFolder (SwiftData), FolderLibrary,
+                        Navigator, DocumentSaver, NoteList, NotePreferences,
+                        SearchScope
+    App/Sources/MarkdownApp/Views/    SidebarView, NoteListView, DocumentView,
+                        QuickOpenView, WelcomeView, Commands (menu bar, window
+                        state)
+    App/Resources/Markdown.entitlements  bookmarks.app-scope (macOS; the rest
+                        comes from build settings)
 
   Notes: the sidebar's first section is the app's own notes folder —
   NotesLocation uses the app's Documents (On My iPhone › Markdown in Files on
@@ -148,7 +157,7 @@ App (Markdown.xcodeproj)
   NoteSearch) matches every word against note names and text across all
   folders, names first.
 
-  GitHub (Markdown/GitHub/, on GitHubKit from ../Git): "Connect GitHub
+  GitHub (App/Sources/MarkdownApp/GitHub/, on GitHubKit from ../Git): "Connect GitHub
   Repository…" signs in with the OAuth device flow (GitHubAuth over
   GitHubAccount; the OAuth App's client ID is the GITHUB_CLIENT_ID build
   setting, the token goes to the Keychain) and lists
@@ -161,7 +170,7 @@ App (Markdown.xcodeproj)
   tree and a commit, then moves the branch forward without forcing. The
   sidebar shows each repository's local change count.
 
-  Open with…: Info.plist declares Markdown (net.daringfireball.markdown,
+  Open with…: App/Resources/Info.plist declares Markdown (net.daringfireball.markdown,
   imported) and plain text, so Finder and Files offer the app. An opened file
   inside a sidebar folder is shown there; any other file gets its own entry
   under Files (a bookmark, like folders), with "Add Enclosing Folder…" to grant
@@ -219,3 +228,4 @@ Verification
             -destination 'generic/platform=iOS Simulator' build
           (app runs on the iOS simulator; UIKit tests in
           Tests/MarkdownKitTests/MdUIKitTests.swift run via Xcode)
+  Linux:  cd App && V57_LOCAL=1 swift build --product MarkdownEditor

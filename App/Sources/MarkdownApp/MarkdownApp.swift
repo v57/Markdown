@@ -7,7 +7,8 @@ import VaultKit
   import UpdateKit
 #endif
 
-@main struct MarkdownApp: App {
+/// The app, all of it but its entry point (App/Sources/MarkdownEditor/MarkdownMain.swift).
+public struct MarkdownApp: App {
   #if (os(macOS) && DIRECT_DISTRIBUTION) || os(Windows)
     /// Updates for the direct download from GitHub Releases (Markdown.dmg, built by
     /// Scripts/release.sh; App Store builds leave this out): checked daily once the user
@@ -21,7 +22,7 @@ import VaultKit
   // SmokeTest calls are direct. --selftest/--smoke exit before any window.
   // On iOS there is no CLI (the harness lives in the AppKit-only MarkdownKit stack),
   // so the init body compiles to nothing there.
-  init() {
+  public init() {
     #if os(macOS)
       if CommandLine.arguments.contains("--selftest") {
         SelfTest.runAndExit()  // Never
@@ -54,7 +55,7 @@ import VaultKit
     #endif
   }
 
-  var body: some Scene {
+  public var body: some Scene {
     WindowGroup("Markdown") {
       Group {
         if Self.runsProbes {

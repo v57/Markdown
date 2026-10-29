@@ -10,6 +10,7 @@ func v57(_ name: String) -> Package.Dependency {
     ? .package(url: "https://github.com/v57/\(name).git", branch: "main") : .package(path: "../\(name)")
 }
 
+// The editor library other repositories use (Shell, Agentus). The app is its own package in App/.
 let package = Package(
   name: "Markdown",
   platforms: [
@@ -22,7 +23,7 @@ let package = Package(
     .library(name: "MarkdownKit", targets: ["MarkdownKit"])
   ],
   dependencies: [
-    // swift-markdown (also an Xcode SPM dependency) — provides the Markdown module (cmark AST).
+    // swift-markdown — provides the Markdown module (cmark AST).
     .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.8.0"),
     // The Code repo: CodeHighlighting colors fenced code blocks.
     v57("Code"),
@@ -46,60 +47,10 @@ let package = Package(
   ])
 
 #if os(Windows) || os(Linux)
-// Off Apple platforms SwiftUI is v57/SwiftUI's (MarkdownMetrics and the portable editor use it).
+// Off Apple platforms SwiftUI is v57/SwiftUI's (MarkdownMetrics and the portable editor use it). Only here: on Apple
+// platforms v57/SwiftUI (with its swift-syntax) stays out of the package graph Xcode resolves.
 package.dependencies += [v57("SwiftUI")]
 for target in package.targets where target.name == "MarkdownKit" {
   target.dependencies.append(.product(name: "SwiftUI", package: "SwiftUI"))
 }
-#if os(Windows)
-// The app: a DLL the SwiftUI WinUI host loads (SwiftUI's Windows/scripts/build-app.ps1 -PackagePath <this package>
-// -Product MarkdownWinUI), built from the Xcode project's sources with its settings.
-package.dependencies += [v57("Component"), v57("UpdateKit"), v57("Dev"), v57("Vault"), v57("Git")]
-package.targets.append(
-  .target(
-    name: "MarkdownApp",
-    dependencies: [
-      "MarkdownKit", .product(name: "Markdown", package: "swift-markdown"), .product(name: "SwiftUI", package: "SwiftUI"),
-      .product(name: "SwiftData", package: "SwiftUI"), .product(name: "ComponentKit", package: "Component"),
-      .product(name: "UpdateKit", package: "UpdateKit"), .product(name: "DevScreenshots", package: "Dev"),
-      .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
-      .product(name: "GitHubKit", package: "Git"),
-    ],
-    path: "Markdown", exclude: ["Assets.xcassets", "PrivacyInfo.xcprivacy"],
-    swiftSettings: [
-      .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
-      .enableUpcomingFeature("MemberImportVisibility"),
-      // On Apple platforms `import Foundation` brings Combine (ObservableObject, @Published), URLSession and the
-      // file APIs SwiftUIPortability adds along: every file gets them here too.
-      .unsafeFlags(
-        ["Combine", "FoundationNetworking", "SwiftUIPortability"].flatMap { ["-Xfrontend", "-import-module", "-Xfrontend", $0] }),
-    ]))
-package.products.append(.library(name: "MarkdownWinUI", type: .dynamic, targets: ["MarkdownApp"]))
-#elseif os(Linux)
-// The app on SwiftUI's GTK backend: an executable built from the Xcode project's sources with its settings
-// (V57_LOCAL=1 swift build --product MarkdownApp; "Markdown" is swift-markdown's product).
-package.dependencies += [v57("Component"), v57("UpdateKit"), v57("Dev"), v57("Vault"), v57("Git")]
-package.targets.append(
-  .executableTarget(
-    name: "MarkdownApp",
-    dependencies: [
-      "MarkdownKit", .product(name: "Markdown", package: "swift-markdown"), .product(name: "SwiftUI", package: "SwiftUI"),
-      .product(name: "SwiftData", package: "SwiftUI"), .product(name: "ComponentKit", package: "Component"),
-      .product(name: "UpdateKit", package: "UpdateKit"), .product(name: "DevScreenshots", package: "Dev"),
-      .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
-      .product(name: "GitHubKit", package: "Git"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
-    ],
-    path: "Markdown", exclude: ["AppIcon.icon", "PrivacyInfo.xcprivacy"],
-    swiftSettings: [
-      .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
-      .enableUpcomingFeature("MemberImportVisibility"),
-      // On Apple platforms `import Foundation` brings Combine (ObservableObject, @Published), URLSession and the
-      // file APIs SwiftUIPortability adds along, and `import SwiftUI` brings Observation: every file gets them here too.
-      .unsafeFlags(
-        ["Combine", "FoundationNetworking", "Observation", "SwiftUIPortability"].flatMap {
-          ["-Xfrontend", "-import-module", "-Xfrontend", $0]
-        }),
-    ]))
-package.products.append(.executable(name: "MarkdownApp", targets: ["MarkdownApp"]))
-#endif
 #endif

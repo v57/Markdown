@@ -1,7 +1,7 @@
 {
   "build": { "scheme": "Markdown", "project": "Markdown.xcodeproj" },
   "appearances": ["light", "dark"],
-  "watch": ["Markdown", "Sources"],
+  "watch": ["App", "Sources"],
   "mac": { "window": [1440, 900] },
   "ios": { "devices": ["iPhone 18 Pro Max", "iPad Pro 13-inch (M5)"] },
   "scenes": [
