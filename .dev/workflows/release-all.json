@@ -1,0 +1,54 @@
+{
+  "continueOnFailure" : false,
+  "id" : "release-all",
+  "name" : "Release (all platforms)",
+  "steps" : [
+    {
+      "id" : "archive-macos",
+      "kind" : "release",
+      "name" : "Archive · macOS",
+      "parallel" : false,
+      "platform" : "macos",
+      "releaseStep" : "archive",
+      "runner" : "mac"
+    },
+    {
+      "id" : "archive-windows",
+      "kind" : "release",
+      "name" : "Archive · Windows",
+      "parallel" : true,
+      "platform" : "windows",
+      "releaseStep" : "archive",
+      "runner" : "vm:Windows"
+    },
+    {
+      "id" : "archive-linux",
+      "kind" : "release",
+      "name" : "Archive · Linux",
+      "parallel" : true,
+      "platform" : "linux",
+      "releaseStep" : "archive",
+      "runner" : "vm:Ubuntu"
+    },
+    {
+      "id" : "archive-ios",
+      "kind" : "release",
+      "name" : "Archive · iOS",
+      "parallel" : false,
+      "platform" : "ios",
+      "releaseStep" : "archive",
+      "runner" : "mac"
+    },
+    {
+      "id" : "bundle",
+      "kind" : "release",
+      "name" : "Result Archive",
+      "parallel" : false,
+      "releaseStep" : "bundle",
+      "runner" : "mac"
+    }
+  ],
+  "trigger" : {
+
+  }
+}
