@@ -1,13 +1,14 @@
 import DevScreenshots
 import Foundation
+import VaultKit
 
 /// Debug builds: `--screenshot-demo` runs the app on made-up notes for the screenshots (`.dev/screenshots.json`),
 /// never the user's. A debug build shares the installed app's container, defaults and vault, so in this mode the
-/// sidebar store is in memory, preferences use their own defaults, the vault doesn't sync and GitHub repositories and
-/// shared projects stay hidden. The notes are written into the app's temporary folder, which the sandbox lets it
-/// read on the Mac and on iOS.
+/// sidebar store is in memory, preferences use their own defaults, the vault doesn't sync, GitHub repositories stay
+/// hidden and the shared projects are the demo's. The notes are written into the app's temporary folder, which the
+/// sandbox lets it read on the Mac and on iOS.
 ///
-///   --screenshot-demo        the demo notes and the "Atlas Docs" folder
+///   --screenshot-demo        the demo notes and projects ("Atlas Docs" open in the sidebar)
 ///   --open <path>            shows a note, relative to the demo folder (`Notes/Trip to Lisbon.md`)
 ///   --quick-open             opens Quick Open
 ///   --welcome                the welcome (no note open)
@@ -59,6 +60,24 @@ enum ScreenshotDemo {
   static let root = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenshotDemo", isDirectory: true)
   static var notes: URL { root.appendingPathComponent("Notes", isDirectory: true) }
   static var docs: URL { root.appendingPathComponent("Atlas Docs", isDirectory: true) }
+
+  /// The demo's shared projects, in place of the vault's: Atlas Docs (open in the sidebar) and two the app hasn't
+  /// opened, in a group and outside one.
+  static let projectTree = VaultProjectTree(
+    projects: [
+      VaultProject(id: "atlas-docs", name: "Atlas Docs", groupID: "work", order: 0, addedBy: nil, added: nil),
+      VaultProject(id: "website", name: "Website", groupID: "work", order: 1, addedBy: nil, added: nil),
+      VaultProject(id: "recipes", name: "Recipes", order: 2, addedBy: nil, added: nil),
+    ],
+    groups: [VaultProjectGroup(id: "work", name: "Work")])
+
+  /// Where the demo's projects are (the ones the app hasn't opened don't exist).
+  static var projectFolders: [String: URL] {
+    [
+      "atlas-docs": docs, "website": root.appendingPathComponent("Website", isDirectory: true),
+      "recipes": root.appendingPathComponent("Recipes", isDirectory: true),
+    ]
+  }
 
   /// Pins and recents of the demo, apart from the user's.
   static let defaults: UserDefaults = {

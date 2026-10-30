@@ -14,6 +14,7 @@ struct ContentView: View {
   @State private var navigator: Navigator
   @State private var actions: FileActions
   @State private var notes: NotesLocation
+  private let vault: Vault
   @State private var github: GitHubAuth
   @State private var repositories: RepositoryStore
   /// The window's account's pinned and recent notes.
@@ -29,6 +30,7 @@ struct ContentView: View {
 
   /// The window's vault account (`MarkdownWindow`): its notes, GitHub sign-in and connected repositories.
   init(vault: Vault) {
+    self.vault = vault
     _notes = State(initialValue: NotesLocation(vault: vault))
     _github = State(initialValue: GitHubAuth(vault: vault))
     _repositories = State(initialValue: RepositoryStore(vault: vault))
@@ -60,11 +62,6 @@ struct ContentView: View {
       // Each pane names itself with its own rich title.
       .kitHidesSystemTitle()
     #endif
-    .fileImporter(
-      isPresented: $window.isAddingFolder, allowedContentTypes: [.folder], allowsMultipleSelection: true
-    ) { result in
-      if case .success(let urls) = result { add(urls) }
-    }
     .modifier(FileActionPrompts())
     .environment(library)
     .environment(navigator)
@@ -75,6 +72,8 @@ struct ContentView: View {
     .environment(preferences)
     .environment(window)
     .focusedSceneValue(\.windowState, window)
+    // The shared projects' folders, which may join the sidebar.
+    .onChange(of: SidebarProjects.paths(vault), initial: true) { _, paths in library.projectPaths = paths }
     .task {
       // Screenshots (.dev/screenshots.json): this window opens the later scenes of the launch.
       ScreenshotDemo.openScene = { arguments in
@@ -154,8 +153,6 @@ struct ContentView: View {
       actions.newNote(in: dir, named: name)
     case .newFolder:
       if let dir = newItemDirectory { actions.newFolder(in: dir) }
-    case .addFolder:
-      window.isAddingFolder = true
     case .welcome:
       // The welcome is the note pane's content while no note is open (on iPhone, pushed over the sidebar).
       navigator.selection = nil
@@ -174,7 +171,7 @@ struct ContentView: View {
     return notes.url
   }
 
-  /// `--screenshot-demo`: the docs folder in the sidebar, and the scene's note and panels; with `arguments`, a later
+  /// `--screenshot-demo`: the docs project open in the sidebar, and the scene's note and panels; with `arguments`, a later
   /// screenshot scene in this launch, after undoing what the scene before opened.
   private func openScreenshotDemo(_ arguments: [String]? = nil) {
     if let arguments {
@@ -186,6 +183,7 @@ struct ContentView: View {
       preferences.forgetRecents()
       library.expanded.removeAll()
     }
+    library.projectPaths = SidebarProjects.paths(vault)
     library.add([ScreenshotDemo.docs], existing: folders, context: context)
     navigator.item = .allNotes
     if let path = ScreenshotDemo.value("--open") {
@@ -221,12 +219,6 @@ struct ContentView: View {
   /// The app's own folders: notes and GitHub repositories.
   private func updateRoots() {
     library.builtInRoots = (notes.url.map { [$0] } ?? []) + repositories.directories
-  }
-
-  private func add(_ urls: [URL]) {
-    if let first = library.add(urls, existing: folders, context: context).first {
-      navigator.open(first)
-    }
   }
 
   private func open(_ url: URL) {

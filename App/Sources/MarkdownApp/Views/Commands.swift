@@ -1,15 +1,14 @@
 import MarkdownKit
 import SwiftUI
 
-/// What a window shows above its columns: Quick Open and the folder picker. Shared by the
-/// sidebar, Quick Open and the menu bar.
+/// What a window shows above its columns: Quick Open and Connect GitHub. Shared by the sidebar, Quick Open and the menu
+/// bar.
 @Observable final class WindowState {
   var isQuickOpenShown = false
-  var isAddingFolder = false
   var isConnectingGitHub = false
   /// What the sidebar's search line holds: the note list shows the notes that match.
   var searchQuery = ""
-  /// Runs one of Quick Open's commands in this window (the menu bar's New Folder and Add Folder).
+  /// Runs one of Quick Open's commands in this window (the menu bar's New Folder).
   @ObservationIgnored var perform: ((QuickOpenCommand) -> Void)?
 
   /// What a pane shows: the shown note (nil: the listed folder's README, or nothing) and the listed item.
@@ -67,9 +66,6 @@ struct MarkdownCommands: Commands {
         .disabled(window == nil)
       Button("New Folder") { window?.perform?(.newFolder) }
         .keyboardShortcut("n", modifiers: [.command, .shift])
-        .disabled(window == nil)
-      Button("Add Folder to Sidebar…") { window?.isAddingFolder = true }
-        .keyboardShortcut("o", modifiers: [.command, .shift])
         .disabled(window == nil)
       Divider()
       Toggle("Encrypt New Notes", isOn: $encryptsNewNotes)

@@ -5,12 +5,11 @@ import UniformTypeIdentifiers
 import VaultKit
 import VaultUI
 
-/// The sidebar: where notes live. All Notes and the notes folder (iCloud Drive or local)
-/// with its folders, connected GitHub repositories, folders added by dropping them here
-/// (Finder, Files) or with Add Folder (persisted in SwiftData), and files opened on their
-/// own. Choosing one lists its notes below the places, in the same sidebar (`NoteSections`), and
-/// the note picked there shows beside it. The kit's sidebar: a card per place, then a card per
-/// group of notes, and the bar at the bottom (search, new note and folder, the sidebar toggle).
+/// The sidebar: where notes live. All Notes and the notes folder with its folders, connected GitHub repositories,
+/// the projects the v57 apps share (on the Mac and Windows; a project's folder joins once the user grants it), and
+/// files opened on their own. Choosing a place lists its notes right under its row (`PlaceNotes`), and the note picked
+/// there shows beside it. The kit's sidebar: a card per kind of place, the search results while searching, and the bar
+/// at the bottom (search, new note and folder, the sidebar toggle).
 struct SidebarView: View {
   /// The split's columns, for the bar's sidebar toggle (nil on iPhone, where the note is pushed).
   var columnVisibility: Binding<NavigationSplitViewVisibility>?
@@ -30,6 +29,7 @@ struct SidebarView: View {
   @State private var isDropTargeted = false
   @State private var allNotesCount: Int?
   @State private var showsNotesMenu = false
+  @AppStorage(NoteSort.key) private var sortsByTitle = false
   /// The shared projects section, collapsed until opened (it can be long).
   @AppStorage("showsSharedProjects") private var showsProjects = false
   #if os(macOS) || os(Windows)
@@ -52,13 +52,11 @@ struct SidebarView: View {
       // A place with many folders keeps its title in view while they scroll by.
       notesSection.kitSticky()
       if !repositories.repositories.isEmpty { gitHubSection.kitSticky() }
-      if !rootFolders.isEmpty { foldersSection.kitSticky() }
       #if os(macOS) || os(Windows)
-        // The vault's projects are the user's: never in the screenshot demo.
-        if !ScreenshotDemo.isOn { projectsSection.kitSticky() }
+        projectsSection.kitSticky()
       #endif
       if !openedFiles.isEmpty { filesSection }
-      NoteSections(model: list)
+      NoteSearchSection()
     } bottomBar: {
       Button("New Note", systemImage: "square.and.pencil") { newNote() }
         .disabled(notes.url == nil)
@@ -68,7 +66,8 @@ struct SidebarView: View {
         .kitHelp("New Folder", shortcut: "⇧⌘N")
     }
     .status { Label(storageStatus, systemImage: notes.isICloud ? "icloud" : deviceSymbol).labelStyle(.titleOnly) }
-    // Folders dropped anywhere on the sidebar join it.
+    .environment(list)
+    // Files dropped anywhere on the sidebar join it (and a shared project's folder, its access).
     .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
     .dropDestination(for: URL.self) { urls, _ in
       add(urls.filter(\.isFileURL))
@@ -106,9 +105,6 @@ struct SidebarView: View {
     .navigationTitle("Markdown")
     // The bottom bar has the toggle; the note's Show Sidebar button brings it back.
     .toolbar(removing: .sidebarToggle)
-    #if DEBUG && targetEnvironment(simulator)
-      .task { addLaunchArgumentFolders() }
-    #endif
   }
 
   // MARK: - Sections
@@ -124,6 +120,7 @@ struct SidebarView: View {
           Text("\(allNotesCount ?? 0)")
         }
         .place(.allNotes)
+        PlaceNotes(item: .allNotes, depth: 1)
         FileTreeRow(node: FileNode(url: root, isDirectory: true), isRoot: true, title: "Notes", showsChildren: false)
         ForEach(library.children(of: root).filter(\.isDirectory)) { child in
           FileTreeRow(node: child)
@@ -146,16 +143,17 @@ struct SidebarView: View {
     return [count ?? "", notes.isICloud ? "iCloud" : "plain files"]
   }
 
-  /// New notes and folders, and (on the Mac) where the notes are as files.
+  /// New notes and folders, how notes are sorted, and (on the Mac) where the notes are as files.
   private var notesMenu: some View {
     Button("Add", systemImage: "plus") { showsNotesMenu = true }
       .labelStyle(.iconOnly)
       .kitMenu(isPresented: $showsNotesMenu) {
         Button("New Note", systemImage: "square.and.pencil") { newNote() }
         Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
-        Divider()
-        Button("Add Folder to Sidebar…", systemImage: "plus.rectangle.on.folder") { window.isAddingFolder = true }
         Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { window.isConnectingGitHub = true }
+        KitMenuSection("Sort Notes By") {
+          KitMenuOptions(selection: $sortsByTitle, options: [("Date Edited", false), ("Title", true)])
+        }
         #if os(macOS) || os(Windows)
           if let folder = notes.url {
             Divider()
@@ -187,26 +185,13 @@ struct SidebarView: View {
     }
   }
 
-  private var foldersSection: some View {
-    let names = rootFolders.map(\.name)
-    return KitSection(
-      "Folders", meta: names.count == 1 ? names : ["\(names.count) folders"], systemImage: "folder", hue: .teal
-    ) {
-      ForEach(rootFolders) { folder in
-        FolderRootRow(folder: folder)
-      }
-    } accessory: {
-      Button("Add Folder to Sidebar…", systemImage: "plus") { window.isAddingFolder = true }
-        .labelStyle(.iconOnly)
-    }
-  }
-
   private var filesSection: some View {
     KitSection("Files", meta: "opened on their own", systemImage: "doc.on.doc", hue: .gray) {
       SidebarRow("Opened Files", systemImage: "doc.on.doc") {
         Text("\(openedFiles.count)")
       }
       .place(.openedFiles)
+      PlaceNotes(item: .openedFiles, depth: 1)
     }
   }
 
@@ -219,7 +204,6 @@ struct SidebarView: View {
 
   private var deviceName: String { KitDevice.name }
 
-  private var rootFolders: [SidebarFolder] { folders.filter { !$0.isFile } }
   private var openedFiles: [SidebarFolder] { folders.filter(\.isFile) }
 
   // MARK: - Selection
@@ -296,22 +280,7 @@ struct SidebarView: View {
     return library.root(of: url, roots: roots) != nil && !roots.contains(url)
   }
 
-  #if DEBUG && targetEnvironment(simulator)
-    /// Debug simulator builds: `--add-folder <path>` (repeatable) adds Mac folders at
-    /// launch, for testing without the picker. Simulator-only: the macOS sandbox grants
-    /// no access to a path passed on the command line, so the folder would be unreadable.
-    private func addLaunchArgumentFolders() {
-      let args = CommandLine.arguments
-      let paths = args.indices.filter { args[$0] == "--add-folder" && $0 + 1 < args.count }
-        .map { args[$0 + 1] }
-      guard let first = paths.first else { return }
-      add(paths.map { URL(fileURLWithPath: $0, isDirectory: true) })
-      // Already in the sidebar from an earlier run: show it anyway.
-      navigator.open(FolderLibrary.canonical(URL(fileURLWithPath: first, isDirectory: true)))
-    }
-  #endif
-
-  /// Adds the folders and shows the first new one.
+  /// Adds dropped files (and a shared project's folder) and shows the first.
   @discardableResult
   private func add(_ urls: [URL]) -> Bool {
     let added = library.add(urls, existing: folders, context: context)
@@ -336,16 +305,12 @@ struct SidebarView: View {
       #endif
     }
 
-    /// The projects the v57 apps share (added in Git and the others, through the vault) that aren't
-    /// sidebar folders yet, in the vault's groups, live as they change. A group opens and closes; which are
-    /// closed is Markdown's own. The sandbox only opens a folder the user picks, so adding a project shows an
-    /// open panel on it.
+    /// The projects the v57 apps share (added in Code, Git and the others, through the vault), in the vault's groups,
+    /// live as they change. A project the app may open lists its folders and notes as the notes folder does; the
+    /// sandbox only opens a folder the user picks, so a tap on another shows an open panel on it. A group opens and
+    /// closes; which are closed is Markdown's own.
     @ViewBuilder private var projectsSection: some View {
-      let added = Set(rootFolders.map { FolderLibrary.canonical(URL(fileURLWithPath: $0.path)).path })
-      let tree = (windowVault ?? .shared).localProjectTree.filter { project in
-        guard let url = project.localURL else { return false }
-        return !added.contains(FolderLibrary.canonical(url).path)
-      }
+      let tree = SidebarProjects.tree(windowVault ?? .shared)
       let count = tree.projects().count
       if count > 0 {
         let rows = projectRows(tree)
@@ -355,30 +320,40 @@ struct SidebarView: View {
           systemImage: "square.stack", hue: .indigo, isExpanded: $showsProjects
         ) {
           ForEach(rows) { row in
-            Group {
-              switch row.node {
-              case .group(let group, _):
-                let isOpen = !collapsedGroups.ids.contains(group.id)
-                SidebarRow(
-                  group.name, subtitle: group.note?.isEmpty == false ? group.note : nil,
-                  systemImage: isOpen ? "folder.fill" : "folder", hue: StableHue.pick(group.name)
-                )
-                .disclosure(isExpanded: groupIsExpanded(group.id))
-                .action { withAnimation(.kit) { toggleGroup(group.id) } }
-                .help(row.node.projects.count == 1 ? "1 project" : "\(row.node.projects.count) projects")
-              case .project(let project):
-                // Not a place to list: a tap asks for the folder and adds it.
+            switch row.node {
+            case .group(let group, _):
+              let isOpen = !collapsedGroups.ids.contains(group.id)
+              SidebarRow(
+                group.name, subtitle: group.note?.isEmpty == false ? group.note : nil,
+                systemImage: isOpen ? "folder.fill" : "folder", hue: StableHue.pick(group.name)
+              )
+              .disclosure(isExpanded: groupIsExpanded(group.id))
+              .action { withAnimation(.kit) { toggleGroup(group.id) } }
+              .help(row.node.projects.count == 1 ? "1 project" : "\(row.node.projects.count) projects")
+              .kitRowIndent(row.depth)
+            case .project(let project):
+              if let folder = sidebarFolder(of: project) {
+                FolderRootRow(folder: folder, title: project.name, icon: project.icon, depth: row.depth)
+              } else {
+                // Not open yet: a tap asks for the folder.
                 projectRow(project)
                   .disclosureSlot(hasGroups)
                   .action { addProject(project) }
-                  .help("Add “\(project.name)” to the sidebar")
+                  .help("Open “\(project.name)” in Markdown")
+                  .kitRowIndent(row.depth)
               }
             }
-            .kitRowIndent(row.depth)
           }
         }
         .animation(.kit, value: rows.map(\.id))
       }
+    }
+
+    /// The sidebar folder that gives the app the project's folder, once the user picked it.
+    private func sidebarFolder(of project: VaultProject) -> SidebarFolder? {
+      guard let url = SidebarProjects.url(of: project) else { return nil }
+      let path = FolderLibrary.canonical(url).path
+      return folders.first { !$0.isFile && $0.path == path }
     }
 
     /// A shared project: its app icon from the vault (Code and Dev find them), else the add-folder tile.
@@ -414,7 +389,7 @@ struct SidebarView: View {
     }
 
     private func addProject(_ project: VaultProject) {
-      guard let url = project.localURL else { return }
+      guard let url = SidebarProjects.url(of: project) else { return }
       #if os(Windows)
         // No sandbox: the project's folder is the one to add.
         _ = add([url])
@@ -423,8 +398,8 @@ struct SidebarView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.directoryURL = url
-        panel.prompt = "Add"
-        panel.message = "Add “\(project.name)” to the sidebar. Markdown opens only folders you choose."
+        panel.prompt = "Open"
+        panel.message = "Open “\(project.name)” in Markdown. Markdown opens only folders you choose."
         guard panel.runModal() == .OK, let chosen = panel.url else { return }
         _ = add([chosen])
       #endif
@@ -486,34 +461,31 @@ struct FileActionPrompts: ViewModifier {
   }
 }
 
-/// A sidebar folder: its tree, or a placeholder when it can no longer be reached.
+/// A shared project the app may open: its folder's tree, or a placeholder when the folder can no longer be reached.
 private struct FolderRootRow: View {
   let folder: SidebarFolder
+  let title: String
+  /// The project's app icon (Code and Dev find them), shown instead of the folder tile.
+  let icon: Data?
+  /// How many project groups it is in.
+  let depth: Int
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(FileActions.self) private var actions
   @Environment(\.modelContext) private var context
-  @Environment(\.vault) private var windowVault
 
   var body: some View {
     Group {
       if let url = library.url(for: folder) {
-        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true, icon: projectIcon(url))
+        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true, title: title, icon: icon, depth: depth)
       } else {
-        SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
+        SidebarRow(title, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
           .help("\(folder.path) can’t be found. It may have been moved or deleted.")
+          .kitRowIndent(depth)
       }
     }
     // On the folder and the folders inside it, whose own menus win.
     .kitContextMenu { menu }
-  }
-
-  /// The app icon of the vault's project in this folder, when it is one (Code and Dev find them).
-  private func projectIcon(_ url: URL) -> Data? {
-    let path = FolderLibrary.canonical(url).path
-    return (windowVault ?? .shared).localProjects.first { project in
-      project.localURL.map { FolderLibrary.canonical($0).path } == path
-    }?.icon
   }
 
   @ViewBuilder private var menu: some View {
@@ -528,7 +500,8 @@ private struct FolderRootRow: View {
     }
     Button("Reload", systemImage: "arrow.clockwise") { library.reload() }
     Divider()
-    Button("Remove from Sidebar", systemImage: "minus.circle", role: .destructive) {
+    // The project stays listed; opening it again asks for the folder.
+    Button("Close Project", systemImage: "minus.circle") {
       remove(folder, library: library, navigator: navigator, context: context)
     }
   }
@@ -566,6 +539,7 @@ struct FileTreeRow: View {
     let children = library.children(of: node.url)
     let subfolders = showsChildren ? children.filter(\.isDirectory) : []
     row(noteCount: children.count - children.filter(\.isDirectory).count, isExpandable: !subfolders.isEmpty)
+    PlaceNotes(item: .folder(node.url), depth: depth + 1)
     if isExpanded.wrappedValue {
       ForEach(subfolders) { child in
         FileTreeRow(node: child, depth: depth + 1)
@@ -596,8 +570,8 @@ struct FileTreeRow: View {
   }
 
   /// Notes and folders from the app's own folders move here, files from other apps are
-  /// copied in. A folder from Finder joins the sidebar instead: the rows cover most of
-  /// the sidebar, and dropping a folder on the sidebar means adding it.
+  /// copied in. A shared project's folder from Finder opens in the sidebar instead (its access): the rows cover most
+  /// of the sidebar, and dropping such a folder on the sidebar means opening it.
   private func drop(_ urls: [URL]) -> Bool {
     let roots = library.roots(folders)
     let urls = urls.filter(\.isFileURL)
@@ -615,7 +589,7 @@ struct FileTreeRow: View {
     return dropped
   }
 
-  /// Roots keep their sidebar menu (FolderRootRow, RepositoryRow); everything inside gets the folder one.
+  /// Roots keep their own menu (FolderRootRow, RepositoryRow); everything inside gets the folder one.
   @ViewBuilder private func label(_ label: some View) -> some View {
     if isRoot {
       label
@@ -673,7 +647,7 @@ private struct PlaceRow<Icon: View, Trailing: View>: View {
   }
 }
 
-/// Removes a folder from the sidebar (never from disk) and forgets what was shown from it.
+/// Removes a folder or an opened file from the sidebar (never from disk) and forgets what was shown from it.
 @MainActor func remove(
   _ folder: SidebarFolder, library: FolderLibrary, navigator: Navigator, context: ModelContext
 ) {

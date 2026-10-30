@@ -21,10 +21,9 @@ struct WelcomeView: View {
       emptyMessage: "Notes you open appear here.", onDrop: open
     ) {
       WelcomeAction("New Note", detail: newNoteDetail, systemImage: "square.and.pencil") { window.perform?(.newNote(nil)) }
-      WelcomeAction(
-        "Open Folder…", detail: "Edit the Markdown files already on your \(deviceName), in place.",
-        systemImage: "folder"
-      ) { window.perform?(.addFolder) }
+      WelcomeAction("Quick Open…", detail: "Find a note by its name or by what it says.", systemImage: "magnifyingglass") {
+        window.isQuickOpenShown = true
+      }
     } recents: {
       ForEach(Array(preferences.existingRecents.prefix(8)), id: \.self) { url in
         RecentItem(
@@ -46,7 +45,7 @@ struct WelcomeView: View {
       : "Start writing. Notes are plain files on this \(deviceName)."
   }
 
-  /// Folders and files dropped on the welcome join the sidebar; the first shows.
+  /// Files (and shared projects' folders) dropped on the welcome join the sidebar; the first shows.
   private func open(_ urls: [URL]) -> Bool {
     let shown = library.add(urls, existing: folders, context: context)
     if let first = shown.first { navigator.open(first) }

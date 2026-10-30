@@ -7,7 +7,6 @@ enum QuickOpenCommand: Hashable {
   /// A new note, named after what was typed (or "Untitled").
   case newNote(String?)
   case newFolder
-  case addFolder
   case welcome
 }
 
@@ -151,9 +150,6 @@ struct QuickOpenView: View {
       Entry(
         id: "new-folder", section: "Commands", title: "New Folder", subtitle: nil,
         systemImage: "folder.badge.plus", hue: .gray, shortcut: "⇧⌘N", action: .command(.newFolder)),
-      Entry(
-        id: "add-folder", section: "Commands", title: "Add Folder to Sidebar…", subtitle: nil,
-        systemImage: "plus.rectangle.on.folder", hue: .gray, shortcut: "⇧⌘O", action: .command(.addFolder)),
       Entry(
         id: "welcome", section: "Commands", title: "Welcome to Markdown", subtitle: nil,
         systemImage: "hand.wave", hue: .gray, shortcut: "⇧⌘1", action: .command(.welcome)),

@@ -2,8 +2,8 @@ import ComponentKit
 import SwiftData
 import SwiftUI
 
-/// The notes of the place chosen in the sidebar (`Navigator.item`), loaded for the sidebar's note sections, and the
-/// notes that match the sidebar's search line.
+/// The notes of the place chosen in the sidebar (`Navigator.item`), loaded for the rows under it (`PlaceNotes`), and
+/// the notes that match the sidebar's search line.
 @Observable final class NoteListModel {
   /// The listed notes, newest first; nil until the first load.
   var summaries: [NoteSummary]?
@@ -13,123 +13,92 @@ import SwiftUI
   var results: [SearchResult]?
 }
 
-/// The sidebar's notes, below the places: the chosen place's notes newest first and grouped by date (Pinned, Today,
-/// Yesterday, …) as in Notes, a card per group, each note with its time and first line. While the search line holds
-/// text, the notes that match instead. `SidebarView` loads them into `NoteListModel`.
-struct NoteSections: View {
-  let model: NoteListModel
-  @Environment(FolderLibrary.self) private var library
+/// The notes of the place chosen in the sidebar, right under its row as the tree's next level: pinned first, then
+/// newest first (or by title), each with its time and first line. A place without notes offers a new one where the app
+/// can write. `SidebarView` loads them into the `NoteListModel` in the environment; rows put this after a place's row.
+struct PlaceNotes: View {
+  let item: LibraryItem
+  /// The notes' level in the tree: one deeper than their place's row.
+  var depth: Int
+  @Environment(NoteListModel.self) private var model
   @Environment(Navigator.self) private var navigator
-  @Environment(NotesLocation.self) private var notes
-  @Environment(FileActions.self) private var actions
   @Environment(NotePreferences.self) private var preferences
-  @Environment(RepositoryStore.self) private var repositories
-  @Environment(\.modelContext) private var context
-  @Environment(WindowState.self) private var window
-  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
-  @AppStorage("noteListSortsByTitle") private var sortsByTitle = false
-  @State private var showsSortMenu = false
+  @AppStorage(NoteSort.key) private var sortsByTitle = false
 
   var body: some View {
-    if isSearching, let results = model.results {
-      searchSection(results)
-    } else if let item = navigator.item, let summaries = model.summaries, model.loadedItem == item {
-      let groups = groups(summaries)
-      if groups.isEmpty {
-        emptySection(item)
+    if navigator.item == item, model.loadedItem == item, let summaries = model.summaries {
+      if summaries.isEmpty {
+        EmptyPlaceRow(item: item).kitRowIndent(depth)
       } else {
-        ForEach(groups) { group in
-          KitSection(
-            group.title.isEmpty ? placeTitle : group.title, meta: meta(group), systemImage: image(group),
-            hue: hue(group)
-          ) {
-            rows(group)
-          } accessory: {
-            if group.id == groups.first?.id { sortButton }
-          }
-          // A long group keeps its title in view while its notes scroll by.
-          .kitSticky()
+        ForEach(NoteSort.sorted(summaries, pinned: preferences.pinned, byTitle: sortsByTitle)) { note in
+          NoteRow(note: note, isPinned: preferences.isPinned(note.url))
+            .kitRowIndent(depth)
+            .draggable(note.url)
+            .kitContextMenu { NoteMenu(url: note.url) }
         }
       }
     }
   }
+}
 
-  // MARK: - Groups
+/// How the sidebar orders a place's notes: pinned first, then by date edited (newest first) or by title.
+enum NoteSort {
+  static let key = "noteListSortsByTitle"
 
-  private func groups(_ summaries: [NoteSummary]) -> [NoteGroup] {
-    var notes = summaries
-    if sortsByTitle {
-      notes.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-    }
-    return NoteGroup.grouped(notes, pinned: preferences.pinned, byDate: !sortsByTitle)
+  static func sorted(_ notes: [NoteSummary], pinned: Set<URL>, byTitle: Bool) -> [NoteSummary] {
+    var notes = notes
+    if byTitle { notes.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending } }
+    return notes.filter { pinned.contains($0.url) } + notes.filter { !pinned.contains($0.url) }
   }
+}
 
-  private func rows(_ group: NoteGroup) -> some View {
-    ForEach(group.notes) { note in
-      NoteRow(note: note, isPinned: preferences.isPinned(note.url))
-        .draggable(note.url)
-        .kitContextMenu { menu(for: note.url) }
-    }
-  }
+/// A place without notes: a row that starts one where the app can write.
+private struct EmptyPlaceRow: View {
+  let item: LibraryItem
+  @Environment(FolderLibrary.self) private var library
+  @Environment(Navigator.self) private var navigator
+  @Environment(NotesLocation.self) private var notes
+  @Environment(FileActions.self) private var actions
+  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
 
-  /// A date group's meta line: how many, and when the newest was edited.
-  private func meta(_ group: NoteGroup) -> [String] {
-    let count = group.notes.count == 1 ? "1 note" : "\(group.notes.count) notes"
-    let edited = group.notes.map(\.modified).max().map { "edited \($0.noteListText)" } ?? ""
-    return [count, edited]
-  }
-
-  private func image(_ group: NoteGroup) -> String {
-    group.title == "Pinned" ? "pin" : sortsByTitle ? "textformat" : "clock"
-  }
-
-  private func hue(_ group: NoteGroup) -> Hue { group.title == "Pinned" ? .orange : .accent }
-
-  /// Date Edited or Title, on the first group's card.
-  private var sortButton: some View {
-    Button("Sort", systemImage: "line.3.horizontal.decrease") { showsSortMenu = true }
-      .labelStyle(.iconOnly)
-      .kitMenu(isPresented: $showsSortMenu) {
-        KitMenuOptions(selection: $sortsByTitle, options: [("Date Edited", false), ("Title", true)])
-      }
-      .kitHelp("Sort", meta: sortsByTitle ? "By title" : "By date edited")
-  }
-
-  /// A place without notes: its name, and a row that starts one where the app can write.
-  private func emptySection(_ item: LibraryItem) -> some View {
-    KitSection(placeTitle, meta: "No notes", systemImage: "note.text", hue: .gray) {
-      if item != .openedFiles, newNoteDirectory != nil {
-        SidebarRow("New Note", subtitle: "Notes you write here appear in this list.", systemImage: "square.and.pencil")
-          .action { newNote() }
-      } else {
-        SidebarRow(
-          "No Notes", subtitle: item == .openedFiles ? "Files you open from Finder appear here." : nil,
-          systemImage: "note.text", hue: .gray)
-      }
+  var body: some View {
+    if item != .openedFiles, let dir = newNoteDirectory {
+      SidebarRow("New Note", subtitle: "No notes here yet.", systemImage: "square.and.pencil")
+        .action { actions.newNote(in: dir) }
+    } else {
+      SidebarRow(
+        "No Notes", subtitle: item == .openedFiles ? "Files you open from \(KitDesktop.fileManagerName) appear here." : nil,
+        systemImage: "note.text", hue: .gray)
     }
   }
 
-  /// The listed place's name, for a group without one (notes sorted by title).
-  private var placeTitle: String {
-    switch navigator.item {
-    case .allNotes, nil: "All Notes"
-    case .folder(let url):
-      url == notes.url
-        ? "Notes"
-        : repositories.repositories.first { repositories.directory(for: $0) == url }?.fullName
-          ?? url.lastPathComponent
-    case .openedFiles: "Opened Files"
+  /// The listed folder when the app can write there, otherwise the notes folder.
+  private var newNoteDirectory: URL? {
+    if case .folder(let dir) = item, FolderLibrary.isDirectory(dir),
+      library.root(of: dir, roots: library.roots(folders)) != nil
+    {
+      return dir
     }
+    return notes.url
   }
+}
 
-  // MARK: - Menus
+/// A note's context menu: pin, rename, encrypt, show, share, and remove or delete.
+struct NoteMenu: View {
+  let url: URL
+  @Environment(FolderLibrary.self) private var library
+  @Environment(Navigator.self) private var navigator
+  @Environment(FileActions.self) private var actions
+  @Environment(NotePreferences.self) private var preferences
+  @Environment(\.modelContext) private var context
+  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
 
-  @ViewBuilder private func menu(for url: URL) -> some View {
+  var body: some View {
     Button(preferences.isPinned(url) ? "Unpin Note" : "Pin Note", systemImage: preferences.isPinned(url) ? "pin.slash" : "pin") {
       withAnimation { preferences.togglePin(url) }
     }
     Divider()
-    if isDeletable(url) {
+    if isDeletable {
       Button("Rename…", systemImage: "pencil") { actions.beginRename(url) }
       if actions.canToggleEncryption(url) {
         let encrypted = NoteFiles.isEncrypted(url)
@@ -147,7 +116,7 @@ struct NoteSections: View {
       Button("Remove from List", systemImage: "minus.circle") {
         remove(folder, library: library, navigator: navigator, context: context)
       }
-    } else if isDeletable(url) {
+    } else if isDeletable {
       #if os(macOS) || os(Windows)
         Button("Move to Trash", systemImage: "trash", role: .destructive) { actions.delete(url) }
       #else
@@ -156,50 +125,34 @@ struct NoteSections: View {
     }
   }
 
-  // MARK: - New notes
-
-  /// The listed folder when the app can write there, otherwise the notes folder.
-  private var newNoteDirectory: URL? {
-    if case .folder(let dir) = navigator.item, FolderLibrary.isDirectory(dir),
-      library.root(of: dir, roots: library.roots(folders)) != nil
-    {
-      return dir
-    }
-    return notes.url
-  }
-
-  private func newNote() {
-    guard let dir = newNoteDirectory else { return }
-    if navigator.item == nil || navigator.item == .openedFiles { navigator.item = .folder(dir) }
-    actions.newNote(in: dir)
-  }
-
   /// Anything inside a root, but not a root itself.
-  private func isDeletable(_ url: URL) -> Bool {
+  private var isDeletable: Bool {
     let roots = library.roots(folders)
     return library.root(of: url, roots: roots) != nil && !roots.contains(url)
   }
+}
 
-  // MARK: - Search
+/// The notes that match the sidebar's search line, below the places while it holds text.
+struct NoteSearchSection: View {
+  @Environment(NoteListModel.self) private var model
+  @Environment(WindowState.self) private var window
 
-  private var isSearching: Bool {
-    !window.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
-  }
-
-  private func searchSection(_ results: [SearchResult]) -> some View {
-    KitSection(
-      "Search", meta: results.isEmpty ? "No results" : results.count == 1 ? "1 result" : "\(results.count) results",
-      systemImage: "magnifyingglass", status: results.isEmpty ? .failed : .idle
-    ) {
-      ForEach(results) { result in
-        SidebarRow(value: result.url, result.name) { EmptyView() }
-          .subtitle {
-            VStack(alignment: .leading, spacing: 1) {
-              if let snippet = result.snippet { Text(snippet).foregroundStyle(.kitSecondary) }
-              Text(result.location).foregroundStyle(.kitTertiary)
+  var body: some View {
+    if !window.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty, let results = model.results {
+      KitSection(
+        "Search", meta: results.isEmpty ? "No results" : results.count == 1 ? "1 result" : "\(results.count) results",
+        systemImage: "magnifyingglass", status: results.isEmpty ? .failed : .idle
+      ) {
+        ForEach(results) { result in
+          SidebarRow(value: result.url, result.name) { EmptyView() }
+            .subtitle {
+              VStack(alignment: .leading, spacing: 1) {
+                if let snippet = result.snippet { Text(snippet).foregroundStyle(.kitSecondary) }
+                Text(result.location).foregroundStyle(.kitTertiary)
+              }
             }
-          }
-          .kitContextMenu { menu(for: result.url) }
+            .kitContextMenu { NoteMenu(url: result.url) }
+        }
       }
     }
   }

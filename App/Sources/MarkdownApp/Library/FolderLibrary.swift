@@ -27,6 +27,9 @@ struct FileNode: Identifiable, Hashable {
   /// The app's own folders, beside the sidebar folders: the notes folder (and GitHub
   /// repositories). Always accessible — they live in the app's container or iCloud.
   var builtInRoots: [URL] = []
+  /// The folders of the shared projects on this device (canonical paths, `SidebarProjects`): the only folders the
+  /// sidebar keeps, in its Projects section. A folder added before then that isn't one stays stored, out of the way.
+  var projectPaths: Set<String> = []
 
   @ObservationIgnored private var resolved: [PersistentIdentifier: URL] = [:]
   @ObservationIgnored private var accessing: Set<URL> = []
@@ -37,8 +40,8 @@ struct FileNode: Identifiable, Hashable {
 
   // MARK: - Folders
 
-  /// Adds dropped, picked or opened items to the sidebar: directories as folders, text
-  /// files as single files — unless a sidebar folder already holds them. Returns what to
+  /// Adds dropped, picked or opened items to the sidebar: a shared project's folder (access to it), text files as
+  /// single files — unless a sidebar folder already holds them. Returns what to
   /// show for each item (new or already there); anything else is reported in `lastError`.
   @discardableResult
   func add(_ urls: [URL], existing: [SidebarFolder], context: ModelContext) -> [URL] {
@@ -54,11 +57,18 @@ struct FileNode: Identifiable, Hashable {
         lastError = "“\(url.lastPathComponent)” is not a folder or a text file."
         continue
       }
-      // A file inside a sidebar folder is shown there, with its folder's access.
-      if !isDirectory, root(of: standardized, roots: roots) != nil {
+      // Anything inside a sidebar folder is shown there, with its folder's access.
+      if root(of: standardized, roots: roots) != nil {
         if started { url.stopAccessingSecurityScopedResource() }
         reveal(standardized, roots: roots)
         shown.append(standardized)
+        continue
+      }
+      // A folder joins the sidebar only as a shared project's (the Projects section).
+      guard !isDirectory || projectPaths.contains(standardized.path) else {
+        if started { url.stopAccessingSecurityScopedResource() }
+        lastError =
+          "“\(url.lastPathComponent)” isn’t one of your projects. Markdown shows the notes folder, connected GitHub repositories and the projects the v57 apps share: add the folder as a project in Code or Git."
         continue
       }
       guard known.insert(standardized.path).inserted else {
@@ -215,7 +225,7 @@ struct FileNode: Identifiable, Hashable {
   /// Every folder whose files the app shows and edits: the built-in ones and the
   /// sidebar folders (not single opened files).
   func roots(_ folders: [SidebarFolder]) -> [URL] {
-    builtInRoots + folders.filter { !$0.isFile }.compactMap { url(for: $0) }
+    builtInRoots + folders.filter { !$0.isFile && projectPaths.contains($0.path) }.compactMap { url(for: $0) }
   }
 
   /// The sidebar folder `url` lives in (the innermost, when folders nest) — what a

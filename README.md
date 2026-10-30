@@ -106,15 +106,16 @@ App (App/, Markdown.xcodeproj)
   resolves to the AppKit NSViewRepresentable on macOS and the UIKit
   UIViewControllerRepresentable on iOS.
 
-  Three columns, as in Notes: the sidebar lists where notes live (All Notes, the
-  notes folder (synced through the vault) and its folders, GitHub
-  repositories, folders dropped on the sidebar or added with Add Folder (⇧⌘O),
-  files opened on their own); the note list shows the selected folder's notes,
-  newest first, grouped by date (Pinned, Today, Yesterday, …) with each note's
-  time and first line; the detail pane edits the note. With no note chosen, a
-  folder's README is shown. Sidebar folders are saved with SwiftData
-  (SidebarFolder: path plus a security-scoped bookmark, so the sandbox grants
-  access again after a relaunch). Pins and recent notes are kept in the app's
+  Two columns: the sidebar lists where notes live (All Notes, the notes folder
+  (synced through the vault) and its folders, GitHub repositories, the
+  projects the v57 apps share (Mac and Windows), files opened on their own)
+  and, right under the chosen place's row, its notes: pinned first, then
+  newest first (or by title), each with its time and first line; the detail
+  pane edits the note. With no note chosen, a folder's README is shown. A
+  project's folder opens in the sidebar once the user picks it (the sandbox);
+  it is saved with SwiftData (SidebarFolder: path plus a security-scoped
+  bookmark, so the sandbox grants access again after a relaunch), and only
+  shared projects' folders show (FolderLibrary.projectPaths). Pins and recent notes are kept in the app's
   defaults (NotePreferences).
 
   Files are edited in place: DocumentSaver writes edits back (coordinated,
@@ -173,13 +174,9 @@ App (App/, Markdown.xcodeproj)
   Open with…: App/Resources/Info.plist declares Markdown (net.daringfireball.markdown,
   imported) and plain text, so Finder and Files offer the app. An opened file
   inside a sidebar folder is shown there; any other file gets its own entry
-  under Files (a bookmark, like folders), with "Add Enclosing Folder…" to grant
-  the folder so its images and links resolve. Saving such a file writes in
+  under Files (a bookmark, like folders), with "Open Project…" to grant the
+  folder of the shared project holding it so its images and links resolve. Saving such a file writes in
   place when the sandbox refuses the atomic write's temporary file.
-
-  Debug simulator builds accept --add-folder <path> (repeatable) to add and
-  show a Mac folder at launch without the picker. (Not on macOS: the sandbox
-  grants no access to a path given on the command line.)
 
 Distribution
 

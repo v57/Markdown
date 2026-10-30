@@ -263,9 +263,9 @@ struct DocumentView: View {
         #if os(macOS) || os(Windows)
           Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([file]) }
         #endif
-        if isStandalone(file) {
-          Button("Add Enclosing Folder…", systemImage: "folder.badge.plus") {
-            addEnclosingFolder(of: file)
+        if isStandalone(file), let project = project(holding: file) {
+          Button("Open Project “\(project.lastPathComponent)”…", systemImage: "folder.badge.plus") {
+            openProject(project, showing: file)
           }
         }
         Divider()
@@ -515,18 +515,24 @@ struct DocumentView: View {
     library.root(of: file, roots: roots) == nil
   }
 
-  /// Asks for access to the file's folder and adds it to the sidebar.
-  private func addEnclosingFolder(of file: URL) {
+  /// The shared project whose folder holds the file, which the sidebar can open (`FolderLibrary.projectPaths`).
+  private func project(holding file: URL) -> URL? {
+    let path = FolderLibrary.canonical(file).path
+    return library.projectPaths.filter { path.hasPrefix($0 + "/") }.max { $0.count < $1.count }
+      .map { URL(fileURLWithPath: $0, isDirectory: true) }
+  }
+
+  /// Asks for access to the project's folder and opens it in the sidebar, with the file in it.
+  private func openProject(_ project: URL, showing file: URL) {
     #if os(macOS)
-      let folder = file.deletingLastPathComponent()
       let panel = NSOpenPanel()
       panel.canChooseDirectories = true
       panel.canChooseFiles = false
       panel.allowsMultipleSelection = false
-      panel.directoryURL = folder
-      panel.prompt = "Add Folder"
+      panel.directoryURL = project
+      panel.prompt = "Open"
       panel.message =
-        "Choose “\(folder.lastPathComponent)” to show it in the sidebar, with its images and linked files."
+        "Choose “\(project.lastPathComponent)” to open the project in the sidebar, with this note’s images and linked files."
       guard panel.runModal() == .OK, let granted = panel.url else { return }
       addFolder(granted, showing: file)
     #else
@@ -534,7 +540,7 @@ struct DocumentView: View {
     #endif
   }
 
-  /// Adds `folder` to the sidebar; when it holds `file`, the file's own sidebar entry
+  /// Opens the project's `folder` in the sidebar; when it holds `file`, the file's own sidebar entry
   /// goes (the folder now shows it) and the file is shown again with resolving links.
   private func addFolder(_ folder: URL, showing file: URL) {
     let added = library.add([folder], existing: folders, context: context)
