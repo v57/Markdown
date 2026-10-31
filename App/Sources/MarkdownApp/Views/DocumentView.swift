@@ -116,8 +116,11 @@ struct DocumentView: View {
       // Nothing open: the welcome is the main screen.
       WelcomeView()
     case .loading:
+      // A quick open (switching notes) shows nothing; a slow one says what it opens.
       EmptyState(
-        systemImage: "doc.text", title: "Opening “\(navigator.selection?.lastPathComponent ?? "Note")”", status: .working)
+        systemImage: "doc.text", title: "Opening “\(navigator.selection?.lastPathComponent ?? "Note")”", status: .working
+      )
+      .kitAppearDelay()
     case .document(let file, let text):
       MarkdownEditorView(
         text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
@@ -299,7 +302,7 @@ struct DocumentView: View {
       .buttonStyle(.kitToolIcon)
       .padding(.horizontal, KitMetrics.cardPadding)
       .frame(height: 52)
-      .kitSurface(.floating)
+      .kitSurface(.floating, cornerRadius: KitMetrics.radiusCapsule)
       .padding(.horizontal, KitMetrics.gutter)
       .padding(.bottom, KitMetrics.gutter)
       .transition(.opacity.combined(with: .move(edge: .bottom)))

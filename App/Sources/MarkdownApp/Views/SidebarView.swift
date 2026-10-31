@@ -135,8 +135,9 @@ struct SidebarView: View {
     } accessory: {
       notesMenu
     }
-    .help(
-      notes.isICloud
+    .headerHelp(
+      storageName,
+      meta: notes.isICloud
         ? "Notes are files in \(notes.url?.lastPathComponent ?? "Notes") and sync through iCloud, encrypted."
         : "Notes are plain files on this \(KitDevice.nameInSentence).")
   }
@@ -323,18 +324,14 @@ struct SidebarView: View {
       let tree = listedProjects(SidebarProjects.tree(windowVault ?? .shared))
       let count = tree.projects().count
       if count > 0 {
-        let hasGroups = !tree.groups.isEmpty
         KitSection(
           "Projects", meta: count == 1 ? "1 shared project" : "\(count) shared projects",
           systemImage: "square.stack", hue: .indigo, isExpanded: $showsProjects
         ) {
-          if hasGroups {
-            // Groups open and close (a click on the row or its chevron); projects keep the chevron's slot.
-            KitOutline(tree.roots, children: { $0.group == nil ? nil : $0.children }, collapsed: $collapsedGroups.ids) {
-              projectNodeRow($0)
-            }
-          } else {
-            ForEach(tree.roots) { projectNodeRow($0) }
+          // Groups open and close (a click on the row or its chevron); projects keep the chevron's slot while there
+          // are groups, and a list without groups is a plain list.
+          KitOutline(tree.roots, children: { $0.group == nil ? nil : $0.children }, collapsed: $collapsedGroups.ids) {
+            projectNodeRow($0)
           }
         }
         .headerMenu {
