@@ -548,7 +548,7 @@ private struct FolderRootRow: View {
       #if os(macOS) || os(Windows)
         Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([url]) }
       #endif
-      OtherPlacesMenu(root: url)
+      VaultOtherPlacesMenu(root: url)
     }
     Button("Reload", systemImage: "arrow.clockwise") { library.reload() }
     Divider()
