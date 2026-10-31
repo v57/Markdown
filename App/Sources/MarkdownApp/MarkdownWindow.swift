@@ -20,6 +20,9 @@ struct MarkdownWindow: View {
     if ScreenshotDemo.isOn {
       // The demo's window is Personal's, without the picker: the user's accounts stay out of screenshots.
       content(.shared)
+      #if os(macOS)
+        .task { if ScreenshotDemo.flag("--settings") { openSettings() } }
+      #endif
     } else {
       VaultAccountScope(selection: $accountID, manage: manage) { vault in
         content(vault)
@@ -60,7 +63,7 @@ struct MarkdownWindow: View {
     @AppStorage(paneKey) private var pane = accountsPane
 
     var body: some View {
-      KitSettings(selection: $pane) {
+      KitSettings(selection: $pane, window: .hiddenTitleBar) {
         SettingsPane(Self.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
           VaultAccountsSettings()
         }

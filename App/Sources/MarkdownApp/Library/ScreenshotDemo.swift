@@ -13,6 +13,7 @@ import VaultKit
 ///   --quick-open             opens Quick Open
 ///   --welcome                the welcome (no note open)
 ///   --open-sheet <name>      over the note: `github` (Connect GitHub), `rename` or `delete` (the kit's overlays)
+///   --settings               opens the Settings window too (Mac)
 ///
 /// `dev-screenshots` takes every scene in one launch: the window opens each next scene's arguments in place.
 enum ScreenshotDemo {

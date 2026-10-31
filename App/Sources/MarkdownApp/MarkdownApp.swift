@@ -89,6 +89,7 @@ public struct MarkdownApp: App {
         MarkdownSettings()
           .componentKit(accent: .blue)
       }
+      .windowStyle(.hiddenTitleBar)
     #endif
   }
 }
