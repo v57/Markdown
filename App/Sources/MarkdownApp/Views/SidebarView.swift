@@ -35,6 +35,10 @@ struct SidebarView: View {
   #if os(macOS) || os(Windows)
     /// The project groups closed in the shared projects section (vault group ids).
     @AppStorage("CollapsedProjectGroups") private var collapsedGroups = CollapsedGroups()
+    /// The shared projects and groups removed from the list (vault ids): Markdown's own, the other apps keep them.
+    /// Adding a project's folder again brings it back.
+    @AppStorage("RemovedProjects") private var removedProjects = CollapsedGroups()
+    @State private var confirmsRemoveAll = false
   #endif
   #if os(Windows)
     /// Choose Notes Folder… shows the system's folder picker.
@@ -284,6 +288,9 @@ struct SidebarView: View {
   @discardableResult
   private func add(_ urls: [URL]) -> Bool {
     let added = library.add(urls, existing: folders, context: context)
+    #if os(macOS) || os(Windows)
+      restoreProjects(at: added)
+    #endif
     if let first = added.first { navigator.open(first) }
     return !added.isEmpty
   }
@@ -310,7 +317,7 @@ struct SidebarView: View {
     /// sandbox only opens a folder the user picks, so a tap on another shows an open panel on it. A group opens and
     /// closes; which are closed is Markdown's own.
     @ViewBuilder private var projectsSection: some View {
-      let tree = SidebarProjects.tree(windowVault ?? .shared)
+      let tree = listedProjects(SidebarProjects.tree(windowVault ?? .shared))
       let count = tree.projects().count
       if count > 0 {
         let rows = projectRows(tree)
@@ -331,6 +338,11 @@ struct SidebarView: View {
               .action { withAnimation(.kit) { toggleGroup(group.id) } }
               .help(row.node.projects.count == 1 ? "1 project" : "\(row.node.projects.count) projects")
               .kitRowIndent(row.depth)
+              .kitContextMenu {
+                Button("Remove Group from List", systemImage: "minus.circle") {
+                  withAnimation(.kit) { removeProjects([group.id], closing: row.node.projects) }
+                }
+              }
             case .project(let project):
               if let folder = sidebarFolder(of: project) {
                 FolderRootRow(folder: folder, title: project.name, icon: project.icon, depth: row.depth)
@@ -345,7 +357,47 @@ struct SidebarView: View {
             }
           }
         }
+        .headerMenu {
+          Button("Remove All Projects from List", systemImage: "minus.circle") { confirmsRemoveAll = true }
+        }
         .animation(.kit, value: rows.map(\.id))
+        .kitConfirmation(
+          count == 1 ? "Remove 1 project from the list?" : "Remove all \(count) projects from the list?", isPresented: $confirmsRemoveAll,
+          message: "Their folders stay on disk, and the other v57 apps keep them. Adding a folder again brings it back.",
+          systemImage: "minus.circle", confirm: "Remove All"
+        ) {
+          withAnimation(.kit) { removeProjects(tree.projects().map(\.id), closing: tree.projects()) }
+        }
+      }
+    }
+
+    /// The shared projects without the ones removed from the list, alone or with a group they are in.
+    private func listedProjects(_ tree: VaultProjectTree) -> VaultProjectTree {
+      let removed = removedProjects.ids
+      guard !removed.isEmpty else { return tree }
+      return tree.filter { project in
+        !removed.contains(project.id) && !tree.ancestors(of: project.id).contains { removed.contains($0.id) }
+      }
+    }
+
+    /// Removes projects and groups (vault ids) from the list, and closes the open ones among `projects`.
+    private func removeProjects(_ ids: [String], closing projects: [VaultProject]) {
+      for folder in projects.compactMap(sidebarFolder(of:)) {
+        remove(folder, library: library, navigator: navigator, context: context)
+      }
+      removedProjects.ids.formUnion(ids)
+    }
+
+    /// Brings back the removed projects whose folders were just added, with the groups they are in.
+    private func restoreProjects(at urls: [URL]) {
+      guard !removedProjects.ids.isEmpty else { return }
+      let tree = SidebarProjects.tree(windowVault ?? .shared)
+      let paths = Set(urls.map { FolderLibrary.canonical($0).path })
+      for project in tree.projects() {
+        guard let url = SidebarProjects.url(of: project), paths.contains(FolderLibrary.canonical(url).path) else {
+          continue
+        }
+        removedProjects.ids.subtract([project.id] + tree.ancestors(of: project.id).map(\.id))
       }
     }
 
