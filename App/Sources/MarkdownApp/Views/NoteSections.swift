@@ -15,12 +15,12 @@ import SwiftUI
 
 /// The notes of the place chosen in the sidebar, right under its row as the tree's next level: pinned first, then
 /// newest first (or by title), each with its time and first line. A place without notes offers a new one where the app
-/// can write. `SidebarView` loads them into the `NoteListModel` in the environment; rows put this after a place's row.
+/// can write. `SidebarView` loads them into the `NoteListModel` in the environment; rows put this after a place's row,
+/// one indent level deeper (`kitRowIndent`).
 struct PlaceNotes: View {
   let item: LibraryItem
-  /// The notes' level in the tree: one deeper than their place's row.
-  var depth: Int
   @Environment(NoteListModel.self) private var model
+  @Environment(FileActions.self) private var actions
   @Environment(Navigator.self) private var navigator
   @Environment(NotePreferences.self) private var preferences
   @AppStorage(NoteSort.key) private var sortsByTitle = false
@@ -28,13 +28,13 @@ struct PlaceNotes: View {
   var body: some View {
     if navigator.item == item, model.loadedItem == item, let summaries = model.summaries {
       if summaries.isEmpty {
-        EmptyPlaceRow(item: item).kitRowIndent(depth)
+        EmptyPlaceRow(item: item)
       } else {
         ForEach(NoteSort.sorted(summaries, pinned: preferences.pinned, byTitle: sortsByTitle)) { note in
           NoteRow(note: note, isPinned: preferences.isPinned(note.url))
-            .kitRowIndent(depth)
+            .renamesInPlace(note.url, actions: actions)
             .draggable(note.url)
-            .kitContextMenu { NoteMenu(url: note.url) }
+            .kitContextMenu { NoteMenu(url: note.url, renamesInPlace: true) }
         }
       }
     }
@@ -86,6 +86,8 @@ private struct EmptyPlaceRow: View {
 /// A note's context menu: pin, rename, encrypt, show, share, and remove or delete.
 struct NoteMenu: View {
   let url: URL
+  /// Rename… renames in the note's sidebar row (a place's notes) instead of the Rename prompt (search results).
+  var renamesInPlace = false
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(FileActions.self) private var actions
@@ -99,7 +101,7 @@ struct NoteMenu: View {
     }
     Divider()
     if isDeletable {
-      Button("Rename…", systemImage: "pencil") { actions.beginRename(url) }
+      Button("Rename…", systemImage: "pencil") { actions.beginRename(url, inPlace: renamesInPlace) }
       if actions.canToggleEncryption(url) {
         let encrypted = NoteFiles.isEncrypted(url)
         Button(encrypted ? "Decrypt Note" : "Encrypt Note", systemImage: encrypted ? "lock.open" : "lock") {
@@ -213,8 +215,9 @@ private struct NoteRow: View {
       .titleAccessory {
         if isPinned {
           Image(systemName: "pin.fill")
-            .font(.system(size: 9))
+            .imageScale(.small)
             .foregroundStyle(Hue.orange.fill)
+            .kitFont(.caption)
             .accessibilityLabel("Pinned")
         }
       }

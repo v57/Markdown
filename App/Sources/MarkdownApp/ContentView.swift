@@ -52,7 +52,7 @@ struct ContentView: View {
     } detail: {
       NavigationStack {
         DocumentView()
-          .modifier(ShowSidebarButton(columns: $columns, isOn: idiom != .phone))
+          .kitSidebarToggle(columnVisibility: $columns, isOn: idiom != .phone)
       }
     }
     // Screenshots: every sidebar row built when the scene is ready, not a few a frame as they near the screen.
@@ -225,21 +225,6 @@ struct ContentView: View {
     guard url.isFileURL else { return }
     if let shown = library.add([url], existing: folders, context: context).first {
       navigator.open(shown)
-    }
-  }
-}
-
-/// The kit's Show Sidebar button while the sidebar is out (on the Mac and iPad, where it stands in for the split
-/// view's own toggle).
-private struct ShowSidebarButton: ViewModifier {
-  @Binding var columns: NavigationSplitViewVisibility
-  let isOn: Bool
-
-  func body(content: Content) -> some View {
-    if isOn {
-      content.kitSidebarToggle(columnVisibility: $columns)
-    } else {
-      content
     }
   }
 }

@@ -14,7 +14,7 @@ public struct MarkdownApp: App {
     /// Scripts/release.sh; App Store builds leave this out): checked daily once the user
     /// turns on automatic checks (never before). The sandbox keeps the app from replacing
     /// itself, so the update window hands the download to the browser.
-    private let updater = AppUpdater(github: "v57/Markdown", assetName: "Markdown.dmg")
+    private let updater = AppUpdater(github: "v57/Markdown", assetName: "Markdown.dmg", accent: .blue)
   #endif
 
   // macOS CLI harness: run headless probes before the UI launches. The app

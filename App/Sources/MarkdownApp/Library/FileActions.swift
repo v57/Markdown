@@ -9,9 +9,11 @@ import VaultKit
 /// step. The sidebar is reloaded afterwards and the navigator follows renamed and moved
 /// items (selection and history).
 @Observable final class FileActions {
-  /// The item whose rename prompt is showing, and the name being typed.
+  /// The item being renamed, and the name being typed.
   var renaming: URL?
   var newName = ""
+  /// Whether the rename happens in the item's sidebar row (`kitRename`) instead of the Rename prompt.
+  var renamesInPlace = false
   /// The item waiting for a delete confirmation (iOS, where deletion may be permanent).
   var deleting: URL?
   /// Why the last action failed, for an alert.
@@ -135,8 +137,10 @@ import VaultKit
 
   // MARK: - Rename
 
-  func beginRename(_ url: URL) {
+  /// Starts renaming `url`: in its sidebar row with `inPlace` (the row's own menu), else in the Rename prompt.
+  func beginRename(_ url: URL, inPlace: Bool = false) {
     newName = url.lastPathComponent
+    renamesInPlace = inPlace
     renaming = url
   }
 

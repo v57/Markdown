@@ -107,7 +107,7 @@ struct DocumentView: View {
           addFolder(folder, showing: file)
         }
       }
-      .notice("Couldn’t Save", message: saveError, extra: allowEditingButton)
+      .kitNotice("Couldn’t Save", message: saveError, buttons: allowEditingButtons)
   }
 
   @ViewBuilder private var contentView: some View {
@@ -116,8 +116,8 @@ struct DocumentView: View {
       // Nothing open: the welcome is the main screen.
       WelcomeView()
     case .loading:
-      LiveIcon(systemImage: "doc.text", status: .working, size: 28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      EmptyState(
+        systemImage: "doc.text", title: "Opening “\(navigator.selection?.lastPathComponent ?? "Note")”", status: .working)
     case .document(let file, let text):
       MarkdownEditorView(
         text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
@@ -188,8 +188,10 @@ struct DocumentView: View {
           }
           if idiom == .phone {
             Button(isEditing ? "Read" : "Edit", systemImage: isEditing ? "eye" : "pencil") { isEditing.toggle() }
+              .kitHelp(isEditing ? "Read" : "Edit", shortcut: "⇧⌘E")
           }
           ShareLink(item: file)
+            .kitHelp("Share")
           moreMenu(file)
         }
       }
@@ -208,13 +210,13 @@ struct DocumentView: View {
   }
 
   /// Allow Editing… when the sandbox refused the save (the Mac).
-  private var allowEditingButton: NoticeButton? {
+  private var allowEditingButtons: [KitConfirmationButton] {
     #if os(macOS)
       if case .failed(_, permissionDenied: true) = saver.state {
-        return NoticeButton(title: "Allow Editing…") { allowEditing() }
+        return [KitConfirmationButton("Allow Editing…") { allowEditing() }]
       }
     #endif
-    return nil
+    return []
   }
 
   /// The note's rich title; its meta line is where it lives, then whether edits are saved and its length.
@@ -247,6 +249,7 @@ struct DocumentView: View {
 
   private func moreMenu(_ file: URL) -> some View {
     Button("More", systemImage: "ellipsis.circle") { showsMoreMenu = true }
+      .kitHelp("More")
       .kitMenu(isPresented: $showsMoreMenu) {
         if isNote(file) {
           Button(preferences.isPinned(file) ? "Unpin Note" : "Pin Note", systemImage: preferences.isPinned(file) ? "pin.slash" : "pin") {
@@ -293,15 +296,12 @@ struct DocumentView: View {
       HStack(spacing: 0) {
         formattingButtons
       }
-      .labelStyle(.iconOnly)
-      .buttonStyle(.borderless)
-      .font(.title3)
-      .tint(.primary)
-      .padding(.horizontal, 6)
+      .buttonStyle(.kitToolIcon)
+      .padding(.horizontal, KitMetrics.cardPadding)
       .frame(height: 52)
-      .kitSurface(.floating, cornerRadius: 26)
-      .padding(.horizontal, 12)
-      .padding(.bottom, 8)
+      .kitSurface(.floating)
+      .padding(.horizontal, KitMetrics.gutter)
+      .padding(.bottom, KitMetrics.gutter)
       .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
@@ -491,19 +491,17 @@ struct DocumentView: View {
           !f.isFile && library.url(for: f).map { library.root(of: file, roots: [$0]) != nil } ?? false
         }), let root = library.url(for: folder)
       else { return }
-      let panel = NSOpenPanel()
-      panel.canChooseDirectories = true
-      panel.canChooseFiles = false
-      panel.allowsMultipleSelection = false
-      panel.directoryURL = root.deletingLastPathComponent()
-      panel.nameFieldStringValue = root.lastPathComponent
-      panel.prompt = "Allow Editing"
-      panel.message = "Choose “\(root.lastPathComponent)” to let Markdown save changes in it."
-      guard panel.runModal() == .OK, let granted = panel.url,
-        FolderLibrary.canonical(granted) == root
-      else { return }
-      library.regrant(folder, with: granted, context: context)
-      saver.flush()
+      Task {
+        guard
+          let granted = await KitDesktop.chooseFolders(
+            prompt: "Allow Editing", message: "Choose “\(root.lastPathComponent)” to let Markdown save changes in it.",
+            directory: root.deletingLastPathComponent(), name: root.lastPathComponent
+          ).first,
+          FolderLibrary.canonical(granted) == root
+        else { return }
+        library.regrant(folder, with: granted, context: context)
+        saver.flush()
+      }
     }
   #endif
 
@@ -525,16 +523,17 @@ struct DocumentView: View {
   /// Asks for access to the project's folder and opens it in the sidebar, with the file in it.
   private func openProject(_ project: URL, showing file: URL) {
     #if os(macOS)
-      let panel = NSOpenPanel()
-      panel.canChooseDirectories = true
-      panel.canChooseFiles = false
-      panel.allowsMultipleSelection = false
-      panel.directoryURL = project
-      panel.prompt = "Open"
-      panel.message =
-        "Choose “\(project.lastPathComponent)” to open the project in the sidebar, with this note’s images and linked files."
-      guard panel.runModal() == .OK, let granted = panel.url else { return }
-      addFolder(granted, showing: file)
+      Task {
+        guard
+          let granted = await KitDesktop.chooseFolders(
+            prompt: "Open",
+            message:
+              "Choose “\(project.lastPathComponent)” to open the project in the sidebar, with this note’s images and linked files.",
+            directory: project
+          ).first
+        else { return }
+        addFolder(granted, showing: file)
+      }
     #else
       isPickingFolder = true
     #endif

@@ -34,10 +34,10 @@ struct SidebarView: View {
   @AppStorage("showsSharedProjects") private var showsProjects = false
   #if os(macOS) || os(Windows)
     /// The project groups closed in the shared projects section (vault group ids).
-    @AppStorage("CollapsedProjectGroups") private var collapsedGroups = CollapsedGroups()
+    @AppStorage("CollapsedProjectGroups") private var collapsedGroups = KitIDSet()
     /// The shared projects and groups removed from the list (vault ids): Markdown's own, the other apps keep them.
     /// Adding a project's folder again brings it back.
-    @AppStorage("RemovedProjects") private var removedProjects = CollapsedGroups()
+    @AppStorage("RemovedProjects") private var removedProjects = KitIDSet()
     @State private var confirmsRemoveAll = false
   #endif
   #if os(Windows)
@@ -101,11 +101,11 @@ struct SidebarView: View {
         scope: SearchScope(library: library, notes: notes, repositories: repositories, folders: folders))
     }
     .kitSheet(isPresented: $window.isConnectingGitHub) { GitHubConnectView() }
-    .notice(
+    .kitNotice(
       repositories.message?.title ?? "",
       message: Binding(get: { repositories.message?.text }, set: { if $0 == nil { repositories.message = nil } }),
       systemImage: "arrow.triangle.branch", hue: .purple)
-    .notice("Couldn’t Add Folder", message: Bindable(library).lastError)
+    .kitNotice("Couldn’t Add Folder", message: Bindable(library).lastError)
     .navigationTitle("Markdown")
     // The bottom bar has the toggle; the note's Show Sidebar button brings it back.
     .toolbar(removing: .sidebarToggle)
@@ -124,14 +124,13 @@ struct SidebarView: View {
           Text("\(allNotesCount ?? 0)")
         }
         .place(.allNotes)
-        PlaceNotes(item: .allNotes, depth: 1)
+        PlaceNotes(item: .allNotes).kitRowIndent(1)
         FileTreeRow(node: FileNode(url: root, isDirectory: true), isRoot: true, title: "Notes", showsChildren: false)
         ForEach(library.children(of: root).filter(\.isDirectory)) { child in
           FileTreeRow(node: child)
         }
       } else {
-        LiveIcon(systemImage: "doc.text", status: .working, size: 18)
-          .frame(maxWidth: .infinity, minHeight: 32)
+        EmptyState(systemImage: "doc.text", title: "Loading Notes", status: .working)
       }
     } accessory: {
       notesMenu
@@ -151,6 +150,7 @@ struct SidebarView: View {
   private var notesMenu: some View {
     Button("Add", systemImage: "plus") { showsNotesMenu = true }
       .labelStyle(.iconOnly)
+      .kitHelp("Add", meta: "A note, a folder or a GitHub repository")
       .kitMenu(isPresented: $showsNotesMenu) {
         Button("New Note", systemImage: "square.and.pencil") { newNote() }
         Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
@@ -186,6 +186,7 @@ struct SidebarView: View {
     } accessory: {
       Button("Connect GitHub Repository…", systemImage: "plus") { window.isConnectingGitHub = true }
         .labelStyle(.iconOnly)
+        .kitHelp("Connect GitHub Repository…")
     }
   }
 
@@ -195,7 +196,7 @@ struct SidebarView: View {
         Text("\(openedFiles.count)")
       }
       .place(.openedFiles)
-      PlaceNotes(item: .openedFiles, depth: 1)
+      PlaceNotes(item: .openedFiles).kitRowIndent(1)
     }
   }
 
@@ -301,14 +302,16 @@ struct SidebarView: View {
       #if os(Windows)
         isChoosingNotesFolder = true
       #else
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Use for Notes"
-        panel.message = "Your notes are written to this folder as Markdown files and stay in sync with it."
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
-        notes.choose(folder)
+        Task {
+          guard
+            let folder = await KitDesktop.chooseFolders(
+              prompt: "Use for Notes",
+              message: "Your notes are written to this folder as Markdown files and stay in sync with it.",
+              canCreateDirectories: true
+            ).first
+          else { return }
+          notes.choose(folder)
+        }
       #endif
     }
 
@@ -320,47 +323,24 @@ struct SidebarView: View {
       let tree = listedProjects(SidebarProjects.tree(windowVault ?? .shared))
       let count = tree.projects().count
       if count > 0 {
-        let rows = projectRows(tree)
         let hasGroups = !tree.groups.isEmpty
         KitSection(
           "Projects", meta: count == 1 ? "1 shared project" : "\(count) shared projects",
           systemImage: "square.stack", hue: .indigo, isExpanded: $showsProjects
         ) {
-          ForEach(rows) { row in
-            switch row.node {
-            case .group(let group, _):
-              let isOpen = !collapsedGroups.ids.contains(group.id)
-              SidebarRow(
-                group.name, subtitle: group.note?.isEmpty == false ? group.note : nil,
-                systemImage: isOpen ? "folder.fill" : "folder", hue: StableHue.pick(group.name)
-              )
-              .disclosure(isExpanded: groupIsExpanded(group.id))
-              .action { withAnimation(.kit) { toggleGroup(group.id) } }
-              .help(row.node.projects.count == 1 ? "1 project" : "\(row.node.projects.count) projects")
-              .kitRowIndent(row.depth)
-              .kitContextMenu {
-                Button("Remove Group from List", systemImage: "minus.circle") {
-                  withAnimation(.kit) { removeProjects([group.id], closing: row.node.projects) }
-                }
-              }
-            case .project(let project):
-              if let folder = sidebarFolder(of: project) {
-                FolderRootRow(folder: folder, title: project.name, icon: project.icon, depth: row.depth)
-              } else {
-                // Not open yet: a tap asks for the folder.
-                projectRow(project)
-                  .disclosureSlot(hasGroups)
-                  .action { addProject(project) }
-                  .help("Open “\(project.name)” in Markdown")
-                  .kitRowIndent(row.depth)
-              }
+          if hasGroups {
+            // Groups open and close (a click on the row or its chevron); projects keep the chevron's slot.
+            KitOutline(tree.roots, children: { $0.group == nil ? nil : $0.children }, collapsed: $collapsedGroups.ids) {
+              projectNodeRow($0)
             }
+          } else {
+            ForEach(tree.roots) { projectNodeRow($0) }
           }
         }
         .headerMenu {
           Button("Remove All Projects from List", systemImage: "minus.circle") { confirmsRemoveAll = true }
         }
-        .animation(.kit, value: rows.map(\.id))
+        .animation(.kit, value: Self.ids(tree.roots))
         .kitConfirmation(
           count == 1 ? "Remove 1 project from the list?" : "Remove all \(count) projects from the list?", isPresented: $confirmsRemoveAll,
           message: "Their folders stay on disk, and the other v57 apps keep them. Adding a folder again brings it back.",
@@ -419,25 +399,37 @@ struct SidebarView: View {
       }
     }
 
-    /// The tree top to bottom, each item with how many groups it is in, without what closed groups hold.
-    private func projectRows(_ tree: VaultProjectTree) -> [ProjectRow] {
-      func rows(_ nodes: [VaultProjectTree.Node], depth: Int) -> [ProjectRow] {
-        nodes.flatMap { node in
-          let isOpen = node.group != nil && !collapsedGroups.ids.contains(node.id)
-          return [ProjectRow(node: node, depth: depth)] + (isOpen ? rows(node.children, depth: depth + 1) : [])
+    /// A group (it opens and closes in the outline) or a project: open in the sidebar with its folder's tree, or a
+    /// row that asks for its folder.
+    @ViewBuilder private func projectNodeRow(_ node: VaultProjectTree.Node) -> some View {
+      switch node {
+      case .group(let group, _):
+        let count = node.projects.count
+        SidebarRow(
+          group.name, subtitle: group.note?.isEmpty == false ? group.note : nil,
+          systemImage: collapsedGroups.contains(group.id) ? "folder" : "folder.fill", hue: StableHue.pick(group.name)
+        )
+        .kitHelp(group.name, meta: count == 1 ? "1 project" : "\(count) projects", systemImage: "folder")
+        .kitContextMenu {
+          Button("Remove Group from List", systemImage: "minus.circle") {
+            withAnimation(.kit) { removeProjects([group.id], closing: node.projects) }
+          }
+        }
+      case .project(let project):
+        if let folder = sidebarFolder(of: project) {
+          FolderRootRow(folder: folder, title: project.name, icon: project.icon)
+        } else {
+          // Not open yet: a tap asks for the folder.
+          projectRow(project)
+            .action { addProject(project) }
+            .kitHelp(project.name, meta: "Open “\(project.name)” in Markdown")
         }
       }
-      return rows(tree.roots, depth: 0)
     }
 
-    private func groupIsExpanded(_ id: String) -> Binding<Bool> {
-      Binding(
-        get: { !collapsedGroups.ids.contains(id) },
-        set: { if $0 == collapsedGroups.ids.contains(id) { toggleGroup(id) } })
-    }
-
-    private func toggleGroup(_ id: String) {
-      if collapsedGroups.ids.contains(id) { collapsedGroups.ids.remove(id) } else { collapsedGroups.ids.insert(id) }
+    /// Every group and project id in the tree, for the list's animation.
+    private static func ids(_ nodes: [VaultProjectTree.Node]) -> [String] {
+      nodes.flatMap { [$0.id] + ids($0.children) }
     }
 
     private func addProject(_ project: VaultProject) {
@@ -446,37 +438,18 @@ struct SidebarView: View {
         // No sandbox: the project's folder is the one to add.
         _ = add([url])
       #else
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.directoryURL = url
-        panel.prompt = "Open"
-        panel.message = "Open “\(project.name)” in Markdown. Markdown opens only folders you choose."
-        guard panel.runModal() == .OK, let chosen = panel.url else { return }
-        _ = add([chosen])
+        Task {
+          guard
+            let chosen = await KitDesktop.chooseFolders(
+              prompt: "Open", message: "Open “\(project.name)” in Markdown. Markdown opens only folders you choose.",
+              directory: url
+            ).first
+          else { return }
+          _ = add([chosen])
+        }
       #endif
     }
   #endif
-}
-
-/// A row of the shared projects section: a group or a project, and how many groups it is in.
-private struct ProjectRow: Identifiable {
-  let node: VaultProjectTree.Node
-  let depth: Int
-  var id: String { node.id }
-}
-
-/// The ids of the closed groups, kept in one defaults string.
-struct CollapsedGroups: RawRepresentable {
-  var ids: Set<String>
-
-  init() { ids = [] }
-
-  init(rawValue: String) {
-    ids = Set(rawValue.split(separator: "\n").map(String.init))
-  }
-
-  var rawValue: String { ids.sorted().joined(separator: "\n") }
 }
 
 /// The rename prompt, the delete confirmation and file-operation errors, as the kit's sheets (over the window on the
@@ -487,20 +460,15 @@ struct FileActionPrompts: ViewModifier {
   func body(content: Content) -> some View {
     @Bindable var actions = actions
     content
-      .kitSheet(isPresented: Binding(get: { actions.renaming != nil }, set: { if !$0 { actions.renaming = nil } })) {
-        KitSheet(
-          title: "Rename", meta: actions.renaming.map { "“\($0.lastPathComponent)”" }, systemImage: "pencil", width: 400
-        ) {
-          FormCard {
-            FormRow("Name", systemImage: "doc.text", field: TextField("Name", text: $actions.newName))
-          }
-        } footer: {
-          Button("Cancel") { actions.renaming = nil }
-            .keyboardShortcut(.cancelAction)
-          Button("Rename") { actions.commitRename() }
-            .buttonStyle(.kitPrimary)
-            .keyboardShortcut(.defaultAction)
-        }
+      // A rename from the document's menu (or of a new folder); the sidebar rows' own menus rename in the row.
+      .kitPrompt(
+        "Rename",
+        isPresented: Binding(
+          get: { actions.renaming != nil && !actions.renamesInPlace }, set: { if !$0 { actions.renaming = nil } }),
+        text: $actions.newName, message: actions.renaming.map { "“\($0.lastPathComponent)”" },
+        field: KitPromptField("Name", systemImage: "doc.text"), confirm: "Rename"
+      ) { _ in
+        actions.commitRename()
       }
       .kitConfirmation(
         "Delete “\(actions.deleting?.lastPathComponent ?? "")”?",
@@ -509,7 +477,21 @@ struct FileActionPrompts: ViewModifier {
       ) {
         actions.confirmDelete()
       }
-      .notice("Couldn’t Complete the Action", message: $actions.error)
+      .kitNotice("Couldn’t Complete the Action", message: $actions.error)
+  }
+}
+
+extension View {
+  /// Renames `url` in this sidebar row while a rename of it began from the row's menu (`beginRename(_:inPlace:)`).
+  func renamesInPlace(_ url: URL, actions: FileActions) -> some View {
+    kitRename(
+      isRenaming: Binding(
+        get: { actions.renamesInPlace && actions.renaming == url },
+        set: { if !$0, actions.renaming == url { actions.renaming = nil } }),
+      text: Binding(get: { actions.newName }, set: { actions.newName = $0 })
+    ) {
+      actions.commitRename()
+    }
   }
 }
 
@@ -519,8 +501,6 @@ private struct FolderRootRow: View {
   let title: String
   /// The project's app icon (Code and Dev find them), shown instead of the folder tile.
   let icon: Data?
-  /// How many project groups it is in.
-  let depth: Int
   @Environment(FolderLibrary.self) private var library
   @Environment(Navigator.self) private var navigator
   @Environment(FileActions.self) private var actions
@@ -529,11 +509,12 @@ private struct FolderRootRow: View {
   var body: some View {
     Group {
       if let url = library.url(for: folder) {
-        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true, title: title, icon: icon, depth: depth)
+        FileTreeRow(node: FileNode(url: url, isDirectory: true), isRoot: true, title: title, icon: icon)
       } else {
         SidebarRow(title, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
-          .help("\(folder.path) can’t be found. It may have been moved or deleted.")
-          .kitRowIndent(depth)
+          .kitHelp(
+            title, meta: "\(folder.path) can’t be found. It may have been moved or deleted.",
+            systemImage: "exclamationmark.triangle", hue: .yellow)
       }
     }
     // On the folder and the folders inside it, whose own menus win.
@@ -581,9 +562,9 @@ struct FileTreeRow: View {
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @State private var isDropTargeted = false
-
-  /// How deep in the sidebar's tree the folder is (its root is 0).
-  var depth = 0
+  /// How deep in the sidebar's tree the folder is (its root is 0): a project group's outline sets it, and each folder
+  /// puts its notes and subfolders one level deeper.
+  @Environment(\.kitRowIndentLevel) private var depth
 
   var body: some View {
     // `generation` re-lists after a reload.
@@ -591,10 +572,10 @@ struct FileTreeRow: View {
     let children = library.children(of: node.url)
     let subfolders = showsChildren ? children.filter(\.isDirectory) : []
     row(noteCount: children.count - children.filter(\.isDirectory).count, isExpandable: !subfolders.isEmpty)
-    PlaceNotes(item: .folder(node.url), depth: depth + 1)
+    PlaceNotes(item: .folder(node.url)).kitRowIndent(depth + 1)
     if isExpanded.wrappedValue {
       ForEach(subfolders) { child in
-        FileTreeRow(node: child, depth: depth + 1)
+        FileTreeRow(node: child).kitRowIndent(depth + 1)
       }
     }
   }
@@ -609,13 +590,14 @@ struct FileTreeRow: View {
         }
       } trailing: {
         if let activity {
-          LiveIcon(systemImage: "arrow.down", status: .working, size: 16).help(activity)
+          LiveIcon(systemImage: "arrow.down", status: .working, size: 16)
+            .kitHelp(activity, systemImage: "arrow.down", status: .working)
         } else {
           Text("\(badge ?? noteCount)")
         }
       }
       .place(.folder(node.url))
-      .kitRowIndent(depth)
+      .renamesInPlace(node.url, actions: actions)
     )
     .kitDropTarget(isDropTargeted)
     .dropDestination(for: URL.self) { urls, _ in drop(urls) } isTargeted: { isDropTargeted = $0 }
@@ -656,7 +638,7 @@ struct FileTreeRow: View {
     Button("New Note", systemImage: "square.and.pencil") { actions.newNote(in: node.url) }
     Button("New Folder", systemImage: "folder.badge.plus") { actions.newFolder(in: node.url) }
     Divider()
-    Button("Rename…", systemImage: "pencil") { actions.beginRename(node.url) }
+    Button("Rename…", systemImage: "pencil") { actions.beginRename(node.url, inPlace: true) }
     #if os(macOS) || os(Windows)
       Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([node.url]) }
     #endif

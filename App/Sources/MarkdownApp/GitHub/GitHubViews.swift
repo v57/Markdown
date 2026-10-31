@@ -48,7 +48,7 @@ struct GitHubConnectView: View {
       offers = auth.offers
       await loadRepositories()
     }
-    .notice("GitHub", message: Bindable(auth).error)
+    .kitNotice("GitHub", message: Bindable(auth).error)
   }
 
   @ViewBuilder private var account: some View {
@@ -82,11 +82,9 @@ struct GitHubConnectView: View {
   @ViewBuilder private var yourRepositories: some View {
     FormCard("Your Repositories") {
       KitSearchField(text: $filter, prompt: "Filter your repositories", count: "\(filtered.count) of \(repositories.count)")
-        .padding(10)
+        .padding(KitMetrics.gutter)
       if isLoading {
-        LiveIcon(systemImage: "arrow.triangle.branch", status: .working, size: 18)
-          .frame(maxWidth: .infinity)
-          .padding(10)
+        EmptyState(systemImage: "arrow.triangle.branch", title: "Loading Your Repositories", status: .working)
       }
       ForEach(filtered) { repository in
         let connected = store.repositories.contains { $0.fullName == repository.fullName }
@@ -96,17 +94,17 @@ struct GitHubConnectView: View {
             HStack(spacing: 4) {
               Text(repository.fullName)
               if repository.isPrivate {
-                Image(systemName: "lock.fill").font(.caption).foregroundStyle(.kitSecondary)
+                Image(systemName: "lock.fill").kitFont(.caption)
               }
             }
             if let description = repository.description, !description.isEmpty {
-              Text(description).font(.caption).foregroundStyle(.kitSecondary).lineLimit(1)
+              Text(description).kitFont(.caption).lineLimit(1)
             }
           }
         } trailing: {
           if let busy {
             LiveIcon(systemImage: "arrow.down", status: .working, size: 16)
-            Text(busy).font(.caption).foregroundStyle(.kitSecondary)
+            Text(busy).kitFont(.caption)
           } else if connected {
             Image(systemName: "checkmark").foregroundStyle(.kitSecondary)
           }
@@ -186,22 +184,11 @@ struct RepositoryRow: View {
       systemImage: "arrow.triangle.branch"
     )
     .kitContextMenu { menu }
-    .kitSheet(isPresented: $isCommitting) {
-      KitSheet(title: "Commit and Push", meta: changeSummary, systemImage: "arrow.up", hue: .purple) {
-        FormCard {
-          FormRow("Message", systemImage: "text.bubble", field: TextField("Message", text: $commitMessage))
-        }
-      } footer: {
-        Button("Cancel") { isCommitting = false }
-          .keyboardShortcut(.cancelAction)
-        Button("Push") {
-          let message = commitMessage
-          isCommitting = false
-          Task { await store.commitAndPush(repository, message: message, client: auth.api) }
-        }
-        .buttonStyle(.kitPrimary)
-        .keyboardShortcut(.defaultAction)
-      }
+    .kitPrompt(
+      "Commit and Push", isPresented: $isCommitting, text: $commitMessage, message: changeSummary,
+      systemImage: "arrow.up", hue: .purple, field: KitPromptField("Message", systemImage: "text.bubble"), confirm: "Push"
+    ) { message in
+      Task { await store.commitAndPush(repository, message: message, client: auth.api) }
     }
     .kitConfirmation(
       "Disconnect \(repository.fullName)?", isPresented: $isDisconnecting, message: disconnectMessage,
