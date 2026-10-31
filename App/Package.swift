@@ -30,7 +30,8 @@ let package = Package(
   dependencies: [
     // This repository's editor library.
     .package(path: ".."),
-    // The shared design, in-app updates, screenshot scenes, the vault and GitHub (GitHubKit).
+    // The shared design, in-app updates, screenshot scenes, the vault and GitHub (GitHubKit, and GitHubUI's sign-in
+    // sheet).
     v57("Component"), v57("UpdateKit"), v57("Dev"), v57("Vault"), v57("Git"),
   ],
   targets: [
@@ -42,6 +43,7 @@ let package = Package(
         .product(name: "UpdateKit", package: "UpdateKit", condition: .when(platforms: [.macOS, .windows])),
         .product(name: "DevScreenshots", package: "Dev"), .product(name: "VaultKit", package: "Vault"),
         .product(name: "VaultUI", package: "Vault"), .product(name: "GitHubKit", package: "Git"),
+        .product(name: "GitHubUI", package: "Git"),
       ],
       swiftSettings: [
         .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),

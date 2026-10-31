@@ -1,5 +1,6 @@
 import Foundation
 import GitHubKit
+import GitHubUI
 import Observation
 import VaultKit
 
@@ -16,19 +17,11 @@ import VaultKit
 @Observable final class GitHubAuth {
   enum State: Equatable {
     case signedOut
-    /// Asking GitHub for a code.
-    case requesting
-    /// Waiting for the user to enter `code` at `verificationURL`.
-    case waiting(code: String, verificationURL: URL)
     case signedIn(login: String)
   }
 
-  /// A GitHub sign-in another vault account has, which one without a sign-in can use too.
-  struct Offer: Identifiable {
-    var accountName: String
-    var credential: GitHubCredential
-    var id: String { credential.login }
-  }
+  /// What Markdown asks GitHub for: the user's repositories, public and private.
+  static let permissions = GitHubPermissions(repositories: .all, organizations: false, workflows: false)
 
   let account: GitHubAccount
   /// The window's account.
@@ -52,23 +45,15 @@ import VaultKit
     account.restore(refreshing: false)
   }
 
+  /// The account; a sign-in in progress shows in GitHubUI's sheet.
   var state: State {
-    switch account.signInStep {
-    case .requestingCode: return .requesting
-    case .waiting(let code): return .waiting(code: code.userCode, verificationURL: code.verificationURL)
-    default: break
-    }
     guard let credential = account.credential else { return .signedOut }
     return .signedIn(login: account.user?.login ?? credential.login)
   }
 
-  /// A failed sign-in, a revoked token, or an error the views report.
+  /// A revoked token, or an error the views report (the sign-in sheet shows its own).
   var error: String? {
-    get {
-      if let localError { return localError }
-      if case .failed(let failure) = account.signInStep { return Self.describe(failure) }
-      return account.notice
-    }
+    get { localError ?? account.notice }
     set {
       localError = newValue
       if newValue == nil {
@@ -83,29 +68,28 @@ import VaultKit
   /// The API as the signed-in user, or anonymous (public repositories only).
   var api: GitHubAPI { account.api ?? GitHubAPI(token: nil) }
 
-  /// Starts the device flow; `state` becomes `.waiting` with the code to show.
-  func signIn() {
-    guard Self.clientID != nil else {
-      error =
-        "GitHub sign-in isn’t set up in this build: it needs an OAuth App client ID (GITHUB_CLIENT_ID)."
-      return
-    }
-    account.signIn(
-      requesting: GitHubPermissions(repositories: .all, organizations: false, workflows: false))
+  /// Whether this build can sign in (GitHubUI's sheet runs the device flow); without the OAuth App's client ID
+  /// `error` says why not.
+  func canSignIn() -> Bool {
+    guard Self.clientID == nil else { return true }
+    error = "GitHub sign-in isn’t set up in this build: it needs an OAuth App client ID (GITHUB_CLIENT_ID)."
+    return false
   }
 
   /// The sign-ins the other vault accounts have, one per GitHub login, Personal's first: a signed-out account
   /// offers them, so the user needn't sign in to GitHub again.
-  @MainActor var offers: [Offer] {
+  @MainActor var offers: [GitHubSignInOffer] {
     guard !account.isSignedIn else { return [] }
     let others = Vaults.shared.allAccounts.filter { $0.id != accountID }
     return KeychainTokenStore.signIns(of: others.map(\.id)).compactMap { signIn in
-      others.first { $0.id == signIn.accountID }.map { Offer(accountName: $0.name, credential: signIn.credential) }
+      others.first { $0.id == signIn.accountID }.map {
+        GitHubSignInOffer(accountName: $0.name, credential: signIn.credential)
+      }
     }
   }
 
   /// Signs in with another account's sign-in: this account keeps a copy of its own.
-  @MainActor func use(_ offer: Offer) {
+  @MainActor func use(_ offer: GitHubSignInOffer) {
     do {
       try account.signIn(with: offer.credential)
     } catch {

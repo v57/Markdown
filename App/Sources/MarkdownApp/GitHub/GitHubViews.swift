@@ -1,5 +1,6 @@
 import ComponentKit
 import GitHubKit
+import GitHubUI
 import SwiftUI
 
 /// The Connect GitHub sheet (the kit's, over the window on the Mac and iPad): sign in (device flow), then pick one of your repositories —
@@ -9,13 +10,13 @@ struct GitHubConnectView: View {
   @Environment(RepositoryStore.self) private var store
   @Environment(Navigator.self) private var navigator
   @Environment(\.kitDismiss) private var dismiss
-  @Environment(\.openURL) private var openURL
   @State private var repositories: [GitHubRepository] = []
   @State private var isLoading = false
   @State private var filter = ""
   @State private var publicName = ""
   /// Other vault accounts' sign-ins, while this one has none.
-  @State private var offers: [GitHubAuth.Offer] = []
+  @State private var offers: [GitHubSignInOffer] = []
+  @State private var isSigningIn = false
 
   var body: some View {
     KitSheet(
@@ -57,39 +58,11 @@ struct GitHubConnectView: View {
         GroupRow(
           "Sign In with GitHub…",
           help: "Signing in lets you edit your repositories, including private ones, and push changes.",
-          action: { auth.signIn() })
+          action: { isSigningIn = auth.canSignIn() })
         ForEach(offers) { offer in
           GroupRow(
             "Use @\(offer.credential.login)", help: "Signed in on \(offer.accountName).", action: { auth.use(offer) })
         }
-      case .requesting:
-        GroupRow {
-          HStack(spacing: 8) {
-            LiveIcon(systemImage: "person.badge.key", status: .working, size: 16)
-            Text("Asking GitHub for a code…").foregroundStyle(.kitSecondary)
-          }
-        } trailing: {
-          Button("Cancel") { auth.cancelSignIn() }.buttonStyle(.kit)
-        }
-      case .waiting(let code, let url):
-        VStack(alignment: .leading, spacing: 10) {
-          Text("Enter this code on GitHub:")
-          Text(code)
-            .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
-            .textSelection(.enabled)
-          Button("Copy Code and Open GitHub") {
-            copy(code)
-            openURL(url)
-          }
-          .buttonStyle(.kitPrimary)
-          HStack {
-            LiveIcon(systemImage: "person.badge.key", status: .working, size: 16)
-            Text("Waiting for you to approve…").foregroundStyle(.kitSecondary)
-            Spacer()
-            Button("Cancel") { auth.cancelSignIn() }.buttonStyle(.kit)
-          }
-        }
-        .padding(12)
       case .signedIn(let login):
         GroupRow {
           Label("@\(login)", systemImage: "person.crop.circle")
@@ -97,6 +70,12 @@ struct GitHubConnectView: View {
           Button("Sign Out") { auth.signOut() }.buttonStyle(.kit)
         }
       }
+    }
+    // The device flow, as Git signs in (GitHubUI).
+    .kitSheet(isPresented: $isSigningIn) {
+      GitHubSignInSheet(
+        account: auth.account, appName: "Markdown", permissions: GitHubAuth.permissions, choices: [],
+        offers: { auth.offers }, use: { auth.use($0) }, systemImage: "doc.text")
     }
   }
 
@@ -183,8 +162,6 @@ struct GitHubConnectView: View {
       }
     }
   }
-
-  private func copy(_ text: String) { KitPasteboard.copy(text) }
 }
 
 /// A connected repository in the sidebar: its file tree, the number of local changes,
