@@ -1,11 +1,15 @@
 import DevScreenshots
 import Foundation
 import VaultKit
+#if os(Windows)
+  import WinSDK
+#endif
 
 /// Debug builds: `--screenshot-demo` runs the app on made-up notes for the screenshots (`.dev/screenshots.json`),
 /// never the user's. A debug build shares the installed app's container, defaults and vault, so in this mode the
-/// sidebar store is in memory, preferences use their own defaults, the vault doesn't sync, GitHub repositories stay
-/// hidden and the shared projects are the demo's. The notes are written into the app's temporary folder, which the
+/// sidebar store is in memory, preferences use their own defaults, the vault is a fresh one of the demo's own (secrets
+/// and keys in memory, never the keychain) that doesn't sync, GitHub repositories stay hidden and the shared projects
+/// are the demo's. The notes are written into the app's temporary folder, which the
 /// sandbox lets it read on the Mac and on iOS.
 ///
 ///   --screenshot-demo        the demo notes and projects ("Atlas Docs" open in the sidebar)
@@ -14,6 +18,8 @@ import VaultKit
 ///   --welcome                the welcome (no note open)
 ///   --open-sheet <name>      over the note: `github` (Connect GitHub), `rename` or `delete` (the kit's overlays)
 ///   --settings               opens the Settings window too (Mac)
+///   --add-folder <folder>    the shared projects are the folder's repositories instead, in groups as Git adds them
+///                            (repeatable); picking one opens it without asking for the folder
 ///
 /// `dev-screenshots` takes every scene in one launch: the window opens each next scene's arguments in place.
 enum ScreenshotDemo {
@@ -49,6 +55,34 @@ enum ScreenshotDemo {
     } else {
       Screenshots.prepare(waitsForReady: true)
     }
+  }
+
+  /// Before anything opens the vault: a fresh store of the demo's own (with the `--add-folder` projects), and secrets
+  /// and keys in memory, so the demo never touches the user's vault or keychain.
+  @MainActor static func prepareVault() {
+    VaultSecrets.useInMemoryStore()
+    let vault = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenshotDemoVault", isDirectory: true)
+    try? FileManager.default.removeItem(at: vault)
+    try? FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+    #if os(Windows)
+      _ = "VAULT_DIRECTORY".withCString(encodedAs: UTF16.self) { name in
+        vault.path.withCString(encodedAs: UTF16.self) { SetEnvironmentVariableW(name, $0) }
+      }
+    #else
+      setenv("VAULT_DIRECTORY", vault.path, 1)
+    #endif
+    guard let store = Vault.shared.store else { return }
+    for folder in addedFolders {
+      let root = URL(fileURLWithPath: folder, isDirectory: true)
+      let found = VaultProjectDiscovery.scan(root)
+      for repository in found.repositories { _ = try? store.addProject(path: repository.path) }
+      try? store.arrangeProjects(found.repositories.map(\.path), roots: [root.path])
+    }
+  }
+
+  /// `--add-folder`'s folders: the shared projects come from the demo's vault instead of `projectTree`.
+  static var addedFolders: [String] {
+    zip(CommandLine.arguments, CommandLine.arguments.dropFirst()).filter { $0.0 == "--add-folder" }.map(\.1)
   }
 
   static func value(_ option: String) -> String? {

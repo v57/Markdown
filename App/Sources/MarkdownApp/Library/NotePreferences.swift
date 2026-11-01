@@ -2,17 +2,20 @@ import Foundation
 import Observation
 import VaultKit
 
-/// Pinned notes and recently opened notes, kept in the app's defaults on this device
+/// Pinned notes, recently opened notes and when each shared project was last opened, kept in the app's defaults on this device
 /// (by path: the notes themselves stay plain files with nothing added to them), per vault account: a window lists
 /// only its account's (Personal keeps the keys it had).
 @Observable final class NotePreferences {
   private(set) var pinned: Set<URL>
   /// Most recent first.
   private(set) var recents: [URL]
+  /// When the sidebar last showed each shared project (vault project ids), for its Recently Opened order.
+  private(set) var projectsOpened: [String: Date]
 
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private let pinnedKey: String
   @ObservationIgnored private let recentsKey: String
+  @ObservationIgnored private let projectsKey: String
   private static let recentsLimit = 12
 
   /// `account` is the window's vault account id (`Vault.accountID`).
@@ -21,8 +24,11 @@ import VaultKit
     let suffix = account == VaultAccount.personal.id ? "" : ".\(account)"
     pinnedKey = "pinnedNotes" + suffix
     recentsKey = "recentNotes" + suffix
+    projectsKey = "projectsOpened" + suffix
     pinned = Set((defaults.stringArray(forKey: pinnedKey) ?? []).map { URL(fileURLWithPath: $0) })
     recents = (defaults.stringArray(forKey: recentsKey) ?? []).map { URL(fileURLWithPath: $0) }
+    projectsOpened = (defaults.dictionary(forKey: projectsKey) as? [String: Double] ?? [:])
+      .mapValues { Date(timeIntervalSince1970: $0) }
   }
 
   func isPinned(_ url: URL) -> Bool { pinned.contains(url) }
@@ -39,6 +45,12 @@ import VaultKit
     recents.insert(url, at: 0)
     if recents.count > Self.recentsLimit { recents.removeLast(recents.count - Self.recentsLimit) }
     save()
+  }
+
+  /// Records that the sidebar showed a shared project (`VaultProject.id`).
+  func openedProject(_ id: String) {
+    projectsOpened[id] = .now
+    defaults.set(projectsOpened.mapValues(\.timeIntervalSince1970), forKey: projectsKey)
   }
 
   /// Forgets the recent notes (a screenshot scene opened in place starts as a launch would).

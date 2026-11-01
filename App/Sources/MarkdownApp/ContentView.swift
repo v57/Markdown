@@ -184,7 +184,8 @@ struct ContentView: View {
       library.expanded.removeAll()
     }
     library.projectPaths = SidebarProjects.paths(vault)
-    library.add([ScreenshotDemo.docs], existing: folders, context: context)
+    // Atlas Docs is one of the demo's own projects, not one of `--add-folder`'s.
+    if ScreenshotDemo.addedFolders.isEmpty { library.add([ScreenshotDemo.docs], existing: folders, context: context) }
     navigator.item = .allNotes
     if let path = ScreenshotDemo.value("--open") {
       navigator.open(FolderLibrary.canonical(ScreenshotDemo.root.appendingPathComponent(path)))

@@ -18,8 +18,10 @@ struct MarkdownWindow: View {
 
   var body: some View {
     if ScreenshotDemo.isOn {
-      // The demo's window is Personal's, without the picker: the user's accounts stay out of screenshots.
+      // The demo's window is Personal's, without the picker: the user's accounts stay out of screenshots. Its
+      // settings (the sidebar's sections, groups, layouts) are the demo's own, apart from the user's.
       content(.shared)
+        .defaultAppStorage(ScreenshotDemo.defaults)
       #if os(macOS)
         .task { if ScreenshotDemo.flag("--settings") { openSettings() } }
       #endif

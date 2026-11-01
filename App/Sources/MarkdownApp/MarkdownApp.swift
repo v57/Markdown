@@ -39,6 +39,7 @@ public struct MarkdownApp: App {
     #endif
     // Notes sync through the vault (iCloud, encrypted, shared with Shell); never the screenshot demo's.
     if ScreenshotDemo.isOn {
+      ScreenshotDemo.prepareVault()
       ScreenshotDemo.write()
     } else {
       Vault.shared.startSync()
