@@ -24,6 +24,9 @@ struct FileNode: Identifiable, Hashable {
   private(set) var generation = 0
   /// Why the last add failed, for an alert.
   var lastError: String?
+  /// Folders the last add was given that aren't projects (as dropped or picked, with their access): the sidebar
+  /// offers them, and what they hold, to the vault (`VaultImportSheet`).
+  var notProjects: [URL] = []
   /// The app's own folders, beside the sidebar folders: the notes folder (and GitHub
   /// repositories). Always accessible — they live in the app's container or iCloud.
   var builtInRoots: [URL] = []
@@ -45,6 +48,7 @@ struct FileNode: Identifiable, Hashable {
   /// show for each item (new or already there); anything else is reported in `lastError`.
   @discardableResult
   func add(_ urls: [URL], existing: [SidebarFolder], context: ModelContext) -> [URL] {
+    notProjects = []
     var known = Set(existing.map(\.path))
     let roots = roots(existing)
     var shown: [URL] = []
@@ -64,11 +68,10 @@ struct FileNode: Identifiable, Hashable {
         shown.append(standardized)
         continue
       }
-      // A folder joins the sidebar only as a shared project's (the Projects section).
+      // A folder joins the sidebar only as a shared project's (the Projects section); another is offered as one.
       guard !isDirectory || projectPaths.contains(standardized.path) else {
         if started { url.stopAccessingSecurityScopedResource() }
-        lastError =
-          "“\(url.lastPathComponent)” isn’t one of your projects. Markdown shows the notes folder, connected GitHub repositories and the projects the v57 apps share: add the folder as a project in Code or Git."
+        notProjects.append(url)
         continue
       }
       guard known.insert(standardized.path).inserted else {

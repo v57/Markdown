@@ -19,6 +19,10 @@ struct SidebarView: View {
   /// The window's account (Personal outside a `VaultAccountScope`, as in the screenshot demo).
   @Environment(\.vault) private var windowVault
   @Environment(FolderLibrary.self) private var library
+  /// What a dropped folder that isn't a project holds, offered to the vault; `offeredFolders` are the folders as
+  /// dropped (with their access), added once the sheet makes them projects.
+  @State private var importOffer: VaultImportOffer?
+  @State private var offeredFolders: [URL] = []
   @Environment(Navigator.self) private var navigator
   @Environment(NotesLocation.self) private var notes
   @Environment(FileActions.self) private var actions
@@ -106,6 +110,11 @@ struct SidebarView: View {
       message: Binding(get: { repositories.message?.text }, set: { if $0 == nil { repositories.message = nil } }),
       systemImage: "arrow.triangle.branch", hue: .purple)
     .kitNotice("Couldn’t Add Folder", message: Bindable(library).lastError)
+    // A dropped folder that isn't a project: offered as one, with what else it holds (`FolderLibrary.notProjects`).
+    .onChange(of: library.notProjects) { _, folders in offer(folders) }
+    .kitSheet(item: $importOffer) { offer in
+      VaultImportSheet(offer, vault: windowVault ?? .shared, app: "Markdown") { added in addOffered(added) }
+    }
     .navigationTitle("Markdown")
     // The bottom bar has the toggle; the note's Show Sidebar button brings it back.
     .toolbar(removing: .sidebarToggle)
@@ -284,6 +293,35 @@ struct SidebarView: View {
   private func isDeletable(_ url: URL) -> Bool {
     let roots = library.roots(folders)
     return library.root(of: url, roots: roots) != nil && !roots.contains(url)
+  }
+
+  /// Scans folders that aren't projects (inside their drop's access) and offers what the vault lacks; with nothing
+  /// to offer, says why the folder isn't listed.
+  private func offer(_ folders: [URL]) {
+    guard !folders.isEmpty else { return }
+    let store = (windowVault ?? .shared).store
+    Task {
+      let started = folders.map { $0.startAccessingSecurityScopedResource() }
+      let offer = await VaultImportOffer.scan(folders, store: store)
+      for (folder, started) in zip(folders, started) where started { folder.stopAccessingSecurityScopedResource() }
+      if let offer {
+        offeredFolders = folders
+        importOffer = offer
+      } else {
+        library.lastError =
+          "“\(folders[0].lastPathComponent)” isn’t one of your projects. Markdown shows the notes folder, connected GitHub repositories and the projects the v57 apps share."
+      }
+    }
+  }
+
+  /// The dropped folders the sheet just made projects join the sidebar, with the access the drop gave.
+  private func addOffered(_ added: [URL]) {
+    let paths = Set(added.map { FolderLibrary.canonical($0).path })
+    let folders = offeredFolders.filter { paths.contains(FolderLibrary.canonical($0).path) }
+    offeredFolders = []
+    guard !folders.isEmpty else { return }
+    library.projectPaths.formUnion(folders.map { FolderLibrary.canonical($0).path })
+    add(folders)
   }
 
   /// Adds dropped files (and a shared project's folder) and shows the first.
