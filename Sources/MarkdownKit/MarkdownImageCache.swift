@@ -261,8 +261,9 @@ public final class MarkdownImageCache: @unchecked Sendable {
 
   // MARK: - Animation
 
-  /// An animated image's frames, decoded on demand from its source. Frames are kept
-  /// while they fit `frameBudget` bytes; past that only the most recent one is.
+  /// An animated image's frames, decoded on demand from its source on a queue of their
+  /// own (never while drawing), the next one ahead of time. Frames are kept while they
+  /// fit `frameBudget` bytes; past that only the two most recent are.
   final class Animation: @unchecked Sendable {
     private let source: CGImageSource
     private let delays: [Double]
@@ -271,7 +272,12 @@ public final class MarkdownImageCache: @unchecked Sendable {
     private let maxPixel: Int
     private let lock = NSLock()
     private var frames: [Int: PlatformImage] = [:]
+    /// Frames being decoded.
+    private var decoding: Set<Int> = []
+    /// The last frame drawn: shown again while the one due is still decoding.
+    private var shown: PlatformImage?
     private let keepsAllFrames: Bool
+    private let queue = DispatchQueue(label: "MarkdownImageCache.Animation", qos: .userInitiated)
 
     init?(source: CGImageSource, count: Int, natural: CGSize, frameBudget: Int = 48 * 1024 * 1024) {
       self.source = source
@@ -305,6 +311,8 @@ public final class MarkdownImageCache: @unchecked Sendable {
       return 0.1
     }
 
+    /// The frame due at `time`, or the last one drawn while it decodes (nil before the
+    /// first: the still image stands in).
     func frame(at time: TimeInterval) -> PlatformImage? {
       var t = time.truncatingRemainder(dividingBy: total)
       var index = 0
@@ -313,20 +321,31 @@ public final class MarkdownImageCache: @unchecked Sendable {
         index += 1
       }
       lock.lock()
+      defer { lock.unlock() }
       if let cached = frames[index] {
-        lock.unlock()
+        shown = cached
+        decode((index + 1) % delays.count)
         return cached
       }
-      lock.unlock()
-      guard let cg = MarkdownImageCache.frame(source, index: index, maxPixel: maxPixel) else {
-        return nil
+      decode(index)
+      return shown
+    }
+
+    /// Starts decoding frame `index` unless it is decoded or decoding. Call with `lock` held.
+    private func decode(_ index: Int) {
+      guard frames[index] == nil, !decoding.contains(index) else { return }
+      decoding.insert(index)
+      queue.async { [self] in
+        let image = MarkdownImageCache.frame(source, index: index, maxPixel: maxPixel)
+          .map { MarkdownImageCache.platformImage($0, size: natural) }
+        lock.lock()
+        decoding.remove(index)
+        if let image {
+          if !keepsAllFrames { frames = frames.filter { $0.key == (index + delays.count - 1) % delays.count } }
+          frames[index] = image
+        }
+        lock.unlock()
       }
-      let image = MarkdownImageCache.platformImage(cg, size: natural)
-      lock.lock()
-      if !keepsAllFrames { frames.removeAll() }
-      frames[index] = image
-      lock.unlock()
-      return image
     }
   }
 }

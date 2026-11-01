@@ -638,8 +638,8 @@ struct FileTreeRow: View {
   private func row(noteCount: Int, isExpandable: Bool) -> some View {
     label(
       SidebarRow(title ?? node.name, isExpanded: isExpandable ? isExpanded : nil) {
-        if let image = icon.flatMap(Image.init(data:)) {
-          Avatar(name: title ?? node.name, image: image, kind: .thing, size: 18)
+        if let icon {
+          Avatar(name: title ?? node.name, imageData: icon, kind: .thing, size: 18)
         } else {
           RowTile(systemImage: systemImage)
         }
