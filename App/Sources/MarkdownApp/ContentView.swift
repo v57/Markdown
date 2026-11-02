@@ -48,7 +48,7 @@ struct ContentView: View {
     NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
       // On iPhone the note is pushed over the sidebar.
       SidebarView(columnVisibility: idiom == .phone ? nil : $columns) { compactColumn = .detail }
-        .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 420)
+        .kitSidebarColumn()
     } detail: {
       NavigationStack {
         DocumentView()
