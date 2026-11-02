@@ -69,8 +69,7 @@ struct MarkdownWindow: View {
         SettingsPane(Self.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
           VaultAccountsSettings()
         }
-        SettingsPane("Devices", systemImage: "laptopcomputer", hue: .blue, section: "v57") { VaultDevicesSettings() }
-        // Your iPhone and iPad sign in to this Mac over SSH: which of them can, and the other keys.
+        // Your devices, and your iPhone and iPad sign in to this Mac over SSH: which of them can, and the other keys.
         SettingsPane("Remote", systemImage: "network", hue: .teal, section: "v57") { VaultRemoteSettings() }
       }
       .frame(width: 680, height: 460)
