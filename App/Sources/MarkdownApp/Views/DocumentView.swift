@@ -21,6 +21,9 @@ struct DocumentView: View {
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @Environment(\.modelContext) private var context
   @Environment(\.kitIdiom) private var idiom
+  /// Off while one of the kit's overlays covers the window: the Format menu then leaves the note alone (⌘. and the
+  /// other shortcuts would edit it behind the overlay).
+  @Environment(\.isEnabled) private var isEnabled
   @State private var content: Content = .empty
   @State private var saver = DocumentSaver()
   /// What was selected when the saver's file opened.
@@ -97,8 +100,12 @@ struct DocumentView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
           withAnimation(.kit) { isKeyboardShown = false }
         }
+      #elseif os(macOS)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          if isShowingDocument, isEditing { quickActionsBar }
+        }
       #endif
-      .focusedSceneValue(\.editorCommands, isShowingDocument && isEditing ? commands : nil)
+      .focusedSceneValue(\.editorCommands, isShowingDocument && isEditing && isEnabled ? commands : nil)
       .focusedSceneValue(\.documentActions, documentActions)
       .task(id: LoadKey(selection: navigator.selection, item: navigator.item, generation: library.generation)) {
         let shown = WindowState.Shown(selection: navigator.selection, item: navigator.item)
@@ -279,9 +286,30 @@ struct DocumentView: View {
       }
   }
 
+  /// The toggles for the selected text and lines, with their shortcuts.
+  private var quickActions: some View {
+    ForEach(MarkdownQuickAction.allCases) { action in
+      Button(action.title, systemImage: action.systemImage) { commands.apply(action.format) }
+        .kitHelp(action.title, shortcut: idiom == .mac ? action.shortcut : nil)
+    }
+  }
+
+  #if os(macOS)
+    /// Under the editor while editing.
+    private var quickActionsBar: some View {
+      HStack(spacing: 0) { quickActions }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.kitToolIcon)
+        .padding(.horizontal, KitMetrics.gutter)
+        .frame(height: 40)
+        .kitSurface(.floating, cornerRadius: KitMetrics.radiusCapsule)
+        .padding(.bottom, KitMetrics.gutter)
+    }
+  #endif
+
   #if os(iOS)
-    /// Above the keyboard: text styles, checklist, list, table, code, link — and a
-    /// button that puts the keyboard away.
+    /// Above the keyboard: the other text styles and blocks, the toggles for the selected lines, and a button that puts
+    /// the keyboard away.
     private var formattingBar: some View {
       HStack(spacing: 0) {
         formattingButtons
@@ -305,18 +333,14 @@ struct DocumentView: View {
           Button("Bold", systemImage: "bold") { commands.apply(.bold) }
           Button("Italic", systemImage: "italic") { commands.apply(.italic) }
           Button("Strikethrough", systemImage: "strikethrough") { commands.apply(.strikethrough) }
-          Button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { commands.apply(.inlineCode) }
           Divider()
-          Button("Quote", systemImage: "text.quote") { commands.apply(.quote) }
-          Button("Numbered List", systemImage: "list.number") { commands.apply(.numberedList) }
+          Button("Table", systemImage: "tablecells") { commands.apply(.table) }
+          Button("Code Block", systemImage: "curlybraces") { commands.apply(.codeBlock) }
+          Button("Link", systemImage: "link") { commands.apply(.link) }
         }
         .frame(maxWidth: .infinity, minHeight: 44)
       Group {
-        Button("Checklist", systemImage: "checklist") { commands.apply(.checklist) }
-        Button("Bulleted List", systemImage: "list.bullet") { commands.apply(.bulletList) }
-        Button("Table", systemImage: "tablecells") { commands.apply(.table) }
-        Button("Code Block", systemImage: "curlybraces") { commands.apply(.codeBlock) }
-        Button("Link", systemImage: "link") { commands.apply(.link) }
+        quickActions
         Button("Hide Keyboard", systemImage: "keyboard.chevron.compact.down") {
           UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }

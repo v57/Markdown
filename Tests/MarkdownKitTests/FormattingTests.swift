@@ -65,4 +65,69 @@ import Testing
     #expect(apply(.codeBlock, "[let x = 1]\n") == "```\n|let x = 1\n```\n")
     #expect(apply(.table, "Intro|") == "Intro\n\n| [Column] | Column |\n| --- | --- |\n|  |  |")
   }
+
+  /// The text after `format` on all of it selected: for checkboxes, whose brackets `apply` would read as a selection.
+  private func whole(_ format: MarkdownFormat, _ text: String) -> String {
+    let edit = MarkdownFormatting.edit(
+      applying: format, to: text, selection: NSRange(location: 0, length: (text as NSString).length))
+    return (text as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+  }
+
+  @Test func toggleList() {
+    #expect(apply(.toggleList, "it|em") == "- it|em")
+    #expect(apply(.toggleList, "- it|em") == "it|em")
+    #expect(apply(.toggleList, "- [x] it|em") == "it|em")
+    #expect(apply(.toggleList, "1. it|em") == "- it|em")
+    #expect(apply(.toggleList, "[one\n\ntwo\n]") == "[- one\n\n- two]\n")
+    #expect(whole(.toggleList, "- one\n- [ ] two") == "one\ntwo")
+    #expect(whole(.toggleList, "one\n- [ ] two") == "- one\n- [ ] two")
+    #expect(apply(.toggleList, "> qu|ote") == "> - qu|ote")
+    #expect(apply(.toggleList, "wo[rd] more") == "- wo[rd] more")
+  }
+
+  @Test func toggleNumberedList() {
+    #expect(apply(.numberedList, "it|em") == "1. it|em")
+    #expect(apply(.numberedList, "1. it|em") == "it|em")
+    #expect(apply(.numberedList, "[- one\ntwo]") == "[1. one\n2. two]")
+    #expect(apply(.numberedList, "[1. one\n3. two]") == "[one\ntwo]")
+  }
+
+  @Test func toggleCheckbox() {
+    #expect(apply(.toggleCheckbox, "it|em") == "- [ ] it|em")
+    #expect(apply(.toggleCheckbox, "- it|em") == "- [ ] it|em")
+    #expect(apply(.toggleCheckbox, "- [ ] it|em") == "- [x] it|em")
+    #expect(apply(.toggleCheckbox, "- [x] it|em") == "- [ ] it|em")
+    #expect(apply(.toggleCheckbox, "* [ ] it|em") == "* [x] it|em")
+    #expect(whole(.toggleCheckbox, "- [x] one\ntwo") == "- [x] one\n- [ ] two")
+    #expect(whole(.toggleCheckbox, "- [x] one\n- [ ] two") == "- [x] one\n- [x] two")
+    #expect(whole(.toggleCheckbox, "- [x] one\n- [x] two") == "- [ ] one\n- [ ] two")
+    #expect(apply(.toggleCheckedCheckbox, "it|em") == "- [x] it|em")
+    #expect(apply(.toggleCheckedCheckbox, "- [ ] it|em") == "- [x] it|em")
+    #expect(apply(.toggleCheckedCheckbox, "- [x] it|em") == "- [ ] it|em")
+    #expect(whole(.toggleCheckedCheckbox, "one\n- [ ] two") == "- [x] one\n- [x] two")
+  }
+
+  @Test func toggleCode() {
+    #expect(apply(.toggleCode, "a [word] here") == "a `[word]` here")
+    #expect(apply(.toggleCode, "a `[word]` here") == "a [word] here")
+    #expect(apply(.toggleCode, "a `wo|rd` here") == "a wo|rd here")
+    #expect(apply(.toggleCode, "ca|ret") == "ca`|`ret")
+    #expect(apply(.toggleCode, "[one\ntwo]\n") == "```\n[one\ntwo]\n```\n")
+    #expect(apply(.toggleCode, "o[ne\ntw]o") == "```\n[one\ntwo]\n```")
+    #expect(apply(.toggleCode, "```\n[one\ntwo]\n```\n") == "[one\ntwo]\n")
+    #expect(apply(.toggleCode, "```\n[one\ntwo]\n```") == "[one\ntwo]")
+    #expect(apply(.toggleCode, "[```\none\n```\n]") == "[one]\n")
+    #expect(apply(.toggleCode, "```\non|e\n```\nnext") == "on|e\nnext")
+  }
+
+  @Test func toggleNote() {
+    #expect(apply(.quote, "it|em") == "> it|em")
+    #expect(apply(.quote, "> it|em") == "it|em")
+    #expect(apply(.quote, "- it|em") == "> - it|em")
+    #expect(apply(.quote, "> - it|em") == "- it|em")
+    #expect(apply(.quote, "[one\n\ntwo]") == "[> one\n> \n> two]")
+    #expect(apply(.quote, "[> one\n> \n> two]") == "[one\n\ntwo]")
+    #expect(apply(.quote, "> > it|em") == "> it|em")
+    #expect(apply(.quote, "wo[rd]") == "> wo[rd]")
+  }
 }

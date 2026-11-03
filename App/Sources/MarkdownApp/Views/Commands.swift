@@ -102,6 +102,13 @@ struct MarkdownCommands: Commands {
       Divider()
       format("Code Block", .codeBlock, "c", [.command, .option])
       format("Table", .table, "t", [.command, .option])
+      Divider()
+      format(.list, "-", .command)
+      format(.checkbox, "=", .command)
+      format(.checkedCheckbox, "+", .command)
+      format(.code, "`", .command)
+      format(.note, ".", .command)
+      format(.numberedList, "1", .command)
     }
     CommandGroup(after: .windowArrangement) {
       Divider()
@@ -109,6 +116,10 @@ struct MarkdownCommands: Commands {
         .keyboardShortcut("1", modifiers: [.command, .shift])
         .disabled(window == nil)
     }
+  }
+
+  private func format(_ action: MarkdownQuickAction, _ key: KeyEquivalent, _ modifiers: EventModifiers) -> some View {
+    format(action.title, action.format, key, modifiers)
   }
 
   private func format(

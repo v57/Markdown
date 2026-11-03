@@ -10,6 +10,67 @@ public enum MarkdownFormat: Hashable, Sendable {
   case heading(Int)
   case bulletList, numberedList, checklist, quote
   case codeBlock, table
+  /// A list of the selected lines, or no list and no checkboxes when they all are one.
+  case toggleList
+  /// New checkboxes unchecked; lines that all have one are checked, then unchecked.
+  case toggleCheckbox
+  /// New checkboxes checked, unchecked when they all are.
+  case toggleCheckedCheckbox
+  /// Backticks in a line, a fenced block over several lines; off again inside either.
+  case toggleCode
+}
+
+/// The toggles a host's quick actions bar offers, with what its buttons and menu items show. Each works on every
+/// selected line and is one undoable edit (`MarkdownEditorCommands.apply(_:)`).
+public enum MarkdownQuickAction: String, CaseIterable, Identifiable, Sendable {
+  case list, checkbox, checkedCheckbox, code, note, numberedList
+
+  public var id: String { rawValue }
+
+  public var format: MarkdownFormat {
+    switch self {
+    case .list: .toggleList
+    case .checkbox: .toggleCheckbox
+    case .checkedCheckbox: .toggleCheckedCheckbox
+    case .code: .toggleCode
+    case .note: .quote
+    case .numberedList: .numberedList
+    }
+  }
+
+  public var title: String {
+    switch self {
+    case .list: "Toggle List"
+    case .checkbox: "Toggle Checkbox"
+    case .checkedCheckbox: "Toggle Checked Checkbox"
+    case .code: "Toggle Code"
+    case .note: "Toggle Note"
+    case .numberedList: "Toggle Numbered List"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .list: "list.bullet"
+    case .checkbox: "square"
+    case .checkedCheckbox: "checkmark.square"
+    case .code: "chevron.left.forwardslash.chevron.right"
+    case .note: "text.quote"
+    case .numberedList: "list.number"
+    }
+  }
+
+  /// The shortcut as a menu shows it.
+  public var shortcut: String {
+    switch self {
+    case .list: "⌘-"
+    case .checkbox: "⌘="
+    case .checkedCheckbox: "⇧⌘="
+    case .code: "⌘`"
+    case .note: "⌘."
+    case .numberedList: "⌘1"
+    }
+  }
 }
 
 /// One text change: replace `range` with `replacement`, then select `selection`
@@ -46,11 +107,15 @@ public enum MarkdownFormatting {
     case .heading(let level):
       return prefixLines(ns, selection, kind: .heading(max(1, min(6, level))))
     case .bulletList: return prefixLines(ns, selection, kind: .bullet)
-    case .numberedList: return prefixLines(ns, selection, kind: .numbered)
+    case .numberedList: return toggleListLines(ns, selection, numbered: true)
     case .checklist: return prefixLines(ns, selection, kind: .checklist)
-    case .quote: return prefixLines(ns, selection, kind: .quote)
+    case .quote: return toggleQuote(ns, selection)
     case .codeBlock: return codeBlock(ns, selection)
     case .table: return table(ns, selection)
+    case .toggleList: return toggleListLines(ns, selection, numbered: false)
+    case .toggleCheckbox: return toggleCheckbox(ns, selection, createsChecked: false)
+    case .toggleCheckedCheckbox: return toggleCheckbox(ns, selection, createsChecked: true)
+    case .toggleCode: return toggleCode(ns, selection)
     }
   }
 
@@ -198,6 +263,212 @@ public enum MarkdownFormatting {
       newSelection = NSRange(location: block.location, length: length)
     }
     return MarkdownEdit(range: block, replacement: replacement, selection: newSelection)
+  }
+
+  // MARK: - Toggles
+
+  /// A line split around its list marker: what stays before it (indentation and quote markers), the marker, the text.
+  private struct ListLine {
+    enum Kind { case bullet, numbered, unchecked, checked }
+    var lead: String
+    var marker: String
+    var kind: Kind?
+    var text: String
+
+    private static let pattern = try! NSRegularExpression(
+      pattern: #"^([ \t]*(?:>[ \t]?[ \t]*)*)([-*+][ \t]+\[[ xX]\][ \t]+|[-*+][ \t]+|\d+[.)][ \t]+)?"#)
+
+    init(_ line: String) {
+      let ns = line as NSString
+      let match = Self.pattern.firstMatch(in: line, range: NSRange(location: 0, length: ns.length))!
+      lead = ns.substring(with: match.range(at: 1))
+      let range = match.range(at: 2)
+      marker = range.location == NSNotFound ? "" : ns.substring(with: range)
+      text = ns.substring(from: NSMaxRange(match.range))
+      if marker.contains("[ ]") {
+        kind = .unchecked
+      } else if marker.contains("[") {
+        kind = .checked
+      } else if marker.first?.isNumber == true {
+        kind = .numbered
+      } else if !marker.isEmpty {
+        kind = .bullet
+      }
+    }
+
+    var line: String { lead + marker + text }
+    /// Where the line's text starts.
+    var textStart: Int { (lead as NSString).length + (marker as NSString).length }
+  }
+
+  /// Rewrites the selected lines (`rewrite` gets those it should change: all but blank ones, unless `includesBlank` or
+  /// the only line) as one edit. On one line the caret or selection stays on the same text; several stay selected.
+  private static func rewriteLines(
+    _ ns: NSString, _ selection: NSRange, includesBlank: Bool = false, _ rewrite: ([ListLine]) -> [ListLine]
+  ) -> MarkdownEdit {
+    let block = ns.lineRange(for: selection)
+    var lines = ns.substring(with: block).components(separatedBy: "\n")
+    let endsWithNewline = lines.count > 1 && lines.last == ""
+    if endsWithNewline { lines.removeLast() }
+    let single = lines.count == 1
+    let targets = lines.indices.filter {
+      single || includesBlank || !lines[$0].trimmingCharacters(in: .whitespaces).isEmpty
+    }
+    let rewritten = rewrite(targets.map { ListLine(lines[$0]) })
+    for (index, line) in zip(targets, rewritten) { lines[index] = line.line }
+    let replacement = lines.joined(separator: "\n") + (endsWithNewline ? "\n" : "")
+    guard single, let old = targets.first.map({ _ in ListLine(ns.substring(with: block).replacingOccurrences(of: "\n", with: "")) }),
+      let new = rewritten.first
+    else {
+      let length = (replacement as NSString).length - (endsWithNewline ? 1 : 0)
+      return MarkdownEdit(range: block, replacement: replacement, selection: NSRange(location: block.location, length: length))
+    }
+    func moved(_ location: Int) -> Int {
+      let column = location - block.location
+      let delta = new.textStart - old.textStart
+      return block.location + (column <= old.textStart ? new.textStart : column + delta)
+    }
+    let start = moved(selection.location)
+    let end = selection.length == 0 ? start : max(start, moved(NSMaxRange(selection)))
+    return MarkdownEdit(range: block, replacement: replacement, selection: NSRange(location: start, length: end - start))
+  }
+
+  /// A bulleted or numbered list of the lines; off when they all are that list (checkboxes count as bullets, so they go
+  /// too). Lines already in a bulleted list keep their marker and checkbox while the others join them.
+  private static func toggleListLines(_ ns: NSString, _ selection: NSRange, numbered: Bool) -> MarkdownEdit {
+    rewriteLines(ns, selection) { lines in
+      let isOn: (ListLine) -> Bool = { line in
+        numbered ? line.kind == .numbered : line.kind != nil && line.kind != .numbered
+      }
+      let removes = !lines.isEmpty && lines.allSatisfy(isOn)
+      return lines.enumerated().map { index, line in
+        var line = line
+        if removes {
+          line.marker = ""
+        } else if numbered {
+          line.marker = "\(index + 1). "
+        } else if !isOn(line) {
+          line.marker = "- "
+        }
+        return line
+      }
+    }
+  }
+
+  /// Lines without a checkbox get one. Once they all have one: any unchecked (or `createsChecked` with any unchecked)
+  /// makes them all checked, all checked makes them unchecked.
+  private static func toggleCheckbox(_ ns: NSString, _ selection: NSRange, createsChecked: Bool) -> MarkdownEdit {
+    rewriteLines(ns, selection) { lines in
+      let allBoxes = lines.allSatisfy { $0.kind == .checked || $0.kind == .unchecked }
+      let allChecked = lines.allSatisfy { $0.kind == .checked }
+      return lines.map { line in
+        var line = line
+        let isBox = line.kind == .checked || line.kind == .unchecked
+        if createsChecked || allBoxes {
+          let box = allChecked ? "[ ]" : "[x]"
+          line.marker =
+            isBox
+            ? line.marker.replacingOccurrences(of: #"\[[ xX]\]"#, with: box, options: .regularExpression)
+            : "- \(box) "
+        } else if !isBox {
+          line.marker = "- [ ] "
+        }
+        return line
+      }
+    }
+  }
+
+  /// `> ` before every selected line (a list stays a list inside the quote), blank lines too so the quote stays whole;
+  /// off when every line has one.
+  private static func toggleQuote(_ ns: NSString, _ selection: NSRange) -> MarkdownEdit {
+    rewriteLines(ns, selection, includesBlank: true) { lines in
+      let hasQuote: (ListLine) -> Bool = { $0.lead.contains(">") }
+      let removes = !lines.isEmpty && lines.allSatisfy(hasQuote)
+      return lines.map { line in
+        var line = line
+        let indent = String(line.lead.prefix { $0 == " " || $0 == "\t" })
+        if removes {
+          // One level: "> > x" keeps its inner quote.
+          let rest = line.lead.dropFirst(indent.count).dropFirst()
+          line.lead = indent + (rest.first == " " || rest.first == "\t" ? rest.dropFirst() : rest)
+        } else if !hasQuote(line) {
+          line.lead = indent + "> " + line.lead.dropFirst(indent.count)
+        }
+        return line
+      }
+    }
+  }
+
+  /// Backticks within a line, a fence around several; inside a fenced block or a code span it comes off instead.
+  private static func toggleCode(_ ns: NSString, _ selection: NSRange) -> MarkdownEdit {
+    if let fence = enclosingFence(ns, selection) { return removeFence(ns, fence, selection) }
+    let block = ns.lineRange(for: selection)
+    var body = ns.substring(with: block)
+    let endsWithNewline = body.hasSuffix("\n")
+    if endsWithNewline { body.removeLast() }
+    guard body.contains("\n") else {
+      return codeSpan(around: selection, in: ns, line: block) ?? wrap(ns, selection, marker: "`")
+    }
+    let fenced = "```\n" + body + "\n```" + (endsWithNewline ? "\n" : "")
+    return MarkdownEdit(
+      range: block, replacement: fenced,
+      selection: NSRange(location: block.location + 4, length: (body as NSString).length))
+  }
+
+  /// The fence lines around the selection (it may include them).
+  private static func enclosingFence(_ ns: NSString, _ selection: NSRange) -> (open: NSRange, close: NSRange)? {
+    var open: NSRange?
+    var marker = ""
+    var location = 0
+    while location < ns.length {
+      let line = ns.lineRange(for: NSRange(location: location, length: 0))
+      let content = ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
+      if content.hasPrefix("```") || content.hasPrefix("~~~") {
+        if let start = open {
+          if content.hasPrefix(marker) {
+            if selection.location >= start.location, NSMaxRange(selection) <= NSMaxRange(line) { return (start, line) }
+            open = nil
+          }
+        } else {
+          open = line
+          marker = String(content.prefix(3))
+        }
+      }
+      location = NSMaxRange(line)
+    }
+    return nil
+  }
+
+  private static func removeFence(_ ns: NSString, _ fence: (open: NSRange, close: NSRange), _ selection: NSRange) -> MarkdownEdit {
+    let whole = NSRange(location: fence.open.location, length: NSMaxRange(fence.close) - fence.open.location)
+    var body = ns.substring(with: NSRange(location: NSMaxRange(fence.open), length: fence.close.location - NSMaxRange(fence.open)))
+    let closeEndsLine = ns.substring(with: fence.close).hasSuffix("\n")
+    if !closeEndsLine, body.hasSuffix("\n") { body.removeLast() }
+    if selection.length == 0 {
+      let column = max(0, selection.location - NSMaxRange(fence.open))
+      let location = whole.location + min(column, (body as NSString).length)
+      return MarkdownEdit(range: whole, replacement: body, selection: NSRange(location: location, length: 0))
+    }
+    let length = (body as NSString).length - (body.hasSuffix("\n") ? 1 : 0)
+    return MarkdownEdit(range: whole, replacement: body, selection: NSRange(location: whole.location, length: max(0, length)))
+  }
+
+  /// Takes the backticks off the code span on the line that holds the selection.
+  private static func codeSpan(around selection: NSRange, in ns: NSString, line: NSRange) -> MarkdownEdit? {
+    var ticks: [Int] = []
+    for index in line.location..<NSMaxRange(line) where ns.character(at: index) == 96 { ticks.append(index) }
+    var pair = 0
+    while pair + 1 < ticks.count {
+      let (open, close) = (ticks[pair], ticks[pair + 1])
+      if selection.location > open, NSMaxRange(selection) <= close {
+        let inner = NSRange(location: open + 1, length: close - open - 1)
+        return MarkdownEdit(
+          range: NSRange(location: open, length: close - open + 1), replacement: ns.substring(with: inner),
+          selection: NSRange(location: selection.location - 1, length: selection.length))
+      }
+      pair += 2
+    }
+    return nil
   }
 
   // MARK: - Blocks
