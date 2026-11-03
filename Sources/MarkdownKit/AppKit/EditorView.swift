@@ -75,7 +75,8 @@
       if let text { textView.setText(text) }
       context.coordinator.textView = textView
       context.coordinator.appliedText = text
-      let scroll = NSScrollView()
+      let scroll = EditorScrollView()
+      scroll.documentCursor = .iBeam
       scroll.hasVerticalScroller = true
       scroll.hasHorizontalScroller = false
       scroll.autohidesScrollers = true
@@ -107,6 +108,20 @@
       var appliedAnchor: String?
       var resolvedDocument: URL?
       var hasResolver = false
+    }
+  }
+
+  /// The text view is only as tall as its text (the scroller covers exactly the document), so a click below the last
+  /// line lands here. It goes to the text view, which takes the focus and puts the caret at the end (or starts a drag
+  /// selection from there).
+  final class EditorScrollView: NSScrollView {
+    override func mouseDown(with event: NSEvent) {
+      guard let textView = documentView as? EditorTextView else {
+        super.mouseDown(with: event)
+        return
+      }
+      window?.makeFirstResponder(textView)
+      textView.mouseDown(with: event)
     }
   }
 
