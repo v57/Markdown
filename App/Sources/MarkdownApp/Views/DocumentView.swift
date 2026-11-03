@@ -58,11 +58,32 @@ struct DocumentView: View {
   var body: some View {
     contentView
       .kitPane(.content)
-      #if os(macOS) || os(Windows)
-        // The window's title (Window menu, Mission Control); the toolbar shows the rich title instead.
-        .navigationTitle(title)
-      #endif
-      .toolbar { toolbar }
+      // Back and forward lead the title at the bar's spacing; the Edit/Read switch and the note's actions trail it.
+      .kitToolbar(title) {
+        navigationButtons
+      } title: {
+        titleView
+      } tools: {
+        if case .document(let file, _) = content {
+          if idiom != .phone {
+            KitSegmented(selection: $isEditing, options: [("Edit", true), ("Read", false)])
+              .kitHelp("Edit or Read", shortcut: "⇧⌘E", meta: "Edit shows Markdown on the line you’re on")
+          }
+          ToolGroup(iconOnly: true) {
+            if case .failed = saver.state {
+              Button("Not Saved", systemImage: "exclamationmark.triangle", role: .destructive) { showsSaveError = true }
+                .kitHelp("Not Saved", meta: "The last edit couldn’t be saved", hue: .red)
+            }
+            if idiom == .phone {
+              Button(isEditing ? "Read" : "Edit", systemImage: isEditing ? "eye" : "pencil") { isEditing.toggle() }
+                .kitHelp(isEditing ? "Read" : "Edit", shortcut: "⇧⌘E")
+            }
+            ShareLink(item: file)
+              .kitHelp("Share")
+            moreMenu(file)
+          }
+        }
+      }
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         // The editor is UIKit, which SwiftUI's keyboard toolbar doesn't reach: the
@@ -152,59 +173,19 @@ struct DocumentView: View {
     }
   }
 
-  @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-    #if os(macOS)
-      // Back/forward and the note's rich title lead the editor's part of the toolbar, the
-      // Edit/Read switch and its actions trail it (a split view's `.navigation` items would sit
-      // over the list).
-      ToolbarItem {
-        ToolGroup(iconOnly: true) {
-          Button("Back", systemImage: "chevron.left") { navigator.goBack() }
-            .disabled(navigator.back.isEmpty)
-            .keyboardShortcut("[", modifiers: .command)
-            .kitHelp("Back", shortcut: "⌘[")
-          Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
-            .disabled(navigator.forward.isEmpty)
-            .keyboardShortcut("]", modifiers: .command)
-            .kitHelp("Forward", shortcut: "⌘]")
-        }
+  /// Back and forward, except on iPhone: its bar is short, so they're in the note's More menu.
+  @ViewBuilder private var navigationButtons: some View {
+    if idiom != .phone {
+      ToolGroup(iconOnly: true) {
+        Button("Back", systemImage: "chevron.left") { navigator.goBack() }
+          .disabled(navigator.back.isEmpty)
+          .keyboardShortcut("[", modifiers: .command)
+          .kitHelp("Back", shortcut: "⌘[")
+        Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
+          .disabled(navigator.forward.isEmpty)
+          .keyboardShortcut("]", modifiers: .command)
+          .kitHelp("Forward", shortcut: "⌘]")
       }
-      .kitToolbarItem()
-      ToolbarItem { titleView }
-        .kitToolbarItem()
-      if #available(macOS 26, *) {
-        ToolbarSpacer(.flexible)
-      }
-    #else
-      ToolbarItem(placement: .topBarLeading) {
-        titleView.fixedSize()
-      }
-      .kitToolbarItem()
-    #endif
-    if case .document(let file, _) = content {
-      if idiom != .phone {
-        ToolbarItem(placement: .primaryAction) {
-          KitSegmented(selection: $isEditing, options: [("Edit", true), ("Read", false)])
-            .kitHelp("Edit or Read", shortcut: "⇧⌘E", meta: "Edit shows Markdown on the line you’re on")
-        }
-        .kitToolbarItem()
-      }
-      ToolbarItem(placement: .primaryAction) {
-        ToolGroup(iconOnly: true) {
-          if case .failed = saver.state {
-            Button("Not Saved", systemImage: "exclamationmark.triangle", role: .destructive) { showsSaveError = true }
-              .kitHelp("Not Saved", meta: "The last edit couldn’t be saved", hue: .red)
-          }
-          if idiom == .phone {
-            Button(isEditing ? "Read" : "Edit", systemImage: isEditing ? "eye" : "pencil") { isEditing.toggle() }
-              .kitHelp(isEditing ? "Read" : "Edit", shortcut: "⇧⌘E")
-          }
-          ShareLink(item: file)
-            .kitHelp("Share")
-          moreMenu(file)
-        }
-      }
-      .kitToolbarItem()
     }
   }
 
@@ -286,7 +267,7 @@ struct DocumentView: View {
           .kitMenuHint(idiom == .mac ? "⌘S" : nil)
         Button("Reload", systemImage: "arrow.clockwise") { refresh() }
           .kitMenuHint(idiom == .mac ? "⌘R" : nil)
-        #if os(iOS)
+        if idiom == .phone {
           if !navigator.back.isEmpty || !navigator.forward.isEmpty {
             Divider()
             Button("Back", systemImage: "chevron.left") { navigator.goBack() }
@@ -294,7 +275,7 @@ struct DocumentView: View {
             Button("Forward", systemImage: "chevron.right") { navigator.goForward() }
               .disabled(navigator.forward.isEmpty)
           }
-        #endif
+        }
       }
   }
 
