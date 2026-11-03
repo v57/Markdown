@@ -38,6 +38,12 @@ import VaultKit
     save()
   }
 
+  /// Pins or unpins several notes at once.
+  func setPinned(_ urls: some Sequence<URL>, _ isPinned: Bool) {
+    if isPinned { pinned.formUnion(urls) } else { pinned.subtract(urls) }
+    save()
+  }
+
   /// Records a note the user opened, for the welcome screen and Quick Open.
   func opened(_ url: URL) {
     guard recents.first != url else { return }

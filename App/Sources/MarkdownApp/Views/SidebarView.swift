@@ -33,6 +33,8 @@ struct SidebarView: View {
   @State private var isDropTargeted = false
   @State private var allNotesCount: Int?
   @State private var showsNotesMenu = false
+  /// The notes selected together (⌘-click, ⇧-click, ⇧↑↓) while more than one is; the shown note stays as it was.
+  @State private var selectedNotes: Set<URL> = []
   @AppStorage(NoteSort.key) private var sortsByTitle = false
   #if os(macOS) || os(Windows)
     @Environment(NotePreferences.self) private var preferences
@@ -73,6 +75,7 @@ struct SidebarView: View {
         .disabled(notes.url == nil)
         .kitHelp("New Folder", shortcut: "⇧⌘N")
     }
+    .selectionContextMenu { (urls: Set<URL>) in noteMenu(urls) }
     .status { Label(storageStatus, systemImage: notes.isICloud ? "icloud" : deviceSymbol).labelStyle(.titleOnly) }
     .environment(list)
     // Files dropped anywhere on the sidebar join it (and a shared project's folder, its access).
@@ -82,7 +85,8 @@ struct SidebarView: View {
     } isTargeted: { isDropTargeted = $0 }
     #if os(macOS) || os(Windows)
       .onDeleteCommand {
-        if let url = noteSelection.wrappedValue, isDeletable(url) { actions.delete(url) }
+        let urls = noteSelection.wrappedValue.filter(isDeletable)
+        if urls.count == 1 { actions.delete(urls[urls.startIndex]) } else if !urls.isEmpty { deleteSelected(Array(urls)) }
       }
     #endif
     #if os(Windows)
@@ -110,6 +114,8 @@ struct SidebarView: View {
       message: Binding(get: { repositories.message?.text }, set: { if $0 == nil { repositories.message = nil } }),
       systemImage: "arrow.triangle.branch", hue: .purple)
     .kitNotice("Couldn’t Add Folder", message: Bindable(library).lastError)
+    // Showing another note (a link, Quick Open, a new note) ends a selection of several.
+    .onChange(of: navigator.selection) { selectedNotes = [] }
     #if os(macOS) || os(Windows)
       // A place inside a shared project (picked, or reached by a link, Quick Open or search) shows that project.
       .onChange(of: navigator.item, initial: true) { _, item in
@@ -229,19 +235,39 @@ struct SidebarView: View {
 
   // MARK: - Selection
 
-  /// The sidebar's selection is the shown note (not a folder shown by its README); the places are rows that list
-  /// their notes (`place(_:)`).
-  private var noteSelection: Binding<URL?> {
+  /// The sidebar's selection is the shown note (not a folder shown by its README), or several notes selected together;
+  /// the places are rows that list their notes (`place(_:)`). One row selected shows it; several leave the shown note.
+  private var noteSelection: Binding<Set<URL>> {
     Binding(
       get: {
-        guard let selection = navigator.selection, !FolderLibrary.isDirectory(selection) else { return nil }
-        return selection
+        if selectedNotes.count > 1 { return selectedNotes }
+        guard let selection = navigator.selection, !FolderLibrary.isDirectory(selection) else { return [] }
+        return [selection]
       },
-      set: { url in
-        guard let url else { return }
+      set: { urls in
+        guard urls.count == 1, let url = urls.first else {
+          if urls.count > 1 { selectedNotes = urls }
+          return
+        }
+        selectedNotes = []
         navigator.selection = url
         showsNote()
       })
+  }
+
+  /// A right click's menu: the note's own, or what acts on all of the notes selected together. Search results rename in
+  /// the prompt (their rows don't rename in place).
+  @ViewBuilder private func noteMenu(_ urls: Set<URL>) -> some View {
+    if urls.count > 1 {
+      NotesMenu(urls: urls.sorted { $0.path < $1.path }) { selectedNotes = [] }
+    } else if let url = urls.first {
+      NoteMenu(url: url, renamesInPlace: window.searchQuery.isEmpty)
+    }
+  }
+
+  private func deleteSelected(_ urls: [URL]) {
+    actions.delete(urls)
+    selectedNotes = []
   }
 
   // MARK: - All Notes
@@ -524,6 +550,13 @@ struct FileActionPrompts: ViewModifier {
         message: "This can’t be undone.", systemImage: "trash", confirm: "Delete"
       ) {
         actions.confirmDelete()
+      }
+      .kitConfirmation(
+        "Delete \(actions.deletingSeveral.count) Notes?",
+        isPresented: Binding(get: { !actions.deletingSeveral.isEmpty }, set: { if !$0 { actions.deletingSeveral = [] } }),
+        message: "This can’t be undone.", systemImage: "trash", confirm: "Delete"
+      ) {
+        actions.confirmDeleteSeveral()
       }
       .kitNotice("Couldn’t Complete the Action", message: $actions.error)
   }

@@ -34,7 +34,6 @@ struct PlaceNotes: View {
           NoteRow(note: note, isPinned: preferences.isPinned(note.url))
             .renamesInPlace(note.url, actions: actions)
             .draggable(note.url)
-            .kitContextMenu { NoteMenu(url: note.url, renamesInPlace: true) }
         }
       }
     }
@@ -134,6 +133,66 @@ struct NoteMenu: View {
   }
 }
 
+/// What a right click on several selected notes does to all of them: pin, encrypt, show, share and trash. Notes the app
+/// can't change (a file opened on its own) stay out of what changes them.
+struct NotesMenu: View {
+  let urls: [URL]
+  /// Runs after an action that changes the notes (they may be renamed or gone): the selection is over.
+  var didChange: () -> Void
+  @Environment(FolderLibrary.self) private var library
+  @Environment(FileActions.self) private var actions
+  @Environment(NotePreferences.self) private var preferences
+  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
+
+  var body: some View {
+    let pins = urls.allSatisfy(preferences.isPinned)
+    Button(pins ? "Unpin \(count)" : "Pin \(count)", systemImage: pins ? "pin.slash" : "pin") {
+      withAnimation { preferences.setPinned(urls, !pins) }
+    }
+    let changeable = urls.filter(isDeletable)
+    let encryptable = changeable.filter(actions.canToggleEncryption)
+    if !encryptable.isEmpty {
+      Divider()
+      if encryptable.contains(where: { !NoteFiles.isEncrypted($0) }) {
+        Button("Encrypt \(count)", systemImage: "lock") { setEncrypted(encryptable, true) }
+      }
+      if encryptable.contains(where: NoteFiles.isEncrypted) {
+        Button("Decrypt \(count)", systemImage: "lock.open") { setEncrypted(encryptable, false) }
+      }
+    }
+    #if os(macOS) || os(Windows)
+      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal(urls) }
+    #endif
+    KitMenuShare(items: urls)
+    if !changeable.isEmpty {
+      Divider()
+      #if os(macOS) || os(Windows)
+        Button("Move \(changeable.count) to Trash", systemImage: "trash", role: .destructive) { trash(changeable) }
+      #else
+        Button("Delete \(changeable.count)…", systemImage: "trash", role: .destructive) { trash(changeable) }
+      #endif
+    }
+  }
+
+  private var count: String { "\(urls.count) Notes" }
+
+  private func setEncrypted(_ urls: [URL], _ encrypted: Bool) {
+    for url in urls { actions.setEncrypted(url, encrypted) }
+    didChange()
+  }
+
+  private func trash(_ urls: [URL]) {
+    actions.delete(urls)
+    didChange()
+  }
+
+  /// Anything inside a root, but not a root itself.
+  private func isDeletable(_ url: URL) -> Bool {
+    let roots = library.roots(folders)
+    return library.root(of: url, roots: roots) != nil && !roots.contains(url)
+  }
+}
+
 /// The notes that match the sidebar's search line, below the places while it holds text.
 struct NoteSearchSection: View {
   @Environment(NoteListModel.self) private var model
@@ -153,7 +212,6 @@ struct NoteSearchSection: View {
                 Text(result.location).foregroundStyle(.kitTertiary)
               }
             }
-            .kitContextMenu { NoteMenu(url: result.url) }
         }
       }
     }
