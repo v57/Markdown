@@ -83,6 +83,7 @@ struct FileNode: Identifiable, Hashable {
         options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
       let folder = SidebarFolder(path: standardized.path, bookmark: bookmark, isFile: !isDirectory)
       context.insert(folder)
+      if isDirectory, let bookmark { remember(bookmark, for: standardized.path) }
       // Keep the access the drop/picker granted; the bookmark takes over next launch.
       if started { accessing.insert(url) }
       resolved[folder.persistentModelID] = standardized
@@ -94,6 +95,7 @@ struct FileNode: Identifiable, Hashable {
 
   /// Removes a folder from the sidebar (the folder on disk is untouched).
   func remove(_ folder: SidebarFolder, context: ModelContext) {
+    if !folder.isFile, let bookmark = folder.bookmark { remember(bookmark, for: folder.path) }
     if let url = resolved.removeValue(forKey: folder.persistentModelID),
       let held = accessing.first(where: { Self.canonical($0) == url })
     {
@@ -118,9 +120,52 @@ struct FileNode: Identifiable, Hashable {
     folder.bookmark = try? url.bookmarkData(
       options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
     folder.path = url.path
+    if let bookmark = folder.bookmark { remember(bookmark, for: url.path) }
     resolved[folder.persistentModelID] = url
     try? context.save()
   }
+
+  // MARK: - Remembered access
+
+  /// The access the user granted to a folder (or one around it) earlier, started for this run: a project opened once
+  /// doesn't ask for its folder again, also after it was closed. Nil when there's none that still resolves.
+  func rememberedAccess(to folder: URL) -> URL? {
+    let path = Self.canonical(folder).path
+    var granted = grantedFolders
+    defer { grantedFolders = granted }
+    let candidates = granted.keys.filter { path == $0 || path.hasPrefix($0 + "/") }.sorted { $0.count > $1.count }
+    for candidate in candidates {
+      var isStale = false
+      guard let bookmark = granted[candidate],
+        let url = try? URL(
+          resolvingBookmarkData: bookmark, options: Self.bookmarkResolutionOptions, relativeTo: nil,
+          bookmarkDataIsStale: &isStale),
+        Self.canonical(url).path == candidate, url.startAccessingSecurityScopedResource()
+      else {
+        granted[candidate] = nil
+        continue
+      }
+      accessing.insert(url)
+      if isStale {
+        granted[candidate] = try? url.bookmarkData(
+          options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
+      }
+      return path == candidate ? url : folder
+    }
+    return nil
+  }
+
+  private func remember(_ bookmark: Data, for path: String) {
+    grantedFolders[path] = bookmark
+  }
+
+  /// Security-scoped bookmarks by folder path, on this device (the demo's stay in its own defaults).
+  private var grantedFolders: [String: Data] {
+    get { Self.grantDefaults.dictionary(forKey: Self.grantsKey) as? [String: Data] ?? [:] }
+    set { Self.grantDefaults.set(newValue, forKey: Self.grantsKey) }
+  }
+  private static let grantsKey = "GrantedFolders"
+  private static var grantDefaults: UserDefaults { ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard }
 
   /// The folder's URL with access granted, or nil when it can no longer be reached
   /// (moved, deleted, bookmark unresolvable).

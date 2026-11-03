@@ -363,7 +363,7 @@ struct SidebarView: View {
     /// The projects the v57 apps share (added in Code, Git and the others, through the vault): VaultUI's projects
     /// section, folded away by default once a project is picked (a project can hold many files), the picked project's
     /// folders and notes in its section under it. The sandbox only opens a folder the user picks, so picking a
-    /// project the app hasn't opened yet shows an open panel on it. Which groups are closed, and which projects are
+    /// project the app has never opened shows an open panel on it, once. Which groups are closed, and which projects are
     /// removed from the list, are Markdown's own.
     @ViewBuilder private var projectsSection: some View {
       let tree = listedProjects(SidebarProjects.tree(windowVault ?? .shared))
@@ -459,7 +459,8 @@ struct SidebarView: View {
       preferences.openedProject(project.id)
     }
 
-    /// Takes the project's folder out of the sidebar (the project stays listed; picking it asks for the folder again).
+    /// Takes the project's folder out of the sidebar (the project stays listed; picking it opens it again, with the
+    /// access the user granted).
     private func closeProject(_ folder: SidebarFolder) {
       remove(folder, library: library, navigator: navigator, context: context)
     }
@@ -476,8 +477,13 @@ struct SidebarView: View {
         if add([url]) { follow(url) }
       #else
         // The demo's projects are in its own temporary folder (or `--add-folder`'s), without asking.
-        if ScreenshotDemo.isOn {
+        if ScreenshotDemo.isOn, !ScreenshotDemo.flag("--asks-for-folders") {
           if add([url]) { follow(url) }
+          return
+        }
+        // The sandbox opens only folders the user chose: asked once per folder.
+        if let granted = library.rememberedAccess(to: url) {
+          if add([granted]) { follow(url) }
           return
         }
         Task {

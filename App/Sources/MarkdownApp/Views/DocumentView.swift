@@ -526,6 +526,10 @@ struct DocumentView: View {
   /// Asks for access to the project's folder and opens it in the sidebar, with the file in it.
   private func openProject(_ project: URL, showing file: URL) {
     #if os(macOS)
+      if let granted = library.rememberedAccess(to: project) {
+        addFolder(granted, showing: file)
+        return
+      }
       Task {
         guard
           let granted = await KitDesktop.chooseFolders(

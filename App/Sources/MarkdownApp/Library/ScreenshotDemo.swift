@@ -20,6 +20,8 @@ import VaultKit
 ///   --settings               opens the Settings window too (Mac)
 ///   --add-folder <folder>    the shared projects are the folder's repositories instead, in groups as Git adds them
 ///                            (repeatable); picking one opens it without asking for the folder
+///   --asks-for-folders       picking a project goes through the open panel as outside the demo (remembered access)
+///   --keeps-defaults         the demo's defaults last until the next launch (remembered access across launches)
 ///
 /// `dev-screenshots` takes every scene in one launch: the window opens each next scene's arguments in place.
 enum ScreenshotDemo {
@@ -75,6 +77,8 @@ enum ScreenshotDemo {
     for folder in addedFolders {
       let root = URL(fileURLWithPath: folder, isDirectory: true)
       let found = VaultProjectDiscovery.scan(root)
+      // A folder the sandbox hides from the scan is a project itself (`--asks-for-folders`).
+      if found.repositories.isEmpty { _ = try? store.addProject(path: root.path) }
       for repository in found.repositories { _ = try? store.addProject(path: repository.path) }
       try? store.arrangeProjects(found.repositories.map(\.path), roots: [root.path])
     }
@@ -118,7 +122,7 @@ enum ScreenshotDemo {
   static let defaults: UserDefaults = {
     let name = "dev.v57.md.screenshot-demo"
     let defaults = UserDefaults(suiteName: name) ?? .standard
-    defaults.removePersistentDomain(forName: name)
+    if !CommandLine.arguments.contains("--keeps-defaults") { defaults.removePersistentDomain(forName: name) }
     return defaults
   }()
 
