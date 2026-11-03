@@ -14,5 +14,10 @@
       scrollRangeToVisible(edit.selection)
       window?.makeFirstResponder(self)
     }
+
+    /// Puts the caret in the editor: typing goes into it.
+    public func takeFocus() {
+      window?.makeFirstResponder(self)
+    }
   }
 #endif

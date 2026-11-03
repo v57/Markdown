@@ -10,6 +10,8 @@
     var isReadOnly = false
     var formatter: ((MarkdownFormat) -> Void)?
     func apply(_ format: MarkdownFormat) { formatter?(format) }
+    var focuser: (() -> Void)?
+    func takeFocus() { focuser?() }
   }
 
   public struct MarkdownEditorView: View {
@@ -86,6 +88,7 @@
       editor.isReadOnly = isReadOnly
       editor.formatter = { format in apply(format) }
       commands?.textView = editor
+      editor.focuser = { focused = true }
     }
 
     /// Applies a formatting command to the selection (the caret: the end of the text without one).

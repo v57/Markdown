@@ -256,4 +256,9 @@ public enum MarkdownFormatting {
   public func apply(_ format: MarkdownFormat) {
     textView?.apply(format)
   }
+
+  /// Puts the caret in the editor (a new note that reuses the shown note's file, so its editor doesn't appear anew).
+  public func focus() {
+    textView?.takeFocus()
+  }
 }

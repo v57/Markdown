@@ -16,6 +16,8 @@ import VaultKit
   var renamesInPlace = false
   /// The item waiting for a delete confirmation (iOS, where deletion may be permanent).
   var deleting: URL?
+  /// The notes waiting for a delete confirmation together (iOS).
+  var deletingSeveral: [URL] = []
   /// Why the last action failed, for an alert.
   var error: String?
   /// Runs before anything moves on disk: the open document's pending edits must reach
@@ -23,6 +25,10 @@ import VaultKit
   @ObservationIgnored var willChangeFiles: () -> Void = {}
   /// Runs after an item moved or was renamed (pins and recents follow it).
   @ObservationIgnored var didMove: (URL, URL) -> Void = { _, _ in }
+  /// Runs before a new note is made: the shown note goes if it's empty, so the new one takes its name.
+  @ObservationIgnored var willCreateNote: () -> Void = {}
+  /// Runs after a new note is made: when it took the name of the shown note, the same editor stays and takes the focus.
+  @ObservationIgnored var didCreateNote: () -> Void = {}
   /// The app's notes folder, where new notes start encrypted (`NoteFiles.encryptsNewNotes`).
   @ObservationIgnored var notesFolder: () -> URL? = { nil }
 
@@ -40,6 +46,7 @@ import VaultKit
   /// folder it's encrypted (`.mdenc`) unless the user turned that off.
   @discardableResult
   func newNote(in directory: URL, named name: String? = nil) -> URL? {
+    willCreateNote()
     let base = name?.trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: "/", with: "-")
       .replacingOccurrences(of: ":", with: "-")
@@ -51,7 +58,10 @@ import VaultKit
     let url = create(Self.availableURL(for: fileName, in: directory, isDirectory: false)) {
       try contents.write(to: $0, options: .withoutOverwriting)
     }
-    if url != nil { navigator.startsEditing = true }
+    if url != nil {
+      navigator.startsEditing = true
+      didCreateNote()
+    }
     return url
   }
 
@@ -265,10 +275,25 @@ import VaultKit
     #endif
   }
 
+  /// Moves several notes to the Trash at once, asking first on iOS like `delete(_:)`.
+  func delete(_ urls: [URL]) {
+    #if os(iOS)
+      deletingSeveral = urls
+    #else
+      urls.forEach(remove)
+    #endif
+  }
+
   func confirmDelete() {
     guard let url = deleting else { return }
     deleting = nil
     remove(url)
+  }
+
+  func confirmDeleteSeveral() {
+    let urls = deletingSeveral
+    deletingSeveral = []
+    urls.forEach(remove)
   }
 
   private func remove(_ url: URL) {
@@ -291,6 +316,13 @@ import VaultKit
     }
     navigator.forget(under: url)
     library.reload()
+  }
+
+  /// Trashes a note the user left empty. Only in the notes folder: an empty file in a project or a repository may
+  /// well be meant to be there.
+  func discardEmptyNote(_ url: URL) {
+    guard isInNotesFolder(url), FileManager.default.fileExists(atPath: url.path) else { return }
+    remove(url)
   }
 
   // MARK: - Helpers

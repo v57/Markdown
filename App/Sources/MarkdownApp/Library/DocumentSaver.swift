@@ -25,6 +25,11 @@ import Observation
   @ObservationIgnored private var timer: Task<Void, Never>?
   @ObservationIgnored var delay: Duration = .milliseconds(600)
 
+  /// Whether the file holds no text (everything typed is saved; a whitespace-only note counts as empty).
+  var isEmpty: Bool {
+    pending == nil && lastWritten?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true
+  }
+
   /// Starts tracking `file`, whose content on disk is `text`.
   func open(_ file: URL, text: String) {
     if file != self.file { flush() }

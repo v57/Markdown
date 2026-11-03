@@ -23,6 +23,8 @@ struct DocumentView: View {
   @Environment(\.kitIdiom) private var idiom
   @State private var content: Content = .empty
   @State private var saver = DocumentSaver()
+  /// What was selected when the saver's file opened.
+  @State private var selectedOnOpen: URL?
   @State private var showsSaveError = false
   @State private var isPickingFolder = false
   @State private var commands = MarkdownEditorCommands()
@@ -89,7 +91,11 @@ struct DocumentView: View {
         default: saver.flush()
         }
       }
-      .onAppear { actions.willChangeFiles = { [saver] in saver.flush() } }
+      .onAppear {
+        actions.willChangeFiles = { [saver] in saver.flush() }
+        actions.willCreateNote = { discardEmptyNote() }
+        actions.didCreateNote = { if isEditing { commands.focus() } }
+      }
       .onDisappear { saver.flush() }
       // A save in a GitHub repository changes its count of local changes.
       .onChange(of: saver.state) { _, state in
@@ -420,6 +426,7 @@ struct DocumentView: View {
 
   private func load() async {
     saver.flush()  // the previous document's pending edits
+    discardEmptyNote(keeping: navigator.selection)
     let file: URL
     if let selection = navigator.selection {
       if FolderLibrary.isDirectory(selection) {
@@ -451,11 +458,22 @@ struct DocumentView: View {
         return
       }
       saver.open(file, text: text)
+      selectedOnOpen = navigator.selection
       content = .document(file: file, text: text)
     } catch {
       guard !Task.isCancelled else { return }
       content = .failed(file: file, message: error.localizedDescription)
     }
+  }
+
+  /// The note just left goes when it has no text, unless it's pinned (Shell does the same with its notes). A new note
+  /// stays while it's the selected one: this runs when the selection moves on, or for the next new note. A README shown
+  /// for its folder was never selected, so it stays.
+  private func discardEmptyNote(keeping selection: URL? = nil) {
+    saver.flush()
+    guard let file = saver.file, file == selectedOnOpen, file != selection, saver.isEmpty, !preferences.isPinned(file)
+    else { return }
+    actions.discardEmptyNote(file)
   }
 
   /// UTF-8 first (what markdown nearly always is), else whatever encoding Foundation
