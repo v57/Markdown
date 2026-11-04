@@ -26,6 +26,10 @@ struct DocumentView: View {
   @Environment(\.isEnabled) private var isEnabled
   @State private var content: Content = .empty
   @State private var saver = DocumentSaver()
+  #if os(macOS)
+    /// Saves what's pending when the app quits.
+    @State private var quitObserver: (any NSObjectProtocol)?
+  #endif
   /// What was selected when the saver's file opened.
   @State private var selectedOnOpen: URL?
   @State private var showsSaveError = false
@@ -94,11 +98,15 @@ struct DocumentView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
           if isShowingDocument, isEditing, isKeyboardShown { formattingBar }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-          withAnimation(.kit) { isKeyboardShown = true }
+        .task {
+          for await _ in NotificationCenter.default.notifications(named: UIResponder.keyboardWillShowNotification) {
+            withAnimation(.kit) { isKeyboardShown = true }
+          }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-          withAnimation(.kit) { isKeyboardShown = false }
+        .task {
+          for await _ in NotificationCenter.default.notifications(named: UIResponder.keyboardWillHideNotification) {
+            withAnimation(.kit) { isKeyboardShown = false }
+          }
         }
       #elseif os(macOS)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -132,8 +140,19 @@ struct DocumentView: View {
         }
       }
       #if os(macOS)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) {
-          _ in saver.flush()
+        // A plain observer, not `for await` in a `.task`: the app exits as soon as its observers return, before a task
+        // waiting on the notification would resume, which would lose what was typed in the last moment.
+        .onAppear {
+          guard quitObserver == nil else { return }
+          quitObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: nil
+          ) { [saver] _ in
+            MainActor.assumeIsolated { saver.flush() }
+          }
+        }
+        .onDisappear {
+          if let quitObserver { NotificationCenter.default.removeObserver(quitObserver) }
+          quitObserver = nil
         }
       #endif
       .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
