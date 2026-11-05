@@ -66,6 +66,7 @@ struct MarkdownWindow: View {
 
     var body: some View {
       KitSettings(selection: $pane, window: .hiddenTitleBar) {
+        SettingsPane("Privacy", systemImage: "hand.raised", hue: .blue) { VaultICloudCard() }
         SettingsPane(Self.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
           VaultAccountsSettings()
         }

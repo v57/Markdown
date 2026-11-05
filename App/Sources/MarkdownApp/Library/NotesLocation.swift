@@ -16,8 +16,10 @@ import VaultKit
 @Observable final class NotesLocation {
   /// The notes folder, once resolved.
   private(set) var url: URL?
-  /// Whether the notes sync through iCloud (signed in, and the app has the vault's CloudKit container).
-  private(set) var isICloud = false
+  /// Whether the notes sync through iCloud (signed in, the app has the vault's CloudKit container, and the user hasn't
+  /// turned iCloud off in Settings ▸ Privacy).
+  var isICloud: Bool { hasICloudAccount && !VaultICloudStatus.shared.isOff }
+  private var hasICloudAccount = false
   /// Bumped when files in the folder change outside the editor (sync, other apps).
   private(set) var externalChanges = 0
   /// The mirror's last problem, if any.
@@ -46,9 +48,9 @@ import VaultKit
       return
     }
     use(chosenFolder() ?? AccountStorage.defaultNotesFolder(for: vault))
-    isICloud = FileManager.default.ubiquityIdentityToken != nil && CloudSync.isEntitled
-    // The iCloud Drive notes came before accounts: they are Personal's.
-    if vault.isPersonal, !UserDefaults.standard.bool(forKey: Self.importedKey), let folder = url {
+    hasICloudAccount = FileManager.default.ubiquityIdentityToken != nil && CloudSync.isEntitled
+    // The iCloud Drive notes came before accounts: they are Personal's. While iCloud is off they wait.
+    if vault.isPersonal, !VaultICloud.isOff, !UserDefaults.standard.bool(forKey: Self.importedKey), let folder = url {
       await Task.detached(priority: .utility) { Self.importICloudDriveNotes(into: folder) }.value
       UserDefaults.standard.set(true, forKey: Self.importedKey)
       mirror?.scheduleReconcile(after: 0)

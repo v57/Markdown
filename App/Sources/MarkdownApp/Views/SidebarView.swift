@@ -33,6 +33,8 @@ struct SidebarView: View {
   @State private var isDropTargeted = false
   @State private var allNotesCount: Int?
   @State private var showsNotesMenu = false
+  /// iPhone and iPad have no Settings window: the notes menu opens Privacy.
+  @State private var showsPrivacy = false
   /// The notes selected together (⌘-click, ⇧-click, ⇧↑↓) while more than one is; the shown note stays as it was.
   @State private var selectedNotes: Set<URL> = []
   @AppStorage(NoteSort.key) private var sortsByTitle = false
@@ -109,6 +111,11 @@ struct SidebarView: View {
         scope: SearchScope(library: library, notes: notes, repositories: repositories, folders: folders))
     }
     .kitSheet(isPresented: $window.isConnectingGitHub) { GitHubConnectView() }
+    .kitSheet(isPresented: $showsPrivacy) {
+      KitSheet(title: "Privacy", systemImage: "hand.raised", hue: .blue, onClose: { showsPrivacy = false }) {
+        VaultICloudCard()
+      }
+    }
     .kitNotice(
       repositories.message?.title ?? "",
       message: Binding(get: { repositories.message?.text }, set: { if $0 == nil { repositories.message = nil } }),
@@ -188,6 +195,9 @@ struct SidebarView: View {
             }
             Button("Choose Notes Folder…", systemImage: "folder.badge.gearshape") { chooseNotesFolder() }
           }
+        #elseif os(iOS)
+          Divider()
+          Button("Privacy…", systemImage: "hand.raised") { showsPrivacy = true }
         #endif
       }
       .disabled(notes.url == nil)
