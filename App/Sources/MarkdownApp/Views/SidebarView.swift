@@ -643,7 +643,7 @@ private struct ProjectFolderMenu: View {
       VaultOtherPlacesMenu(root: url)
     }
     Button("Reload", systemImage: "arrow.clockwise") { library.reload() }
-      .kitMenuPreview("Reads the project’s files from disk again.")
+      .kitMenuPreview("Reads every folder in the sidebar from disk again.")
     Divider()
     // The project stays listed; opening it again asks for the folder.
     Button("Close Project", systemImage: "xmark.circle") { close() }
