@@ -280,12 +280,13 @@ struct DocumentView: View {
           }
         }
         #if os(macOS) || os(Windows)
-          Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([file]) }
+          KitOpenWithRow.file(file)
         #endif
         if isStandalone(file), let project = project(holding: file) {
           Button("Open Project “\(project.lastPathComponent)”…", systemImage: "folder.badge.plus") {
             openProject(project, showing: file)
           }
+          .kitMenuPreview("Opens the project this note is in.")
         }
         Divider()
         Button("Save Now", systemImage: "square.and.arrow.down") { saver.flush() }

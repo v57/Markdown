@@ -106,10 +106,11 @@ struct NoteMenu: View {
         Button(encrypted ? "Decrypt Note" : "Encrypt Note", systemImage: encrypted ? "lock.open" : "lock") {
           actions.setEncrypted(url, !encrypted)
         }
+        .kitMenuPreview(encryptionPreview(encrypted))
       }
     }
     #if os(macOS) || os(Windows)
-      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([url]) }
+      KitOpenWithRow.file(url)
     #endif
     KitMenuShare(items: [url])
     Divider()
@@ -130,6 +131,24 @@ struct NoteMenu: View {
   private var isDeletable: Bool {
     let roots = library.roots(folders)
     return library.root(of: url, roots: roots) != nil && !roots.contains(url)
+  }
+}
+
+/// What Encrypt Note and Decrypt Note do, in the menu's preview panel.
+func encryptionPreview(_ encrypted: Bool) -> String {
+  encrypted ? "Takes the encryption off this note, so it’s saved as plain text." : "Saves this note encrypted."
+}
+
+extension KitOpenWithRow {
+  /// Open With for a note or a file: Code, then the file manager. An encrypted note leaves Code out, which would show
+  /// it scrambled.
+  @MainActor static func file(_ url: URL) -> KitOpenWithRow {
+    let name = url.lastPathComponent
+    return KitOpenWithRow([
+      NoteFiles.isEncrypted(url)
+        ? nil : .app("dev.v57.code", name: "Code", opening: [url], preview: "Opens \(name) in Code."),
+      .fileManager(revealing: [url], preview: "Shows \(name) in \(KitDesktop.fileManagerName)."),
+    ])
   }
 }
 

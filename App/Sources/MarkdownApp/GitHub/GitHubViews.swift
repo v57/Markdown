@@ -210,6 +210,7 @@ struct RepositoryRow: View {
     Button("Pull", systemImage: "arrow.down") { Task { await store.pull(repository, client: auth.api) } }
     Button("Commit and Push…", systemImage: "arrow.up") { beginCommit() }
       .disabled(repository.isAnonymous && auth.token == nil)
+      .kitMenuPreview("Writes your changes to \(repository.fullName) on GitHub. You describe them first.")
     Divider()
     Button("Open on GitHub", systemImage: "safari") {
       openURL(URL(string: "https://github.com/\(repository.fullName)/tree/\(repository.branch)")!)

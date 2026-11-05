@@ -194,6 +194,7 @@ struct SidebarView: View {
               KitDesktop.reveal([folder])
             }
             Button("Choose Notes Folder…", systemImage: "folder.badge.gearshape") { chooseNotesFolder() }
+              .kitMenuPreview("Picks the folder your notes are kept in.")
           }
         #elseif os(iOS)
           Divider()
@@ -615,14 +616,18 @@ private struct ProjectFolderRows: View {
 
   @ViewBuilder private func menu(_ url: URL) -> some View {
     #if os(macOS) || os(Windows)
-      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal([url]) }
+      let name = url.lastPathComponent
+      KitOpenWithRow([
+        .app("dev.v57.code", name: "Code", opening: [url], preview: "Opens \(name) in Code."),
+        .fileManager(revealing: [url], preview: "Shows the \(name) folder in \(KitDesktop.fileManagerName)."),
+      ])
       Divider()
     #endif
     ProjectFolderMenu(folder: folder, close: close)
   }
 }
 
-/// What can be done with a shared project the app opened: on its row in the projects list (after Show in Finder)
+/// What can be done with a shared project the app opened: on its row in the projects list (before VaultUI's Open With row)
 /// and on its folder.
 private struct ProjectFolderMenu: View {
   let folder: SidebarFolder
@@ -638,9 +643,11 @@ private struct ProjectFolderMenu: View {
       VaultOtherPlacesMenu(root: url)
     }
     Button("Reload", systemImage: "arrow.clockwise") { library.reload() }
+      .kitMenuPreview("Reads the project’s files from disk again.")
     Divider()
     // The project stays listed; opening it again asks for the folder.
     Button("Close Project", systemImage: "xmark.circle") { close() }
+      .kitMenuPreview("Closes \(folder.name). Its files stay.")
   }
 }
 
