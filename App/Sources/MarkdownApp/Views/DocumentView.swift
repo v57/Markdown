@@ -35,8 +35,7 @@ struct DocumentView: View {
   @State private var showsSaveError = false
   @State private var isPickingFolder = false
   @State private var commands = MarkdownEditorCommands()
-  @State private var wordCount = 0
-  @State private var wordCountTask: Task<Void, Never>?
+  @State private var words = WordCounter()
   @State private var showsMoreMenu = false
   #if os(iOS)
     @State private var isKeyboardShown = false
@@ -77,10 +76,7 @@ struct DocumentView: View {
               .kitHelp("Edit or Read", shortcut: "⇧⌘E", meta: "Edit shows Markdown on the line you’re on")
           }
           ToolGroup(iconOnly: true) {
-            if case .failed = saver.state {
-              Button("Not Saved", systemImage: "exclamationmark.triangle", role: .destructive) { showsSaveError = true }
-                .kitHelp("Not Saved", meta: "The last edit couldn’t be saved", hue: .red)
-            }
+            SaveFailedButton(saver: saver, showsSaveError: $showsSaveError)
             if idiom == .phone {
               Button(isEditing ? "Read" : "Edit", systemImage: isEditing ? "eye" : "pencil") { isEditing.toggle() }
                 .kitHelp(isEditing ? "Read" : "Edit", shortcut: "⇧⌘E")
@@ -133,12 +129,6 @@ struct DocumentView: View {
         actions.didCreateNote = { if isEditing { commands.focus() } }
       }
       .onDisappear { saver.flush() }
-      // A save in a GitHub repository changes its count of local changes.
-      .onChange(of: saver.state) { _, state in
-        if state == .saved, let file = saver.file, repositories.repository(containing: file) != nil {
-          repositories.refreshChanges()
-        }
-      }
       #if os(macOS)
         // A plain observer, not `for await` in a `.task`: the app exits as soon as its observers return, before a task
         // waiting on the notification would resume, which would lose what was typed in the last moment.
@@ -160,7 +150,7 @@ struct DocumentView: View {
           addFolder(folder, showing: file)
         }
       }
-      .kitNotice("Couldn’t Save", message: saveError, buttons: allowEditingButtons)
+      .modifier(SaveFollower(saver: saver, showsSaveError: $showsSaveError, allowEditing: allowEditingAction))
   }
 
   @ViewBuilder private var contentView: some View {
@@ -178,16 +168,16 @@ struct DocumentView: View {
       MarkdownEditorView(
         text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
         isReadOnly: !isEditing, anchor: navigator.anchor,
-        onChange: { text in
+        onChange: { [saver, words] text in
           saver.edited(text)
-          countWords(text)
+          words.count(text)
         },
         onOpenURL: { open($0) },
         startsEditing: navigator.startsEditing && isEditing,
         commands: commands
       )
       .id(file)
-      .onAppear { countWords(text, now: true) }
+      .onAppear { words.count(text, now: true) }
     case .noReadme(let folder):
       EmptyState(
         systemImage: "doc.questionmark", title: "No README",
@@ -215,52 +205,11 @@ struct DocumentView: View {
     }
   }
 
-  /// Why the last edit couldn't be saved, while its notice shows.
-  private var saveError: Binding<String?> {
-    Binding(
-      get: {
-        guard showsSaveError, case .failed(let message, _) = saver.state else { return nil }
-        return message
-      },
-      set: { if $0 == nil { showsSaveError = false } })
-  }
-
-  /// Allow Editing… when the sandbox refused the save (the Mac).
-  private var allowEditingButtons: [KitConfirmationButton] {
-    #if os(macOS)
-      if case .failed(_, permissionDenied: true) = saver.state {
-        return [KitConfirmationButton("Allow Editing…") { allowEditing() }]
-      }
-    #endif
-    return []
-  }
-
   /// The note's rich title; its meta line is where it lives, then whether edits are saved and its length.
   private var titleView: some View {
-    KitTitle(title, meta: titleMeta, systemImage: "doc.text", hue: .accent, status: titleStatus)
-      .opacity(title.isEmpty ? 0 : 1)
-  }
-
-  private var titleMeta: [String] {
-    let place = subtitle.components(separatedBy: " · ")
-    guard isShowingDocument else { return place }
-    let state =
-      switch saver.state {
-      case .saved: isInICloud ? "Synced" : "Saved"
-      case .unsaved: "Edited"
-      case .failed: "Not saved"
-      }
-    return place + [state, wordCount == 0 ? "" : wordCount == 1 ? "1 word" : "\(wordCount.formatted()) words"]
-  }
-
-  private var titleStatus: WorkStatus {
-    if case .failed(let message, _) = saver.state { return .failed(message) }
-    return .idle
-  }
-
-  private var isInICloud: Bool {
-    guard notes.isICloud, let root = notes.url, let file = saver.file else { return false }
-    return file.path.hasPrefix(root.path + "/")
+    DocumentTitle(
+      title: title, place: subtitle.components(separatedBy: " · "), isShowingDocument: isShowingDocument, saver: saver,
+      words: words)
   }
 
   private func moreMenu(_ file: URL) -> some View {
@@ -368,29 +317,6 @@ struct DocumentView: View {
       .frame(maxWidth: .infinity, minHeight: 44)
     }
   #endif
-
-  /// Counts after typing pauses (a long note is a lot of text to scan per keystroke).
-  private func countWords(_ text: String, now: Bool = false) {
-    wordCountTask?.cancel()
-    wordCountTask = Task {
-      if !now { try? await Task.sleep(for: .milliseconds(400)) }
-      guard !Task.isCancelled else { return }
-      let count = await Task.detached(priority: .utility) { Self.words(in: text) }.value
-      guard !Task.isCancelled else { return }
-      wordCount = count
-    }
-  }
-
-  nonisolated private static func words(in text: String) -> Int {
-    var count = 0
-    var inWord = false
-    for scalar in text.unicodeScalars {
-      let isWordCharacter = CharacterSet.alphanumerics.contains(scalar)
-      if isWordCharacter, !inWord { count += 1 }
-      inWord = isWordCharacter || (inWord && (scalar == "'" || scalar == "’" || scalar == "-"))
-    }
-    return count
-  }
 
   private var isShowingDocument: Bool {
     if case .document = content { return true }
@@ -527,6 +453,15 @@ struct DocumentView: View {
 
   // MARK: - Access
 
+  /// Re-grants read-write access to the shown file's folder, where the sandbox refused a save (the Mac).
+  private var allowEditingAction: (() -> Void)? {
+    #if os(macOS)
+      { allowEditing() }
+    #else
+      nil
+    #endif
+  }
+
   #if os(macOS)
     /// Re-grants read-write access to the shown file's sidebar folder: an open panel on
     /// that folder; confirming it replaces the folder's bookmark, then the pending edits
@@ -618,5 +553,122 @@ struct DocumentView: View {
     library.reveal(target, roots: roots)
     navigator.open(target, anchor: url.fragment)
     return true
+  }
+}
+
+/// The note's rich title: its name, where it lives, whether edits are saved and how many words it has. A view of its
+/// own, so a save or a new count updates only the title: read in `DocumentView`'s body, both built the whole pane again
+/// (the toolbar, the editor's representable and the menu bar's commands) as the user typed.
+private struct DocumentTitle: View {
+  let title: String
+  let place: [String]
+  let isShowingDocument: Bool
+  let saver: DocumentSaver
+  let words: WordCounter
+  @Environment(NotesLocation.self) private var notes
+
+  var body: some View {
+    KitTitle(title, meta: meta, systemImage: "doc.text", hue: .accent, status: status)
+      .opacity(title.isEmpty ? 0 : 1)
+  }
+
+  private var meta: [String] {
+    guard isShowingDocument else { return place }
+    let state =
+      switch saver.state {
+      case .saved: isInICloud ? "Synced" : "Saved"
+      case .unsaved: "Edited"
+      case .failed: "Not saved"
+      }
+    let count = words.value
+    return place + [state, count == 0 ? "" : count == 1 ? "1 word" : "\(count.formatted()) words"]
+  }
+
+  private var status: WorkStatus {
+    if case .failed(let message, _) = saver.state { return .failed(message) }
+    return .idle
+  }
+
+  private var isInICloud: Bool {
+    guard notes.isICloud, let root = notes.url, let file = saver.file else { return false }
+    return file.path.hasPrefix(root.path + "/")
+  }
+}
+
+/// Not Saved, in the note's tools while the last edit couldn't be saved; it shows why. A view of its own, so the saver's
+/// state updates only it.
+private struct SaveFailedButton: View {
+  let saver: DocumentSaver
+  @Binding var showsSaveError: Bool
+
+  var body: some View {
+    if case .failed = saver.state {
+      Button("Not Saved", systemImage: "exclamationmark.triangle", role: .destructive) { showsSaveError = true }
+        .kitHelp("Not Saved", meta: "The last edit couldn’t be saved", hue: .red)
+    }
+  }
+}
+
+/// What follows the saver: a save in a GitHub repository recounts its local changes, and why a save failed shows while
+/// asked (with Allow Editing… where the sandbox refused it). A modifier of its own, so a save updates only it.
+private struct SaveFollower: ViewModifier {
+  let saver: DocumentSaver
+  @Binding var showsSaveError: Bool
+  let allowEditing: (() -> Void)?
+  @Environment(RepositoryStore.self) private var repositories
+
+  func body(content: Content) -> some View {
+    content
+      .onChange(of: saver.state) { _, state in
+        if state == .saved, let file = saver.file, repositories.repository(containing: file) != nil {
+          repositories.refreshChanges()
+        }
+      }
+      .kitNotice("Couldn’t Save", message: saveError, buttons: allowEditingButtons)
+  }
+
+  /// Why the last edit couldn't be saved, while its notice shows.
+  private var saveError: Binding<String?> {
+    Binding(
+      get: {
+        guard showsSaveError, case .failed(let message, _) = saver.state else { return nil }
+        return message
+      },
+      set: { if $0 == nil { showsSaveError = false } })
+  }
+
+  /// Allow Editing… when the sandbox refused the save.
+  private var allowEditingButtons: [KitConfirmationButton] {
+    guard let allowEditing, case .failed(_, permissionDenied: true) = saver.state else { return [] }
+    return [KitConfirmationButton("Allow Editing…") { allowEditing() }]
+  }
+}
+
+/// The open note's word count, after typing pauses (a long note is a lot of text to scan per keystroke). Observable on
+/// its own, so a new count updates only the title.
+@Observable private final class WordCounter {
+  private(set) var value = 0
+  @ObservationIgnored private var task: Task<Void, Never>?
+
+  func count(_ text: String, now: Bool = false) {
+    task?.cancel()
+    task = Task {
+      if !now { try? await Task.sleep(for: .milliseconds(400)) }
+      guard !Task.isCancelled else { return }
+      let count = await Task.detached(priority: .utility) { Self.words(in: text) }.value
+      guard !Task.isCancelled, count != value else { return }
+      value = count
+    }
+  }
+
+  nonisolated private static func words(in text: String) -> Int {
+    var count = 0
+    var inWord = false
+    for scalar in text.unicodeScalars {
+      let isWordCharacter = CharacterSet.alphanumerics.contains(scalar)
+      if isWordCharacter, !inWord { count += 1 }
+      inWord = isWordCharacter || (inWord && (scalar == "'" || scalar == "’" || scalar == "-"))
+    }
+    return count
   }
 }

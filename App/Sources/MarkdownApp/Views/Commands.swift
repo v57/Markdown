@@ -23,12 +23,15 @@ import SwiftUI
   var hasCountedNotes = false
 }
 
-/// The shown document's commands, for the menu bar.
-struct DocumentActions {
+/// The shown document's commands, for the menu bar. Equal while `isEditing` is: the actions act on whatever the window
+/// shows, and a value that compared unequal on every update of the note's pane rebuilt the menu bar each time.
+struct DocumentActions: Equatable {
   var save: () -> Void
   var reload: () -> Void
   var toggleMode: () -> Void
   var isEditing: Bool
+
+  static func == (lhs: Self, rhs: Self) -> Bool { lhs.isEditing == rhs.isEditing }
 }
 
 private struct WindowStateKey: FocusedValueKey { typealias Value = WindowState }

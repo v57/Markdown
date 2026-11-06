@@ -48,7 +48,8 @@ import Observation
       if state == .unsaved { state = .saved }
       return
     }
-    state = .unsaved
+    // Set once per run of edits: each set would update every view that reads the state, per keystroke.
+    if state != .unsaved { state = .unsaved }
     timer?.cancel()
     timer = Task { [weak self, delay] in
       try? await Task.sleep(for: delay)
