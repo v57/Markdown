@@ -75,9 +75,14 @@
     public func makeCoordinator() -> Coordinator { Coordinator() }
 
     public func makeUIViewController(context: Context) -> MarkdownEditorViewController {
-      let controller = MarkdownEditorViewController(metrics: metrics)
-      configure(controller.textView, coordinator: context.coordinator)
-      if let text { controller.textView.setText(text) }
+      // Made with its text, resolver and mode: styled once, not as the sample and then again for each of them.
+      let textView = EditorTextView(
+        metrics: metrics, text: text ?? SampleDocument.text, resolver: resolver, isReadOnly: isReadOnly)
+      let controller = MarkdownEditorViewController(metrics: metrics, textView: textView)
+      context.coordinator.hasResolver = true
+      context.coordinator.resolvedDocument = resolver.documentURL
+      configure(textView, coordinator: context.coordinator)
+      textView.selectedRange = NSRange(location: 0, length: 0)
       context.coordinator.appliedText = text
       scrollToAnchorIfNeeded(controller.textView, coordinator: context.coordinator)
       if startsEditing {

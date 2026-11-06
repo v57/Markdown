@@ -18,6 +18,13 @@
       super.init(nibName: nil, bundle: nil)
     }
 
+    /// Hosts `textView`, made by `MarkdownEditorView` with its text and settings.
+    init(metrics: MarkdownMetrics, textView: EditorTextView) {
+      self.metrics = metrics
+      self.textView = textView
+      super.init(nibName: nil, bundle: nil)
+    }
+
     @available(*, unavailable) public required init?(coder: NSCoder) {
       fatalError("init(coder:) is not supported")
     }

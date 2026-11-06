@@ -60,7 +60,17 @@
     /// anything unhandled opens externally.
     public var onOpenURL: (@MainActor (URL) -> Bool)?
 
-    public init(metrics: MarkdownMetrics = .standard) {
+    /// An editor showing the built-in sample document.
+    public convenience init(metrics: MarkdownMetrics = .standard) {
+      self.init(metrics: metrics, text: SampleDocument.text)
+    }
+
+    /// An editor showing `text`, styled once with `resolver` in `isReadOnly`'s mode: a host's note isn't preceded by
+    /// the sample document, nor styled again as each setting follows (`MarkdownEditorView` opening a note parsed and laid
+    /// out the sample twice before the note itself).
+    init(
+      metrics: MarkdownMetrics, text: String, resolver: MarkdownURLResolver = .absoluteOnly, isReadOnly: Bool = false
+    ) {
       self.metrics = metrics
       markdownStorage = NSTextStorage()
       markdownLayout = EditorLayoutManager()
@@ -72,9 +82,14 @@
       markdownLayout.addTextContainer(markdownContainer)
       super.init(frame: .zero, textContainer: markdownContainer)
       configure()
-      markdownStorage.setAttributedString(NSAttributedString(string: SampleDocument.text))  // launch sample
+      // Set here, their observers don't run (each would style the text again).
+      self.resolver = resolver
+      self.isReadOnly = isReadOnly
+      isEditable = !isReadOnly
+      markdownLayout.revealsSyntax = !isReadOnly
+      markdownStorage.setAttributedString(NSAttributedString(string: text))
       // textViewDidChange only fires for user edits, not for this initial load —
-      // style the sample document once here (identical to the per-edit reapply path).
+      // style the text once here (identical to the per-edit reapply path).
       reapplyMarkdown()
     }
 

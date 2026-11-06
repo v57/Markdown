@@ -70,9 +70,13 @@
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
     public func makeNSView(context: Context) -> NSScrollView {
-      let textView = EditorTextView(metrics: metrics)
+      // Made with its text, resolver and mode: styled once, not as the sample and then again for each of them.
+      let textView = EditorTextView(
+        metrics: metrics, text: text ?? SampleDocument.text, resolver: resolver, isReadOnly: isReadOnly)
+      context.coordinator.hasResolver = true
+      context.coordinator.resolvedDocument = resolver.documentURL
       configure(textView, coordinator: context.coordinator)
-      if let text { textView.setText(text) }
+      textView.setSelectedRange(NSRange(location: 0, length: 0))
       context.coordinator.textView = textView
       context.coordinator.appliedText = text
       let scroll = EditorScrollView()
