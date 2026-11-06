@@ -13,8 +13,9 @@ import VaultUI
 struct SidebarView: View {
   /// The split's columns, for the bar's sidebar toggle (nil on iPhone, where the note is pushed).
   var columnVisibility: Binding<NavigationSplitViewVisibility>?
-  /// On iPhone: shows the note column, also for the note already shown before going back.
-  var showsNote: () -> Void = {}
+  /// On iPhone: the column shown; a pick shows the note column, also for the note already shown before going back.
+  /// A binding, not a closure: a closure compares unequal on every update of the window, which built the sidebar again.
+  @Binding var compactColumn: NavigationSplitViewColumn
   @State private var list = NoteListModel()
   /// The window's account (Personal outside a `VaultAccountScope`, as in the screenshot demo).
   @Environment(\.vault) private var windowVault
@@ -35,8 +36,6 @@ struct SidebarView: View {
   @State private var showsNotesMenu = false
   /// iPhone and iPad have no Settings window: the notes menu opens Privacy.
   @State private var showsPrivacy = false
-  /// The notes selected together (⌘-click, ⇧-click, ⇧↑↓) while more than one is; the shown note stays as it was.
-  @State private var selectedNotes: Set<URL> = []
   @KitStorage(NoteSort.key, store: ScreenshotDemo.settings) private var sortsByTitle = false
   #if os(macOS) || os(Windows)
     @Environment(NotePreferences.self) private var preferences
@@ -55,15 +54,12 @@ struct SidebarView: View {
 
   var body: some View {
     @Bindable var window = window
-    KitSidebar(
-      selection: noteSelection, searchText: $window.searchQuery, searchPrompt: "Search Notes",
-      columnVisibility: columnVisibility
-    ) {
+    NotesSidebar(columnVisibility: columnVisibility, compactColumn: $compactColumn, isDeletable: isDeletable) {
       // The window's account, while there is more than Personal.
       VaultAccountPicker(meta: allNotesCount.map { $0 == 1 ? "1 note" : "\($0) notes" })
       // A place with many folders keeps its title in view while they scroll by.
       notesSection.kitSticky()
-      if !repositories.repositories.isEmpty { gitHubSection.kitSticky() }
+      if !repositories.repositories.isEmpty { GitHubSection().kitSticky() }
       #if os(macOS) || os(Windows)
         projectsSection.kitSticky()
       #endif
@@ -77,20 +73,12 @@ struct SidebarView: View {
         .disabled(notes.url == nil)
         .kitHelp("New Folder", shortcut: "⇧⌘N")
     }
-    .selectionContextMenu { (urls: Set<URL>) in noteMenu(urls) }
-    .status { Label(storageStatus, systemImage: notes.isICloud ? "icloud" : deviceSymbol).labelStyle(.titleOnly) }
     .environment(list)
     // Files dropped anywhere on the sidebar join it (and a shared project's folder, its access).
     .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
     .dropDestination(for: URL.self) { urls, _ in
       add(urls.filter(\.isFileURL))
     } isTargeted: { isDropTargeted = $0 }
-    #if os(macOS) || os(Windows)
-      .onDeleteCommand {
-        let urls = noteSelection.wrappedValue.filter(isDeletable)
-        if urls.count == 1 { actions.delete(urls[urls.startIndex]) } else if !urls.isEmpty { deleteSelected(Array(urls)) }
-      }
-    #endif
     #if os(Windows)
       .fileImporter(isPresented: $isChoosingNotesFolder, allowedContentTypes: [.folder]) { result in
         if case .success(let folder) = result { notes.choose(folder) }
@@ -100,16 +88,8 @@ struct SidebarView: View {
       await countAllNotes()
       if !Task.isCancelled { window.hasCountedNotes = true }
     }
-    .task(id: ListKey(item: navigator.item, generation: library.generation)) {
-      let item = navigator.item
-      await list.load(item, library: library, notes: notes, folders: folders)
-      if !Task.isCancelled { window.loadedList = .some(item) }
-    }
-    .task(id: window.searchQuery) {
-      await list.search(
-        window.searchQuery,
-        scope: SearchScope(library: library, notes: notes, repositories: repositories, folders: folders))
-    }
+    .modifier(PlaceNotesLoader(list: list, folders: folders))
+    .modifier(NoteSearchLoader(list: list, folders: folders))
     .kitSheet(isPresented: $window.isConnectingGitHub) { GitHubConnectView() }
     .kitSheet(isPresented: $showsPrivacy) {
       KitSheet(title: "Privacy", systemImage: "hand.raised", hue: .blue, onClose: { showsPrivacy = false }) {
@@ -121,13 +101,9 @@ struct SidebarView: View {
       message: Binding(get: { repositories.message?.text }, set: { if $0 == nil { repositories.message = nil } }),
       systemImage: "arrow.triangle.branch", hue: .purple)
     .kitNotice("Couldn’t Add Folder", message: Bindable(library).lastError)
-    // Showing another note (a link, Quick Open, a new note) ends a selection of several.
-    .onChange(of: navigator.selection) { selectedNotes = [] }
     #if os(macOS) || os(Windows)
       // A place inside a shared project (picked, or reached by a link, Quick Open or search) shows that project.
-      .onChange(of: navigator.item, initial: true) { _, item in
-        if case .folder(let folder) = item { follow(folder) }
-      }
+      .modifier(PlaceFollower(follow: follow))
     #endif
     // A dropped folder that isn't a project: offered as one, with what else it holds (`FolderLibrary.notProjects`).
     .onChange(of: library.notProjects) { _, folders in offer(folders) }
@@ -204,25 +180,6 @@ struct SidebarView: View {
       .disabled(notes.url == nil)
   }
 
-  private var gitHubSection: some View {
-    let changes = repositories.changeCounts.values.reduce(0, +)
-    let count = repositories.repositories.count
-    return KitSection(
-      "GitHub",
-      meta: [count == 1 ? "1 repository" : "\(count) repositories", changes == 0 ? "" : "\(changes) to push"],
-      systemImage: "arrow.triangle.branch", hue: .purple,
-      status: repositories.activity.isEmpty ? .idle : .working
-    ) {
-      ForEach(repositories.repositories, id: \.fullName) { repository in
-        RepositoryRow(repository: repository)
-      }
-    } accessory: {
-      Button("Connect GitHub Repository…", systemImage: "plus") { window.isConnectingGitHub = true }
-        .labelStyle(.iconOnly)
-        .kitHelp("Connect GitHub Repository…")
-    }
-  }
-
   private var filesSection: some View {
     KitSection("Files", meta: "opened on their own", systemImage: "doc.on.doc", hue: .gray) {
       SidebarRow("Opened Files", systemImage: "doc.on.doc") {
@@ -235,61 +192,12 @@ struct SidebarView: View {
 
   private var storageName: String { "On My \(KitDevice.name)" }
 
-  /// Where the notes are, at the start of the bottom bar.
-  private var storageStatus: String { notes.isICloud ? "iCloud" : "On This \(deviceName)" }
-
-  private var deviceSymbol: String { KitDevice.systemImage }
-
-  private var deviceName: String { KitDevice.name }
-
   private var openedFiles: [SidebarFolder] { folders.filter(\.isFile) }
-
-  // MARK: - Selection
-
-  /// The sidebar's selection is the shown note (not a folder shown by its README), or several notes selected together;
-  /// the places are rows that list their notes (`place(_:)`). One row selected shows it; several leave the shown note.
-  private var noteSelection: Binding<Set<URL>> {
-    Binding(
-      get: {
-        if selectedNotes.count > 1 { return selectedNotes }
-        guard let selection = navigator.selection, !FolderLibrary.isDirectory(selection) else { return [] }
-        return [selection]
-      },
-      set: { urls in
-        guard urls.count == 1, let url = urls.first else {
-          if urls.count > 1 { selectedNotes = urls }
-          return
-        }
-        selectedNotes = []
-        navigator.selection = url
-        showsNote()
-      })
-  }
-
-  /// A right click's menu: the note's own, or what acts on all of the notes selected together. Search results rename in
-  /// the prompt (their rows don't rename in place).
-  @ViewBuilder private func noteMenu(_ urls: Set<URL>) -> some View {
-    if urls.count > 1 {
-      NotesMenu(urls: urls.sorted { $0.path < $1.path }) { selectedNotes = [] }
-    } else if let url = urls.first {
-      NoteMenu(url: url, renamesInPlace: window.searchQuery.isEmpty)
-    }
-  }
-
-  private func deleteSelected(_ urls: [URL]) {
-    actions.delete(urls)
-    selectedNotes = []
-  }
 
   // MARK: - All Notes
 
   private struct CountKey: Equatable {
     var root: URL?
-    var generation: Int
-  }
-
-  private struct ListKey: Equatable {
-    var item: LibraryItem?
     var generation: Int
   }
 
@@ -537,6 +445,179 @@ struct SidebarView: View {
   #endif
 }
 
+/// The kit's sidebar around the places, with the selection: the shown note, or several notes selected together. A view
+/// of its own: making the selection's `Binding(get:set:)` reads it at once, so in `SidebarView`'s body every new note
+/// built the whole sidebar again. Here the places come in built and stay the same value when only the selection changes.
+private struct NotesSidebar<Content: View, BottomBar: View>: View {
+  var columnVisibility: Binding<NavigationSplitViewVisibility>?
+  @Binding var compactColumn: NavigationSplitViewColumn
+  /// Anything inside a root, but not a root itself (those are removed from the sidebar).
+  let isDeletable: (URL) -> Bool
+  let content: Content
+  let bottomBar: BottomBar
+  @Environment(Navigator.self) private var navigator
+  @Environment(NotesLocation.self) private var notes
+  @Environment(FileActions.self) private var actions
+  @Environment(WindowState.self) private var window
+  /// The notes selected together (⌘-click, ⇧-click, ⇧↑↓) while more than one is; the shown note stays as it was.
+  @State private var selectedNotes: Set<URL> = []
+
+  init(
+    columnVisibility: Binding<NavigationSplitViewVisibility>?, compactColumn: Binding<NavigationSplitViewColumn>,
+    isDeletable: @escaping (URL) -> Bool, @ViewBuilder content: () -> Content, @ViewBuilder bottomBar: () -> BottomBar
+  ) {
+    self.columnVisibility = columnVisibility
+    _compactColumn = compactColumn
+    self.isDeletable = isDeletable
+    self.content = content()
+    self.bottomBar = bottomBar()
+  }
+
+  var body: some View {
+    @Bindable var window = window
+    KitSidebar(
+      selection: noteSelection, searchText: $window.searchQuery, searchPrompt: "Search Notes",
+      columnVisibility: columnVisibility
+    ) {
+      content
+    } bottomBar: {
+      bottomBar
+    }
+    .selectionContextMenu { (urls: Set<URL>) in noteMenu(urls) }
+    .status { Label(storageStatus, systemImage: notes.isICloud ? "icloud" : KitDevice.systemImage).labelStyle(.titleOnly) }
+    #if os(macOS) || os(Windows)
+      .onDeleteCommand {
+        let urls = noteSelection.wrappedValue.filter(isDeletable)
+        if urls.count == 1 { actions.delete(urls[urls.startIndex]) } else if !urls.isEmpty { deleteSelected(Array(urls)) }
+      }
+    #endif
+    // Showing another note (a link, Quick Open, a new note) ends a selection of several.
+    .onChange(of: navigator.selection) { selectedNotes = [] }
+  }
+
+  /// Where the notes are, at the start of the bottom bar.
+  private var storageStatus: String { notes.isICloud ? "iCloud" : "On This \(KitDevice.name)" }
+
+  /// The sidebar's selection is the shown note (not a folder shown by its README), or several notes selected together;
+  /// the places are rows that list their notes (`place(_:)`). One row selected shows it; several leave the shown note.
+  private var noteSelection: Binding<Set<URL>> {
+    Binding(
+      get: {
+        if selectedNotes.count > 1 { return selectedNotes }
+        guard let selection = navigator.selection, !FolderLibrary.isDirectory(selection) else { return [] }
+        return [selection]
+      },
+      set: { urls in
+        guard urls.count == 1, let url = urls.first else {
+          if urls.count > 1 { selectedNotes = urls }
+          return
+        }
+        selectedNotes = []
+        navigator.selection = url
+        compactColumn = .detail
+      })
+  }
+
+  /// A right click's menu: the note's own, or what acts on all of the notes selected together. Search results rename in
+  /// the prompt (their rows don't rename in place).
+  @ViewBuilder private func noteMenu(_ urls: Set<URL>) -> some View {
+    if urls.count > 1 {
+      NotesMenu(urls: urls.sorted { $0.path < $1.path }) { selectedNotes = [] }
+    } else if let url = urls.first {
+      NoteMenu(url: url, renamesInPlace: window.searchQuery.isEmpty)
+    }
+  }
+
+  private func deleteSelected(_ urls: [URL]) {
+    actions.delete(urls)
+    selectedNotes = []
+  }
+}
+
+/// Loads the chosen place's notes into the list, again after a reload. A modifier of its own, so choosing a place
+/// updates only it (and the place rows): read in `SidebarView`'s body, it built every section again.
+private struct PlaceNotesLoader: ViewModifier {
+  let list: NoteListModel
+  let folders: [SidebarFolder]
+  @Environment(FolderLibrary.self) private var library
+  @Environment(Navigator.self) private var navigator
+  @Environment(NotesLocation.self) private var notes
+  @Environment(WindowState.self) private var window
+
+  private struct Key: Equatable {
+    var item: LibraryItem?
+    var generation: Int
+  }
+
+  func body(content: Content) -> some View {
+    content.task(id: Key(item: navigator.item, generation: library.generation)) {
+      let item = navigator.item
+      await list.load(item, library: library, notes: notes, folders: folders)
+      if !Task.isCancelled { window.loadedList = .some(item) }
+    }
+  }
+}
+
+/// Searches the notes as the search line changes. A modifier of its own, so a keystroke updates only it and the search
+/// results (`NoteSearchSection`), not the whole sidebar.
+private struct NoteSearchLoader: ViewModifier {
+  let list: NoteListModel
+  let folders: [SidebarFolder]
+  @Environment(FolderLibrary.self) private var library
+  @Environment(NotesLocation.self) private var notes
+  @Environment(RepositoryStore.self) private var repositories
+  @Environment(WindowState.self) private var window
+
+  func body(content: Content) -> some View {
+    content.task(id: window.searchQuery) {
+      await list.search(
+        window.searchQuery,
+        scope: SearchScope(library: library, notes: notes, repositories: repositories, folders: folders))
+    }
+  }
+}
+
+#if os(macOS) || os(Windows)
+  /// Runs `follow` with the folder of each place chosen (and the first one). A modifier of its own for the same reason as
+  /// `PlaceNotesLoader`.
+  private struct PlaceFollower: ViewModifier {
+    let follow: (URL) -> Void
+    @Environment(Navigator.self) private var navigator
+
+    func body(content: Content) -> some View {
+      content.onChange(of: navigator.item, initial: true) { _, item in
+        if case .folder(let folder) = item { follow(folder) }
+      }
+    }
+  }
+#endif
+
+/// The connected GitHub repositories. A view of its own: their activity (a pull, a push) and counts of local changes
+/// (after every save in a repository) update only this section.
+private struct GitHubSection: View {
+  @Environment(RepositoryStore.self) private var repositories
+  @Environment(WindowState.self) private var window
+
+  var body: some View {
+    let changes = repositories.changeCounts.values.reduce(0, +)
+    let count = repositories.repositories.count
+    KitSection(
+      "GitHub",
+      meta: [count == 1 ? "1 repository" : "\(count) repositories", changes == 0 ? "" : "\(changes) to push"],
+      systemImage: "arrow.triangle.branch", hue: .purple,
+      status: repositories.activity.isEmpty ? .idle : .working
+    ) {
+      ForEach(repositories.repositories, id: \.fullName) { repository in
+        RepositoryRow(repository: repository)
+      }
+    } accessory: {
+      Button("Connect GitHub Repository…", systemImage: "plus") { window.isConnectingGitHub = true }
+        .labelStyle(.iconOnly)
+        .kitHelp("Connect GitHub Repository…")
+    }
+  }
+}
+
 /// The rename prompt, the delete confirmation and file-operation errors, as the kit's sheets (over the window on the
 /// Mac and iPad).
 struct FileActionPrompts: ViewModifier {
@@ -671,7 +752,6 @@ struct FileTreeRow: View {
   @Environment(FileActions.self) private var actions
   @Environment(Navigator.self) private var navigator
   @Environment(\.modelContext) private var context
-  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
   @State private var isDropTargeted = false
   /// How deep in the sidebar's tree the folder is (its root is 0): a project group's outline sets it, and each folder
   /// puts its notes and subfolders one level deeper.
@@ -718,6 +798,7 @@ struct FileTreeRow: View {
   /// copied in. A shared project's folder from Finder opens in the sidebar instead (its access): the rows cover most
   /// of the sidebar, and dropping such a folder on the sidebar means opening it.
   private func drop(_ urls: [URL]) -> Bool {
+    let folders = context.sidebarFolders()
     let roots = library.roots(folders)
     let urls = urls.filter(\.isFileURL)
     let newFolders = urls.filter {
@@ -781,14 +862,23 @@ private struct PlaceRow<Icon: View, Trailing: View>: View {
   let item: LibraryItem
   @Environment(Navigator.self) private var navigator
   @Environment(NotesLocation.self) private var notes
-  @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
+  @Environment(\.modelContext) private var context
 
   var body: some View {
     row
       .isCurrent(navigator.item == item)
       .action {
-        navigator.choose(item, notesFolder: notes.url, openedFiles: Set(folders.filter(\.isFile).map(\.path)))
+        let openedFiles = context.sidebarFolders().filter(\.isFile).map(\.path)
+        navigator.choose(item, notesFolder: notes.url, openedFiles: Set(openedFiles))
       }
+  }
+}
+
+extension ModelContext {
+  /// The sidebar's folders, oldest first, for a row's action: an `@Query` in every folder and place row fetched them
+  /// for each row built, and built every row again whenever one of them changed.
+  func sidebarFolders() -> [SidebarFolder] {
+    (try? fetch(FetchDescriptor<SidebarFolder>(sortBy: [SortDescriptor(\.addedAt)]))) ?? []
   }
 }
 

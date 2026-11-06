@@ -47,7 +47,7 @@ struct ContentView: View {
   var body: some View {
     NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
       // On iPhone the note is pushed over the sidebar.
-      SidebarView(columnVisibility: idiom == .phone ? nil : $columns) { compactColumn = .detail }
+      SidebarView(columnVisibility: idiom == .phone ? nil : $columns, compactColumn: $compactColumn)
         .kitSidebarColumn()
     } detail: {
       NavigationStack {
@@ -63,6 +63,7 @@ struct ContentView: View {
       .kitHidesSystemTitle()
     #endif
     .modifier(FileActionPrompts())
+    .modifier(SelectionFollower(navigator: navigator, compactColumn: $compactColumn, follow: follow))
     .environment(library)
     .environment(navigator)
     .environment(notes)
@@ -103,11 +104,6 @@ struct ContentView: View {
     .onChange(of: repositories.repositories) { updateRoots() }
     // Edits saved, files moved: recount the repositories' local changes.
     .onChange(of: library.generation) { repositories.refreshChanges() }
-    .onChange(of: navigator.selection) { _, selection in
-      follow(selection)
-      if selection != nil { compactColumn = .detail }
-    }
-
     .onOpenURL { open($0) }
     // Opened files go to this window instead of a new one each.
     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
@@ -226,6 +222,21 @@ struct ContentView: View {
     guard url.isFileURL else { return }
     if let shown = library.add([url], existing: folders, context: context).first {
       navigator.open(shown)
+    }
+  }
+}
+
+/// The list follows each new selection, and on iPhone the note column shows it. A modifier of its own, so a new note
+/// updates only it: read in `ContentView`'s body, the selection built the split view again on every pick.
+private struct SelectionFollower: ViewModifier {
+  let navigator: Navigator
+  @Binding var compactColumn: NavigationSplitViewColumn
+  let follow: (URL?) -> Void
+
+  func body(content: Content) -> some View {
+    content.onChange(of: navigator.selection) { _, selection in
+      follow(selection)
+      if selection != nil { compactColumn = .detail }
     }
   }
 }
