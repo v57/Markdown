@@ -37,16 +37,16 @@ struct SidebarView: View {
   @State private var showsPrivacy = false
   /// The notes selected together (⌘-click, ⇧-click, ⇧↑↓) while more than one is; the shown note stays as it was.
   @State private var selectedNotes: Set<URL> = []
-  @AppStorage(NoteSort.key) private var sortsByTitle = false
+  @KitStorage(NoteSort.key, store: ScreenshotDemo.settings) private var sortsByTitle = false
   #if os(macOS) || os(Windows)
     @Environment(NotePreferences.self) private var preferences
     /// The shared project whose folders and notes the sidebar shows (a vault project id, "" for none): the window's.
     @SceneStorage("sidebar.project") private var pickedProject = ""
     /// The project groups closed in the shared projects section (vault group ids).
-    @AppStorage("CollapsedProjectGroups") private var collapsedGroups = KitIDSet()
+    @KitStorage("CollapsedProjectGroups", store: ScreenshotDemo.settings) private var collapsedGroups = KitIDSet()
     /// The shared projects and groups removed from the list (vault ids): Markdown's own, the other apps keep them.
     /// Adding a project's folder again brings it back.
-    @AppStorage("RemovedProjects") private var removedProjects = KitIDSet()
+    @KitStorage("RemovedProjects", store: ScreenshotDemo.settings) private var removedProjects = KitIDSet()
   #endif
   #if os(Windows)
     /// Choose Notes Folder… shows the system's folder picker.

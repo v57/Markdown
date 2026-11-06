@@ -13,7 +13,7 @@ struct WelcomeView: View {
   @Environment(WindowState.self) private var window
   @Environment(\.modelContext) private var context
   @Query(sort: \SidebarFolder.addedAt) private var folders: [SidebarFolder]
-  @AppStorage(NoteFiles.encryptNewNotesKey) private var encryptsNewNotes = true
+  @KitStorage(NoteFiles.encryptNewNotesKey, store: ScreenshotDemo.settings) private var encryptsNewNotes = true
 
   var body: some View {
     KitWelcome(

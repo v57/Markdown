@@ -23,7 +23,7 @@ struct PlaceNotes: View {
   @Environment(FileActions.self) private var actions
   @Environment(Navigator.self) private var navigator
   @Environment(NotePreferences.self) private var preferences
-  @AppStorage(NoteSort.key) private var sortsByTitle = false
+  @KitStorage(NoteSort.key, store: ScreenshotDemo.settings) private var sortsByTitle = false
 
   var body: some View {
     if navigator.item == item, model.loadedItem == item, let summaries = model.summaries {

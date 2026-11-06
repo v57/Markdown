@@ -62,7 +62,7 @@ struct MarkdownWindow: View {
   struct MarkdownSettings: View {
     static let paneKey = "SettingsPane"
     static let accountsPane = "Accounts"
-    @AppStorage(paneKey) private var pane = accountsPane
+    @KitStorage(paneKey) private var pane = accountsPane
 
     var body: some View {
       KitSettings(selection: $pane, window: .hiddenTitleBar) {

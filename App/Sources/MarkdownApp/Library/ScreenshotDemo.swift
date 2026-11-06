@@ -118,6 +118,9 @@ enum ScreenshotDemo {
     ]
   }
 
+  /// The windows' settings (`KitStorage`'s store, which doesn't read `defaultAppStorage`): the demo's own while it runs.
+  static var settings: UserDefaults { isOn ? defaults : .standard }
+
   /// Pins and recents of the demo, apart from the user's.
   static let defaults: UserDefaults = {
     let name = "dev.v57.md.screenshot-demo"

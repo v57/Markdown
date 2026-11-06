@@ -44,7 +44,7 @@ struct DocumentView: View {
   #endif
   /// Edit (default) or preview: preview never reveals syntax, and on iOS lets a tap
   /// follow a link instead of placing the caret.
-  @AppStorage("editsDocuments") private var isEditing = true
+  @KitStorage("editsDocuments", store: ScreenshotDemo.settings) private var isEditing = true
 
   private enum Content: Equatable {
     case empty
