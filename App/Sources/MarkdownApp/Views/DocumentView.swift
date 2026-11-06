@@ -124,6 +124,7 @@ struct DocumentView: View {
         }
       }
       .onAppear {
+        saver.filePresenter = { [notes] in notes.filePresenter }
         actions.willChangeFiles = { [saver] in saver.flush() }
         actions.willCreateNote = { discardEmptyNote() }
         actions.didCreateNote = { if isEditing { commands.focus() } }
@@ -609,18 +610,22 @@ private struct SaveFailedButton: View {
   }
 }
 
-/// What follows the saver: a save in a GitHub repository recounts its local changes, and why a save failed shows while
-/// asked (with Allow Editing… where the sandbox refused it). A modifier of its own, so a save updates only it.
+/// What follows the saver: a save lists the note's new date and first line, one in a GitHub repository recounts its local
+/// changes, and why a save failed shows while asked (with Allow Editing… where the sandbox refused it). A modifier of its
+/// own, so a save updates only it.
 private struct SaveFollower: ViewModifier {
   let saver: DocumentSaver
   @Binding var showsSaveError: Bool
   let allowEditing: (() -> Void)?
   @Environment(RepositoryStore.self) private var repositories
+  @Environment(FolderLibrary.self) private var library
 
   func body(content: Content) -> some View {
     content
       .onChange(of: saver.state) { _, state in
-        if state == .saved, let file = saver.file, repositories.repository(containing: file) != nil {
+        guard state == .saved else { return }
+        library.noteSaved()
+        if let file = saver.file, repositories.repository(containing: file) != nil {
           repositories.refreshChanges()
         }
       }

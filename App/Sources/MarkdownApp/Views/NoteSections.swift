@@ -259,8 +259,9 @@ extension NoteListModel {
     }
     let loaded = await Task.detached(priority: .userInitiated) { NoteSummaries.load(urls) }.value
     guard !Task.isCancelled else { return }
-    summaries = loaded
-    loadedItem = item
+    // Set only when they differ: each set builds the place's rows again (a reload or a save often finds them the same).
+    if summaries != loaded { summaries = loaded }
+    if loadedItem != item { loadedItem = item }
   }
 
   /// Searches every note a moment after typing pauses (the task restarts per keystroke).

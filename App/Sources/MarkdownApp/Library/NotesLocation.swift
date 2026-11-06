@@ -26,6 +26,8 @@ import VaultKit
   var syncError: String? { mirror?.lastError }
 
   @ObservationIgnored private var presenter: FolderPresenter?
+  /// The folder's presenter, for the editor's saves to leave out (`DocumentSaver`): they aren't changes from outside.
+  var filePresenter: (any NSFilePresenter)? { presenter }
   @ObservationIgnored private var mirror: NotesMirror?
   @ObservationIgnored private var scopedFolder: URL?
   /// The window's account (`VaultAccountScope`).

@@ -547,10 +547,11 @@ private struct PlaceNotesLoader: ViewModifier {
   private struct Key: Equatable {
     var item: LibraryItem?
     var generation: Int
+    var savedEdits: Int
   }
 
   func body(content: Content) -> some View {
-    content.task(id: Key(item: navigator.item, generation: library.generation)) {
+    content.task(id: Key(item: navigator.item, generation: library.generation, savedEdits: library.savedEdits)) {
       let item = navigator.item
       await list.load(item, library: library, notes: notes, folders: folders)
       if !Task.isCancelled { window.loadedList = .some(item) }

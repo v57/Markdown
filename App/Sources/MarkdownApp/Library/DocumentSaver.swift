@@ -24,6 +24,9 @@ import Observation
   @ObservationIgnored private var lastWritten: String?
   @ObservationIgnored private var timer: Task<Void, Never>?
   @ObservationIgnored var delay: Duration = .milliseconds(600)
+  /// The notes folder's presenter (`NotesLocation`), which a save leaves out: a save it heard came back as a change from
+  /// outside half a second later and reloaded the whole library (every folder listed again, every row built again).
+  @ObservationIgnored var filePresenter: () -> (any NSFilePresenter)? = { nil }
 
   /// Whether the file holds no text (everything typed is saved; a whitespace-only note counts as empty).
   var isEmpty: Bool {
@@ -64,7 +67,7 @@ import Observation
     timer = nil
     guard let file, let text = pending else { return }
     do {
-      try Self.write(text, to: file)
+      try Self.write(text, to: file, presenter: filePresenter())
       pending = nil
       lastWritten = text
       state = .saved
@@ -99,11 +102,11 @@ import Observation
   }
 
   /// Writes the text, sealed for an encrypted note (`NoteFiles`).
-  nonisolated static func write(_ text: String, to url: URL) throws {
+  nonisolated static func write(_ text: String, to url: URL, presenter: (any NSFilePresenter)? = nil) throws {
     let data = try NoteFiles.data(for: text, at: url)
     var coordinationError: NSError?
     var writeError: Error?
-    NSFileCoordinator().coordinate(
+    NSFileCoordinator(filePresenter: presenter).coordinate(
       writingItemAt: url, options: .forReplacing, error: &coordinationError
     ) { target in
       do {

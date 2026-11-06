@@ -22,6 +22,8 @@ struct FileNode: Identifiable, Hashable {
   var expanded: Set<URL> = []
   /// Bumped by `reload()` so views re-read listings and documents.
   private(set) var generation = 0
+  /// Bumped when the open note is saved: the listed notes read their dates and first lines again (nothing else changed).
+  private(set) var savedEdits = 0
   /// Why the last add failed, for an alert.
   var lastError: String?
   /// Folders the last add was given that aren't projects (as dropped or picked, with their access): the sidebar
@@ -292,6 +294,11 @@ struct FileNode: Identifiable, Hashable {
       expanded.insert(Self.canonical(dir))
       dir = dir.deletingLastPathComponent()
     }
+  }
+
+  /// The open note was saved: the note list shows its new date and first line.
+  func noteSaved() {
+    savedEdits += 1
   }
 
   /// Forgets cached listings and asks views to re-read what they show.
