@@ -71,7 +71,7 @@ public struct MarkdownApp: App {
       // 480 pt minimum on a narrower iPhone centers the oversized content, shifting
       // it left by half the overflow and pushing toolbars past the right edge.
       #if os(macOS) || os(visionOS) || os(Windows)
-        .frame(minWidth: 640, minHeight: 400)
+        .kitWindowMinimum(width: 640, height: 400)
       #endif
       .componentKit(accent: .blue)
     }
