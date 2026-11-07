@@ -113,7 +113,9 @@ App (App/, Markdown.xcodeproj)
   newest first (or by title), each with its time and first line; the detail
   pane edits the note. With no note chosen, a folder's README is shown. A
   project's folder opens in the sidebar once the user picks it (the sandbox);
-  it is saved with SwiftData (SidebarFolder: path plus a security-scoped
+  the open panel starts on the folder that holds every shared project, and
+  picking a folder around a project opens every project in it without asking
+  again (FolderLibrary.access(to:from:), remembered across launches); it is saved with SwiftData (SidebarFolder: path plus a security-scoped
   bookmark, so the sandbox grants access again after a relaunch), and only
   shared projects' folders show (FolderLibrary.projectPaths). Pins and recent notes are kept in the app's
   defaults (NotePreferences).

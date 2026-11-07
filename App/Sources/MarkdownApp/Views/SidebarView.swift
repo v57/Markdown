@@ -431,14 +431,20 @@ struct SidebarView: View {
           if add([granted]) { follow(url) }
           return
         }
+        // The panel starts on the folder with every project: choosing it opens them all from now on, without asking.
+        let around = library.projectsFolder(around: url)
         Task {
           guard
             let chosen = await KitDesktop.chooseFolders(
-              prompt: "Open", message: "Open “\(project.name)” in Markdown. Markdown opens only folders you choose.",
-              directory: url
+              prompt: "Open",
+              message: around == FolderLibrary.canonical(url)
+                ? "Open “\(project.name)” in Markdown. Markdown opens only folders you choose."
+                : "Open “\(project.name)” in Markdown. Choose “\(around.lastPathComponent)” to open every project in it without asking again.",
+              directory: around
             ).first
           else { return }
-          if add([chosen]) { follow(chosen) }
+          let opened = library.access(to: url, from: chosen)
+          if add([opened]) { follow(opened) }
         }
       #endif
     }

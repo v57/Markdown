@@ -157,6 +157,46 @@ struct FileNode: Identifiable, Hashable {
     return nil
   }
 
+  /// Where the open panel for a project's folder starts: the folder that holds every shared project (`projectPaths`)
+  /// when that is narrower than the home folder, so one pick there opens them all (`access(to:from:)`); otherwise the
+  /// project's own folder.
+  func projectsFolder(around project: URL) -> URL {
+    let project = Self.canonical(project)
+    let paths = projectPaths.union([project.path]).map { URL(fileURLWithPath: $0).pathComponents }
+    guard var common = paths.first else { return project }
+    for components in paths.dropFirst() {
+      common = Array(zip(common, components).prefix { $0 == $1 }.map(\.0))
+    }
+    let home = Self.canonical(URL(fileURLWithPath: Self.realHome)).pathComponents
+    guard common.count > home.count, common.starts(with: home) else { return project }
+    return URL(fileURLWithPath: NSString.path(withComponents: common), isDirectory: true)
+  }
+
+  /// What to add for `project` when the user picked `chosen` in its open panel: a folder around the project gives
+  /// access to every folder inside it, remembered (`rememberedAccess(to:)`), and the project is added with it; any
+  /// other pick is added as it is.
+  func access(to project: URL, from chosen: URL) -> URL {
+    let root = Self.canonical(chosen).path
+    let path = Self.canonical(project).path
+    guard path.hasPrefix(root.hasSuffix("/") ? root : root + "/") else { return chosen }
+    if chosen.startAccessingSecurityScopedResource() { accessing.insert(chosen) }
+    if let bookmark = try? chosen.bookmarkData(
+      options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
+    {
+      remember(bookmark, for: root)
+    }
+    return project
+  }
+
+  /// The user's home folder (in the sandbox `NSHomeDirectory()` is the app's container).
+  private static var realHome: String {
+    #if os(Windows)
+      NSHomeDirectory()
+    #else
+      getpwuid(getuid()).flatMap { $0.pointee.pw_dir.map { String(cString: $0) } } ?? NSHomeDirectory()
+    #endif
+  }
+
   private func remember(_ bookmark: Data, for path: String) {
     grantedFolders[path] = bookmark
   }

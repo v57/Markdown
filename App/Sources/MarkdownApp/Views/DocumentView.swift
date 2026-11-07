@@ -509,16 +509,18 @@ struct DocumentView: View {
         addFolder(granted, showing: file)
         return
       }
+      // The panel starts on the folder with every project: choosing it opens them all from now on, without asking.
+      let around = library.projectsFolder(around: project)
       Task {
         guard
           let granted = await KitDesktop.chooseFolders(
             prompt: "Open",
             message:
-              "Choose “\(project.lastPathComponent)” to open the project in the sidebar, with this note’s images and linked files.",
-            directory: project
+              "Choose “\(around.lastPathComponent)” to open the project in the sidebar, with this note’s images and linked files.",
+            directory: around
           ).first
         else { return }
-        addFolder(granted, showing: file)
+        addFolder(library.access(to: project, from: granted), showing: file)
       }
     #else
       isPickingFolder = true
