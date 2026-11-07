@@ -9,18 +9,19 @@ import VaultKit
 /// them in `Application Support/Accounts/<id>/`, outside Personal's notes folder so Personal's mirror never syncs
 /// them into Personal's vault.
 enum AccountStorage {
-  /// Application Support for Personal; the account's folder in it otherwise.
+  /// The app's own Application Support for Personal (`AppSandbox.supportDirectory`: the container's in the sandbox,
+  /// `Application Support/dev.v57.md` without it); the account's folder in it otherwise.
   static func directory(for vault: Vault) -> URL {
-    let support = URL.applicationSupportDirectory
+    let support = AppSandbox.supportDirectory
     guard !vault.isPersonal else { return support }
     return support.appendingPathComponent("Accounts", isDirectory: true)
       .appendingPathComponent(vault.accountID, isDirectory: true)
   }
 
-  /// The account's notes folder when the user hasn't chosen one: Documents for Personal (on iOS: On My iPhone ›
-  /// Markdown in Files).
+  /// The account's notes folder when the user hasn't chosen one: the app's Documents for Personal (on iOS: On My
+  /// iPhone › Markdown in Files; on a Mac without the sandbox `Documents` in `directory(for:)`, `AppSandbox`).
   static func defaultNotesFolder(for vault: Vault) -> URL {
-    vault.isPersonal ? URL.documentsDirectory : directory(for: vault).appendingPathComponent("Notes", isDirectory: true)
+    vault.isPersonal ? AppSandbox.documentsDirectory : directory(for: vault).appendingPathComponent("Notes", isDirectory: true)
   }
 
   /// The UserDefaults key of a setting this device keeps per account (the chosen notes folder's bookmark):
@@ -44,8 +45,18 @@ enum AccountStorage {
   static func sidebarStore(for vault: Vault) -> ModelContainer {
     if let container = sidebarStores[vault.accountID] { return container }
     let configuration: ModelConfiguration
-    if vault.isPersonal || ScreenshotDemo.isOn {
-      configuration = ModelConfiguration(isStoredInMemoryOnly: ScreenshotDemo.isOn, cloudKitDatabase: .none)
+    if ScreenshotDemo.isOn {
+      configuration = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+    } else if vault.isPersonal {
+      #if os(macOS)
+        // SwiftData's default place, in the app's own folder: without the sandbox the default would be a
+        // `default.store` every unsandboxed app shares.
+        let folder = directory(for: vault)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        configuration = ModelConfiguration(url: folder.appendingPathComponent("default.store"), cloudKitDatabase: .none)
+      #else
+        configuration = ModelConfiguration(cloudKitDatabase: .none)
+      #endif
     } else {
       let folder = directory(for: vault)
       try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

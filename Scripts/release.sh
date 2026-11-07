@@ -72,7 +72,9 @@ mac)
 appstore)
   rm -rf $out/appstore && mkdir -p $out/appstore
   for platform in macOS iOS; do
-    archive $platform $out/appstore/Markdown-$platform.xcarchive
+    # The App Store needs the sandbox, which the direct download goes without: the app finds out at run time
+    # (VaultKit's AppSandbox) and asks for project folders once (VaultFolderAccess).
+    archive $platform $out/appstore/Markdown-$platform.xcarchive ENABLE_APP_SANDBOX=YES
     xcodebuild -exportArchive -archivePath $out/appstore/Markdown-$platform.xcarchive \
       -exportPath $out/appstore/$platform -exportOptionsPlist Scripts/ExportOptions-AppStore.plist \
       -allowProvisioningUpdates

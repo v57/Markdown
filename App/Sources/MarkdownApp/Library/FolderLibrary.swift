@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import SwiftData
 import UniformTypeIdentifiers
+import VaultKit
 
 /// One row of a folder tree: a subdirectory or a markdown file.
 struct FileNode: Identifiable, Hashable {
@@ -129,85 +130,13 @@ struct FileNode: Identifiable, Hashable {
 
   // MARK: - Remembered access
 
-  /// The access the user granted to a folder (or one around it) earlier, started for this run: a project opened once
-  /// doesn't ask for its folder again, also after it was closed. Nil when there's none that still resolves.
-  func rememberedAccess(to folder: URL) -> URL? {
-    let path = Self.canonical(folder).path
-    var granted = grantedFolders
-    defer { grantedFolders = granted }
-    let candidates = granted.keys.filter { path == $0 || path.hasPrefix($0 + "/") }.sorted { $0.count > $1.count }
-    for candidate in candidates {
-      var isStale = false
-      guard let bookmark = granted[candidate],
-        let url = try? URL(
-          resolvingBookmarkData: bookmark, options: Self.bookmarkResolutionOptions, relativeTo: nil,
-          bookmarkDataIsStale: &isStale),
-        Self.canonical(url).path == candidate, url.startAccessingSecurityScopedResource()
-      else {
-        granted[candidate] = nil
-        continue
-      }
-      accessing.insert(url)
-      if isStale {
-        granted[candidate] = try? url.bookmarkData(
-          options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
-      }
-      return path == candidate ? url : folder
-    }
-    return nil
-  }
-
-  /// Where the open panel for a project's folder starts: the folder that holds every shared project (`projectPaths`)
-  /// when that is narrower than the home folder, so one pick there opens them all (`access(to:from:)`); otherwise the
-  /// project's own folder.
-  func projectsFolder(around project: URL) -> URL {
-    let project = Self.canonical(project)
-    let paths = projectPaths.union([project.path]).map { URL(fileURLWithPath: $0).pathComponents }
-    guard var common = paths.first else { return project }
-    for components in paths.dropFirst() {
-      common = Array(zip(common, components).prefix { $0 == $1 }.map(\.0))
-    }
-    let home = Self.canonical(URL(fileURLWithPath: Self.realHome)).pathComponents
-    guard common.count > home.count, common.starts(with: home) else { return project }
-    return URL(fileURLWithPath: NSString.path(withComponents: common), isDirectory: true)
-  }
-
-  /// What to add for `project` when the user picked `chosen` in its open panel: a folder around the project gives
-  /// access to every folder inside it, remembered (`rememberedAccess(to:)`), and the project is added with it; any
-  /// other pick is added as it is.
-  func access(to project: URL, from chosen: URL) -> URL {
-    let root = Self.canonical(chosen).path
-    let path = Self.canonical(project).path
-    guard path.hasPrefix(root.hasSuffix("/") ? root : root + "/") else { return chosen }
-    if chosen.startAccessingSecurityScopedResource() { accessing.insert(chosen) }
-    if let bookmark = try? chosen.bookmarkData(
-      options: Self.bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
-    {
-      remember(bookmark, for: root)
-    }
-    return project
-  }
-
-  /// The user's home folder (in the sandbox `NSHomeDirectory()` is the app's container).
-  private static var realHome: String {
-    #if os(Windows)
-      NSHomeDirectory()
-    #else
-      getpwuid(getuid()).flatMap { $0.pointee.pw_dir.map { String(cString: $0) } } ?? NSHomeDirectory()
-    #endif
-  }
+  /// The folders the user granted (VaultKit's `FolderGrants`): a project opened once doesn't ask for its folder again,
+  /// also after it was closed; without the sandbox every folder opens (the demo's grants stay in its own defaults).
+  let grants = FolderGrants(defaults: ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard)
 
   private func remember(_ bookmark: Data, for path: String) {
-    grantedFolders[path] = bookmark
+    grants.remember(bookmark, for: URL(fileURLWithPath: path, isDirectory: true))
   }
-
-  /// Security-scoped bookmarks by folder path, on this device (the demo's stay in its own defaults).
-  private var grantedFolders: [String: Data] {
-    get { Self.grantDefaults.dictionary(forKey: Self.grantsKey) as? [String: Data] ?? [:] }
-    set { Self.grantDefaults.set(newValue, forKey: Self.grantsKey) }
-  }
-  private static let grantsKey = "GrantedFolders"
-  private static var grantDefaults: UserDefaults { ScreenshotDemo.isOn ? ScreenshotDemo.defaults : .standard }
 
   /// The folder's URL with access granted, or nil when it can no longer be reached
   /// (moved, deleted, bookmark unresolvable).

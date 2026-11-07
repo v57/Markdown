@@ -24,6 +24,9 @@ public struct MarkdownApp: App {
   // so the init body compiles to nothing there.
   public init() {
     #if os(macOS)
+      // A build without the sandbox takes over what a sandboxed one kept in its container (settings, the sidebar
+      // store, the notes folder), once, before anything reads them.
+      if !ScreenshotDemo.isOn { AppSandbox.carryOverContainer() }
       if CommandLine.arguments.contains("--selftest") {
         SelfTest.runAndExit()  // Never
       }

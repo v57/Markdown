@@ -417,36 +417,19 @@ struct SidebarView: View {
 
     private func addProject(_ project: VaultProject) {
       guard let url = SidebarProjects.url(of: project) else { return }
-      #if os(Windows)
-        // No sandbox: the project's folder is the one to add.
+      // The demo's projects are in its own temporary folder (or `--add-folder`'s), without asking.
+      if ScreenshotDemo.isOn, !ScreenshotDemo.flag("--asks-for-folders") {
         if add([url]) { follow(url) }
-      #else
-        // The demo's projects are in its own temporary folder (or `--add-folder`'s), without asking.
-        if ScreenshotDemo.isOn, !ScreenshotDemo.flag("--asks-for-folders") {
-          if add([url]) { follow(url) }
-          return
-        }
-        // The sandbox opens only folders the user chose: asked once per folder.
-        if let granted = library.rememberedAccess(to: url) {
-          if add([granted]) { follow(url) }
-          return
-        }
-        // The panel starts on the folder with every project: choosing it opens them all from now on, without asking.
-        let around = library.projectsFolder(around: url)
-        Task {
-          guard
-            let chosen = await KitDesktop.chooseFolders(
-              prompt: "Open",
-              message: around == FolderLibrary.canonical(url)
-                ? "Open “\(project.name)” in Markdown. Markdown opens only folders you choose."
-                : "Open “\(project.name)” in Markdown. Choose “\(around.lastPathComponent)” to open every project in it without asking again.",
-              directory: around
-            ).first
-          else { return }
-          let opened = library.access(to: url, from: chosen)
-          if add([opened]) { follow(opened) }
-        }
-      #endif
+        return
+      }
+      // Without the sandbox the folder opens as it is. In it, the access the user gave this folder or one around it;
+      // else the open panel, on the folder with every project: choosing that one opens them all from now on.
+      let projects = SidebarProjects.tree(windowVault ?? .shared).projects().compactMap(SidebarProjects.url(of:))
+      Task {
+        guard let opened = await VaultFolderAccess.request(url, name: project.name, among: projects, grants: library.grants)
+        else { return }
+        if add([opened]) { follow(opened) }
+      }
     }
   #endif
 }

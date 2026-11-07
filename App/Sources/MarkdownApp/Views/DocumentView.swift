@@ -3,6 +3,8 @@ import MarkdownKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+import VaultKit
+import VaultUI
 
 /// The detail pane: the selected note, or a folder's README (a link to the folder, or the
 /// listed folder while no note is selected), edited in place or read (`Edit` / `Read`).
@@ -505,22 +507,16 @@ struct DocumentView: View {
   /// Asks for access to the project's folder and opens it in the sidebar, with the file in it.
   private func openProject(_ project: URL, showing file: URL) {
     #if os(macOS)
-      if let granted = library.rememberedAccess(to: project) {
-        addFolder(granted, showing: file)
-        return
-      }
-      // The panel starts on the folder with every project: choosing it opens them all from now on, without asking.
-      let around = library.projectsFolder(around: project)
+      // Without the sandbox the folder opens as it is; in it, a grant or the panel (on the folder with every project).
+      let projects = library.projectPaths.map { URL(fileURLWithPath: $0, isDirectory: true) }
       Task {
         guard
-          let granted = await KitDesktop.chooseFolders(
-            prompt: "Open",
-            message:
-              "Choose “\(around.lastPathComponent)” to open the project in the sidebar, with this note’s images and linked files.",
-            directory: around
-          ).first
+          let granted = await VaultFolderAccess.request(
+            project, name: project.lastPathComponent, among: projects,
+            message: "Choose “\(FolderGrants.folder(around: project, among: projects).lastPathComponent)” to open the project in the sidebar, with this note’s images and linked files.",
+            grants: library.grants)
         else { return }
-        addFolder(library.access(to: project, from: granted), showing: file)
+        addFolder(granted, showing: file)
       }
     #else
       isPickingFolder = true

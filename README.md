@@ -112,13 +112,18 @@ App (App/, Markdown.xcodeproj)
   and, right under the chosen place's row, its notes: pinned first, then
   newest first (or by title), each with its time and first line; the detail
   pane edits the note. With no note chosen, a folder's README is shown. A
-  project's folder opens in the sidebar once the user picks it (the sandbox);
-  the open panel starts on the folder that holds every shared project, and
-  picking a folder around a project opens every project in it without asking
-  again (FolderLibrary.access(to:from:), remembered across launches); it is saved with SwiftData (SidebarFolder: path plus a security-scoped
+  project's folder opens in the sidebar when it's picked; it is saved with SwiftData (SidebarFolder: path plus a security-scoped
   bookmark, so the sandbox grants access again after a relaunch), and only
   shared projects' folders show (FolderLibrary.projectPaths). Pins and recent notes are kept in the app's
   defaults (NotePreferences).
+- The Mac app runs without the App Sandbox (the App Store archive turns it on,
+  Scripts/release.sh), and finds out which at run time through VaultKit's
+  AppSandbox: its data is in Application Support/dev.v57.md (the default
+  notes folder is Documents in it), carried over once from a sandboxed build's
+  container, and a project opens without asking. In the sandbox the open
+  panel asks for a project's folder once (VaultUI's VaultFolderAccess),
+  starting on the folder that holds every project, so one pick there opens
+  them all.
 
   Files are edited in place: DocumentSaver writes edits back (coordinated,
   atomic) after a short pause, and right away on ⌘S, switching documents,
