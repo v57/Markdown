@@ -23,6 +23,8 @@ public struct MarkdownApp: App {
   // On iOS there is no CLI (the harness lives in the AppKit-only MarkdownKit stack),
   // so the init body compiles to nothing there.
   public init() {
+    // The downloaded translation of the app's language (Settings ▸ Languages), before any text shows.
+    KitLanguages.start(sources: ["Markdown", "MarkdownKit", "ComponentKit", "VaultUI", "GitHubUI"])
     #if os(macOS)
       // A build without the sandbox takes over what a sandboxed one kept in its container (settings, the sidebar
       // store, the notes folder), once, before anything reads them.
@@ -76,6 +78,7 @@ public struct MarkdownApp: App {
       #if os(macOS) || os(visionOS) || os(Windows)
         .kitWindowMinimum(width: 640, height: 400)
       #endif
+      .kitLanguages()
       .componentKit(accent: .blue)
     }
     .defaultSize(width: 1280, height: 800)
@@ -91,6 +94,7 @@ public struct MarkdownApp: App {
     #if os(macOS)
       Settings {
         MarkdownSettings()
+          .kitLanguages()
           .componentKit(accent: .blue)
       }
       .windowStyle(.hiddenTitleBar)

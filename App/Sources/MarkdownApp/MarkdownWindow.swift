@@ -72,6 +72,7 @@ struct MarkdownWindow: View {
         }
         // Your devices, and your iPhone and iPad sign in to this Mac over SSH: which of them can, and the other keys.
         SettingsPane("Remote", systemImage: "network", hue: .teal, section: "v57") { VaultRemoteSettings() }
+        SettingsPane("Languages", systemImage: "globe", hue: .green, section: "v57") { KitLanguagesSettings() }
       }
       .frame(width: 680, height: 460)
     }
