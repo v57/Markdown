@@ -39,7 +39,7 @@ struct WelcomeView: View {
     .options { Toggle("Encrypt new notes", isOn: $encryptsNewNotes) }
   }
 
-  private var newNoteDetail: String {
+  private var newNoteDetail: LocalizedStringKey {
     notes.isICloud
       ? "Notes are files on this \(deviceName) and sync through iCloud."
       : "Start writing. Notes are plain files on this \(deviceName)."

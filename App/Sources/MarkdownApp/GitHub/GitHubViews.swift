@@ -185,7 +185,7 @@ struct RepositoryRow: View {
     )
     .kitContextMenu { menu }
     .kitPrompt(
-      "Commit and Push", isPresented: $isCommitting, text: $commitMessage, message: changeSummary,
+      "Commit and Push", isPresented: $isCommitting, text: $commitMessage, message: "\(changeSummary)",
       systemImage: "arrow.up", hue: .purple, field: KitPromptField("Message", systemImage: "text.bubble"), confirm: "Push"
     ) { message in
       Task { await store.commitAndPush(repository, message: message, client: auth.api) }
@@ -199,11 +199,12 @@ struct RepositoryRow: View {
     }
   }
 
-  private var disconnectMessage: String {
-    let count = store.changeCounts[repository.fullName] ?? 0
-    return count == 0
-      ? "The local copy is removed. The repository on GitHub is not affected."
-      : "\(count) change\(count == 1 ? " hasn’t" : "s haven’t") been pushed and will be lost."
+  private var disconnectMessage: LocalizedStringKey {
+    switch store.changeCounts[repository.fullName] ?? 0 {
+    case 0: "The local copy is removed. The repository on GitHub is not affected."
+    case 1: "1 change hasn’t been pushed and will be lost."
+    case let count: "\(count) changes haven’t been pushed and will be lost."
+    }
   }
 
   @ViewBuilder private var menu: some View {
@@ -221,7 +222,7 @@ struct RepositoryRow: View {
 
   private var changeSummary: String {
     let changes = store.changes(repository)
-    guard !changes.isEmpty else { return "No local changes. Pull anyway to get GitHub’s latest." }
+    guard !changes.isEmpty else { return String(localized: "No local changes. Pull anyway to get GitHub’s latest.") }
     let lines = changes.prefix(8).map { change -> String in
       let mark = switch change.kind {
       case .added: "+"
@@ -230,7 +231,7 @@ struct RepositoryRow: View {
       }
       return "\(mark) \(change.path)"
     }
-    return (lines + (changes.count > 8 ? ["and \(changes.count - 8) more"] : [])).joined(separator: "\n")
+    return (lines + (changes.count > 8 ? [String(localized: "and \(changes.count - 8) more")] : [])).joined(separator: "\n")
   }
 
   private func beginCommit() {

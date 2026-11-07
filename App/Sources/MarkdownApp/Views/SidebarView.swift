@@ -190,7 +190,7 @@ struct SidebarView: View {
     }
   }
 
-  private var storageName: String { "On My \(KitDevice.name)" }
+  private var storageName: LocalizedStringKey { "On My \(KitDevice.name)" }
 
   private var openedFiles: [SidebarFolder] { folders.filter(\.isFile) }
 
@@ -677,9 +677,9 @@ private struct ProjectFolderRows: View {
       // On the folder and the folders inside it, whose own menus win.
       .kitContextMenu { menu(url) }
     } else {
-      SidebarRow(folder.name, subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
+      SidebarRow("\(folder.name)", subtitle: "Can’t be found", systemImage: "exclamationmark.triangle", hue: .yellow)
         .kitHelp(
-          folder.name, meta: "\(folder.path) can’t be found. It may have been moved or deleted.",
+          "\(folder.name)", meta: "\(folder.path) can’t be found. It may have been moved or deleted.",
           systemImage: "exclamationmark.triangle", hue: .yellow)
         .kitContextMenu { ProjectFolderMenu(folder: folder, close: close) }
     }

@@ -188,7 +188,7 @@ struct DocumentView: View {
     case .failed(let file, let message):
       EmptyState(
         systemImage: "exclamationmark.triangle", title: "Couldn’t Open “\(file.lastPathComponent)”",
-        message: message)
+        message: "\(message)")
     }
   }
 
