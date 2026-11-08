@@ -630,19 +630,29 @@ struct FileActionPrompts: ViewModifier {
       .kitConfirmation(
         "Delete “\(actions.deleting.map(Self.shownName) ?? "")”?",
         isPresented: Binding(get: { actions.deleting != nil }, set: { if !$0 { actions.deleting = nil } }),
-        message: "This can’t be undone.", systemImage: "trash", confirm: "Delete"
+        message: Self.deleteMessage, systemImage: "trash", confirm: "Delete"
       ) {
         actions.confirmDelete()
       }
       .kitConfirmation(
         "Delete \(actions.deletingSeveral.count) Notes?",
         isPresented: Binding(get: { !actions.deletingSeveral.isEmpty }, set: { if !$0 { actions.deletingSeveral = [] } }),
-        message: "This can’t be undone.", systemImage: "trash", confirm: "Delete"
+        message: Self.deleteSeveralMessage, systemImage: "trash", confirm: "Delete"
       ) {
         actions.confirmDeleteSeveral()
       }
       .kitNotice("Couldn’t Complete the Action", message: $actions.error)
   }
+
+  /// What a delete does: on iPhone and iPad a note goes to Files' Recently Deleted (`FileActions.discard`), where it
+  /// can be got back, so "can't be undone" wasn't true there.
+  #if os(iOS)
+    static var deleteMessage: LocalizedStringKey { "It goes to Recently Deleted in the Files app." }
+    static var deleteSeveralMessage: LocalizedStringKey { "They go to Recently Deleted in the Files app." }
+  #else
+    static var deleteMessage: LocalizedStringKey { "This can’t be undone." }
+    static var deleteSeveralMessage: LocalizedStringKey { "This can’t be undone." }
+  #endif
 
   /// A note by the name the sidebar shows, without its extension ("Untitled", not "Untitled.mdenc", M-007); anything
   /// else by its file name.
