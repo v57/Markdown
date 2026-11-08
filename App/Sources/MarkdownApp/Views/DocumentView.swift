@@ -221,12 +221,24 @@ struct DocumentView: View {
     return "Open “\(linkRequest.target)”?"
   }
 
-  /// Where the link leads in full (a file's path, else the whole URL) and the app that would open it.
+  /// Where the link leads (a file's path, else the whole URL) and the app that would open it. On iPhone and iPad a
+  /// file's path is the app's container, which says nothing (M-008): there it's the path in its folder ("ZZ Test/img.png").
   private var linkMessage: LocalizedStringKey {
     guard let url = linkRequest?.url else { return "" }
-    let place = url.isFileURL ? url.path : url.absoluteString
+    let place = url.isFileURL ? (idiom == .mac ? url.path : placeInLibrary(url)) : url.absoluteString
     guard let opener = linkRequest?.opener else { return "\(place) opens in another app." }
     return "\(place) opens in \(opener)."
+  }
+
+  /// A file's path from the folder in the sidebar that holds it, that folder's name first; its name alone outside them.
+  private func placeInLibrary(_ url: URL) -> String {
+    let file = FolderLibrary.canonical(url)
+    guard let root = library.root(of: file, roots: roots) else { return file.lastPathComponent }
+    let base = FolderLibrary.canonical(root).path
+    let relative = file.path.hasPrefix(base + "/") ? String(file.path.dropFirst(base.count + 1)) : file.lastPathComponent
+    // The notes folder is the app's Documents: its own name is noise.
+    if let notesRoot = notes.url, FolderLibrary.canonical(notesRoot) == FolderLibrary.canonical(root) { return relative }
+    return root.lastPathComponent + "/" + relative
   }
 
   /// Back and forward, except on iPhone: its bar is short, so they're in the note's More menu.
