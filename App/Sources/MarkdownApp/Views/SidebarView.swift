@@ -627,7 +627,7 @@ struct FileActionPrompts: ViewModifier {
         actions.commitRename()
       }
       .kitConfirmation(
-        "Delete “\(actions.deleting?.lastPathComponent ?? "")”?",
+        "Delete “\(actions.deleting.map(Self.shownName) ?? "")”?",
         isPresented: Binding(get: { actions.deleting != nil }, set: { if !$0 { actions.deleting = nil } }),
         message: "This can’t be undone.", systemImage: "trash", confirm: "Delete"
       ) {
@@ -641,6 +641,13 @@ struct FileActionPrompts: ViewModifier {
         actions.confirmDeleteSeveral()
       }
       .kitNotice("Couldn’t Complete the Action", message: $actions.error)
+  }
+
+  /// A note by the name the sidebar shows, without its extension ("Untitled", not "Untitled.mdenc", M-007); anything
+  /// else by its file name.
+  static func shownName(_ url: URL) -> String {
+    !FolderLibrary.isDirectory(url) && FolderLibrary.isMarkdown(url)
+      ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
   }
 }
 
