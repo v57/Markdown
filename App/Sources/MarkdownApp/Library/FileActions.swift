@@ -44,9 +44,17 @@ import VaultKit
 
   /// Creates an empty note in `directory` (named `name`, else "Untitled") and shows it. In the notes
   /// folder it's encrypted (`.mdenc`) unless the user turned that off.
-  @discardableResult
-  func newNote(in directory: URL, named name: String? = nil) -> URL? {
+  func newNote(in directory: URL, named name: String? = nil) {
     willCreateNote()
+    // The empty note just left is still going (`removals`): the new one waits for it, so it can take its name.
+    guard let removals else { return makeNote(in: directory, named: name) }
+    Task {
+      await removals.value
+      makeNote(in: directory, named: name)
+    }
+  }
+
+  private func makeNote(in directory: URL, named name: String?) {
     let base = name?.trimmingCharacters(in: .whitespacesAndNewlines)
       .replacingOccurrences(of: "/", with: "-")
       .replacingOccurrences(of: ":", with: "-")
@@ -62,7 +70,6 @@ import VaultKit
       navigator.startsEditing = true
       didCreateNote()
     }
-    return url
   }
 
   /// Creates a folder in `directory`, shows it and asks for its name.
@@ -76,7 +83,7 @@ import VaultKit
   private func create(_ url: URL, _ make: (URL) throws -> Void) -> URL? {
     willChangeFiles()
     do {
-      try coordinate(writing: url, options: []) { try make($0) }
+      try Self.coordinate(writing: url, options: []) { try make($0) }
     } catch {
       self.error = error.localizedDescription
       return nil
@@ -280,7 +287,7 @@ import VaultKit
     #if os(iOS)
       deletingSeveral = urls
     #else
-      urls.forEach(remove)
+      urls.forEach { remove($0) }
     #endif
   }
 
@@ -293,41 +300,115 @@ import VaultKit
   func confirmDeleteSeveral() {
     let urls = deletingSeveral
     deletingSeveral = []
-    urls.forEach(remove)
+    urls.forEach { remove($0) }
   }
 
-  private func remove(_ url: URL) {
+  /// The removals still running, in order: a new note waits for them (`newNote`).
+  @ObservationIgnored private var removals: Task<Void, Never>?
+
+  /// Trashes or deletes `url` off the main thread, then updates the sidebar and the history. On the main thread the
+  /// app froze for good on iOS (M-001): `trashItem` inside our coordinated write waited on the File Provider, which
+  /// waited on that write. Nothing here coordinates or trashes on the main thread, and a removal that doesn't finish
+  /// within `removalTimeout` is reported instead of waited for.
+  private func remove(_ url: URL, permanently: Bool = false) {
     willChangeFiles()
-    do {
-      try coordinate(writing: url, options: .forDeleting) { url in
+    let previous = removals
+    let task = Task { [weak self] in
+      await previous?.value
+      do {
+        try await Self.discard(url, permanently: permanently, timeout: Self.removalTimeout)
+      } catch {
+        self?.error = error.localizedDescription
+      }
+      guard let self else { return }
+      // Gone or not, the sidebar shows what's on disk.
+      if !FileManager.default.fileExists(atPath: url.path) { navigator.forget(under: url) }
+      library.reload()
+    }
+    removals = task
+    Task { [weak self] in
+      await task.value
+      if self?.removals == task { self?.removals = nil }
+    }
+  }
+
+  /// Deletes a note the user left empty. Only in the notes folder: an empty file in a project or a repository may
+  /// well be meant to be there. It's deleted, not trashed: there's nothing in it to get back.
+  func discardEmptyNote(_ url: URL) {
+    guard isInNotesFolder(url), FileManager.default.fileExists(atPath: url.path) else { return }
+    remove(url, permanently: true)
+  }
+
+  nonisolated static let removalTimeout: Duration = .seconds(15)
+
+  nonisolated enum RemovalError: LocalizedError {
+    case timedOut(String)
+    var errorDescription: String? {
+      switch self {
+      case .timedOut(let name):
+        String(localized: "“\(name)” couldn’t be deleted: the system didn’t finish in time. Try again in a moment.")
+      }
+    }
+  }
+
+  /// Moves `url` to the Trash, or deletes it with `permanently`, on a thread of its own. Where there's no Trash (an
+  /// app's own folder on iPhone and iPad) it's deleted: the user confirmed that (`confirmDelete`). The trash isn't
+  /// coordinated on iOS: the File Provider behind Files' folders (On My iPhone, iCloud Drive) coordinates it itself,
+  /// and inside a coordinated write of ours it waits for that write to end, which never comes.
+  nonisolated static func discard(_ url: URL, permanently: Bool, timeout: Duration) async throws {
+    try await runBlocking(timeout: timeout, name: url.lastPathComponent) {
+      if permanently { return try removeCoordinated(url) }
+      #if os(iOS)
         do {
           try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         } catch {
-          #if os(iOS)
-            try FileManager.default.removeItem(at: url)  // confirmed by the user
-          #else
-            throw error
-          #endif
+          try removeCoordinated(url)
         }
-      }
-    } catch {
-      self.error = error.localizedDescription
-      return
+      #else
+        try coordinate(writing: url, options: .forDeleting) {
+          try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+        }
+      #endif
     }
-    navigator.forget(under: url)
-    library.reload()
   }
 
-  /// Trashes a note the user left empty. Only in the notes folder: an empty file in a project or a repository may
-  /// well be meant to be there.
-  func discardEmptyNote(_ url: URL) {
-    guard isInNotesFolder(url), FileManager.default.fileExists(atPath: url.path) else { return }
-    remove(url)
+  nonisolated private static func removeCoordinated(_ url: URL) throws {
+    try coordinate(writing: url, options: .forDeleting) { try FileManager.default.removeItem(at: $0) }
+  }
+
+  /// Runs `work` on a global queue and returns its result, or throws `RemovalError.timedOut` once `timeout` passes
+  /// (the work goes on: a blocked call can't be stopped, but the app no longer waits for it).
+  nonisolated static func runBlocking(
+    timeout: Duration, name: String, _ work: @escaping @Sendable () throws -> Void
+  ) async throws {
+    let once = OnceFlag()
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let result = Result { try work() }
+        if once.claim() { continuation.resume(with: result) }
+      }
+      let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
+      DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + seconds) {
+        if once.claim() { continuation.resume(throwing: RemovalError.timedOut(name)) }
+      }
+    }
+  }
+
+  /// True for the first caller only.
+  nonisolated private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool {
+      lock.withLock {
+        defer { claimed = true }
+        return !claimed
+      }
+    }
   }
 
   // MARK: - Helpers
 
-  private func coordinate(
+  nonisolated private static func coordinate(
     writing url: URL, options: NSFileCoordinator.WritingOptions, _ body: (URL) throws -> Void
   ) throws {
     var coordinationError: NSError?
