@@ -24,6 +24,8 @@
     public var onOpenURL: (@MainActor (URL) -> Bool)?
     public var startsEditing: Bool
     public var commands: MarkdownEditorCommands?
+    var loadsRemoteImages = false
+    var onRemoteImagesBlocked: (@MainActor (Bool) -> Void)?
 
     @State private var draft = ""
     @State private var loaded = false
@@ -53,10 +55,46 @@
       self.commands = commands
     }
 
+    /// Whether images from the web load (security audit M1): off unless the host turns it on, for instance from its
+    /// "Load images" bar. `onBlocked` hears whether the document holds web images that didn't load.
+    public func remoteImages(loads: Bool, onBlocked: (@MainActor (Bool) -> Void)? = nil) -> Self {
+      var copy = self
+      copy.loadsRemoteImages = loads
+      copy.onRemoteImagesBlocked = onBlocked
+      return copy
+    }
+
+    /// Kept for the same calls as on Apple platforms. Here nothing asks: a link `MarkdownLinkPolicy` doesn't open at
+    /// once (another scheme, a file that isn't Markdown, a program) doesn't open.
+    public func onConfirmLink(_ action: @escaping @MainActor (MarkdownLinkRequest) -> Void) -> Self { self }
+
+    /// The resolver, with web images resolving to nothing (their alt text shows) unless they may load.
+    private var imageResolver: MarkdownURLResolver {
+      guard !loadsRemoteImages else { return resolver }
+      var blocking = resolver
+      let resolveImage = resolver.resolveImage
+      blocking.resolveImage = { source in
+        guard let url = resolveImage(source) else { return nil }
+        let scheme = url.scheme?.lowercased()
+        return scheme == "file" || scheme == "data" ? url : nil
+      }
+      return blocking
+    }
+
+    /// Whether the text holds an image from the web (a Markdown image or an `<img>` with an http(s) source).
+    static func hasRemoteImage(_ text: String) -> Bool {
+      text.range(of: #"!\[[^\]]*\]\(\s*<?https?:"#, options: [.regularExpression, .caseInsensitive]) != nil
+        || text.range(of: #"<img[^>]+src\s*=\s*["']?https?:"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private func reportRemoteImages() {
+      onRemoteImagesBlocked?(!loadsRemoteImages && Self.hasRemoteImage(draft))
+    }
+
     public var body: some View {
       Group {
         if isReadOnly {
-          MarkdownDocumentView(markdown: draft, metrics: metrics, resolver: resolver, anchor: anchor)
+          MarkdownDocumentView(markdown: draft, metrics: metrics, resolver: imageResolver, anchor: anchor)
         } else {
           TextEditor(text: $draft, selection: $selection)
             .font(.system(size: metrics.bodyFontSize + 1, design: .monospaced))
@@ -66,7 +104,10 @@
             .padding(.vertical, metrics.textContainerInsetHeight)
         }
       }
-      .environment(\.openURL, OpenURLAction { url in onOpenURL?(url) == true ? .handled : .systemAction })
+      .environment(\.openURL, OpenURLAction { url in
+        if onOpenURL?(url) == true { return .handled }
+        return MarkdownLinkPolicy.action(for: url) == .open ? .systemAction : .discarded
+      })
       .onAppear {
         if !loaded {
           draft = text ?? SampleDocument.text
@@ -80,7 +121,9 @@
       }
       .onChange(of: draft) { _, new in
         if loaded, new != text { onChange(new) }
+        reportRemoteImages()
       }
+      .onChange(of: loadsRemoteImages) { _, _ in reportRemoteImages() }
       .onChange(of: isReadOnly) { _, _ in configure() }
     }
 

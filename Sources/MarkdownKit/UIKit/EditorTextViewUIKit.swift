@@ -59,6 +59,57 @@
     /// opened another note). Same-document `#anchor` links scroll without asking;
     /// anything unhandled opens externally.
     public var onOpenURL: (@MainActor (URL) -> Bool)?
+    /// Asked when a link needs the reader's go-ahead (`MarkdownLinkPolicy`): the host shows its own question and
+    /// calls the request's `open()` on yes. Without one the editor asks with a system alert.
+    public var onConfirmLink: (@MainActor (MarkdownLinkRequest) -> Void)?
+    /// Whether images from the web load (security audit M1: off by default, so opening a document contacts no
+    /// server; the host's "Load images" bar turns it on for the document). Files and `data:` images always load.
+    public var loadsRemoteImages = false {
+      didSet {
+        guard loadsRemoteImages != oldValue else { return }
+        reportedRemoteImages = nil
+        loadVisibleImages()
+      }
+    }
+    /// Told whether the document holds web images that weren't loaded (true) or not (false), when that changes.
+    /// A new listener hears the current state (after this turn: the host may be in a view update).
+    public var onRemoteImagesBlocked: (@MainActor (Bool) -> Void)? {
+      didSet {
+        guard let known = reportedRemoteImages, let onRemoteImagesBlocked else { return }
+        DispatchQueue.main.async { onRemoteImagesBlocked(known) }
+      }
+    }
+    private var reportedRemoteImages: Bool?
+
+    /// An image source that would contact a server.
+    nonisolated static func isRemoteImage(_ url: URL) -> Bool {
+      let scheme = url.scheme?.lowercased()
+      return scheme != "file" && scheme != "data"
+    }
+
+    /// Tells the host whether the document has web images it didn't load (the whole document, not just the screen).
+    /// Whether the styled text holds a web image; nil after a re-style, until checked again.
+    private var remoteImagesInDocument: Bool?
+
+    private func reportRemoteImages() {
+      var blocked = false
+      if !loadsRemoteImages, let known = remoteImagesInDocument {
+        blocked = known
+      } else if !loadsRemoteImages, markdownStorage.length > 0 {
+        markdownStorage.enumerateAttribute(
+          .markdownImage, in: NSRange(location: 0, length: markdownStorage.length), options: []
+        ) { value, _, stop in
+          if let url = value as? URL, Self.isRemoteImage(url) {
+            blocked = true
+            stop.pointee = true
+          }
+        }
+        remoteImagesInDocument = blocked
+      }
+      guard blocked != reportedRemoteImages else { return }
+      reportedRemoteImages = blocked
+      onRemoteImagesBlocked?(blocked)
+    }
 
     /// An editor showing the built-in sample document.
     public convenience init(metrics: MarkdownMetrics = .standard) {
@@ -193,6 +244,7 @@
       markdownStorage.endEditing()
       markdownLayout.activeCharacterRange = selectedRange
       markdownLayout.updateImageSlots(in: NSRange(location: 0, length: markdownStorage.length))
+      remoteImagesInDocument = nil
       loadVisibleImages()
     }
 
@@ -237,6 +289,7 @@
     /// two below) — a long README requests only what the reader is near. Called after
     /// re-styling and on every scroll.
     private func loadVisibleImages() {
+      reportRemoteImages()
       guard markdownStorage.length > 0 else { return }
       let visible = CGRect(
         origin: contentOffset, size: bounds.size.height > 0 ? bounds.size : CGSize(width: 400, height: 900))
@@ -248,8 +301,10 @@
       let chars = markdownLayout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
       guard chars.length > 0 else { return }
       let cache = MarkdownImageCache.shared
+      let loadsRemote = loadsRemoteImages
       markdownStorage.enumerateAttribute(.markdownImage, in: chars, options: []) { value, _, _ in
         guard let url = value as? URL, !cache.hasRequested(url) else { return }
+        guard loadsRemote || !Self.isRemoteImage(url) else { return }
         cache.load(url) { [weak self] url in self?.imageDidLoad(url) }
       }
       markdownLayout.updateImageSlots(in: chars)
@@ -383,7 +438,25 @@
         return
       }
       if onOpenURL?(url) == true { return }
-      UIApplication.shared.open(url)
+      switch MarkdownLinkPolicy.action(for: url) {
+      case .open:
+        UIApplication.shared.open(url)
+      case .reveal:
+        // A program or launcher: there's no Finder to show it in, and it never opens.
+        return
+      case .ask:
+        let request = MarkdownLinkRequest(url: url, opener: nil) { UIApplication.shared.open(url) }
+        if let onConfirmLink {
+          onConfirmLink(request)
+          return
+        }
+        let alert = UIAlertController(title: request.title, message: request.message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "Open"), style: .default) { _ in request.open() })
+        var presenter = window?.rootViewController
+        while let presented = presenter?.presentedViewController { presenter = presented }
+        presenter?.present(alert, animated: true)
+      }
     }
 
     /// A tapped link runs our routing instead of UIKit's default action.

@@ -38,6 +38,12 @@ struct DocumentView: View {
   @State private var isPickingFolder = false
   @State private var commands = MarkdownEditorCommands()
   @State private var words = WordCounter()
+  /// The documents whose web images the reader let load, while the window is open (security audit M1).
+  @State private var imagesAllowed: Set<URL> = []
+  /// Whether the open document has web images that weren't loaded.
+  @State private var hasBlockedImages = false
+  /// A link waiting for the reader's go-ahead (security audit H4).
+  @State private var linkRequest: MarkdownLinkRequest?
   @State private var showsMoreMenu = false
   #if os(iOS)
     @State private var isKeyboardShown = false
@@ -66,6 +72,10 @@ struct DocumentView: View {
   var body: some View {
     contentView
       .kitPane(.content)
+      .kitConfirmation(
+        linkTitle, isPresented: Binding(get: { linkRequest != nil }, set: { if !$0 { linkRequest = nil } }),
+        message: linkMessage, systemImage: "link", confirm: "Open", role: nil
+      ) { [linkRequest] in linkRequest?.open() }
       // Back and forward lead the title at the bar's spacing; the Edit/Read switch and the note's actions trail it.
       .kitToolbar(title) {
         navigationButtons
@@ -168,19 +178,32 @@ struct DocumentView: View {
       )
       .kitAppearDelay()
     case .document(let file, let text):
-      MarkdownEditorView(
-        text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
-        isReadOnly: !isEditing, anchor: navigator.anchor,
-        onChange: { [saver, words] text in
-          saver.edited(text)
-          words.count(text)
-        },
-        onOpenURL: { open($0) },
-        startsEditing: navigator.startsEditing && isEditing,
-        commands: commands
-      )
-      .id(file)
-      .onAppear { words.count(text, now: true) }
+      VStack(spacing: 0) {
+        if hasBlockedImages, !imagesAllowed.contains(file) {
+          Banner(
+            "This note's images from the web aren't loaded.",
+            message: "Loading them tells their servers that the note was opened.", systemImage: "photo", hue: .blue
+          ) {
+            Button("Load Images") { imagesAllowed.insert(file) }
+          }
+          .padding(8)
+        }
+        MarkdownEditorView(
+          text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
+          isReadOnly: !isEditing, anchor: navigator.anchor,
+          onChange: { [saver, words] text in
+            saver.edited(text)
+            words.count(text)
+          },
+          onOpenURL: { open($0) },
+          startsEditing: navigator.startsEditing && isEditing,
+          commands: commands
+        )
+        .remoteImages(loads: imagesAllowed.contains(file)) { hasBlockedImages = $0 }
+        .onConfirmLink { linkRequest = $0 }
+        .id(file)
+        .onAppear { words.count(text, now: true) }
+      }
     case .noReadme(let folder):
       EmptyState(
         systemImage: "doc.questionmark", title: "No README",
@@ -190,6 +213,20 @@ struct DocumentView: View {
         systemImage: "exclamationmark.triangle", title: "Couldn’t Open “\(file.lastPathComponent)”",
         message: "\(message)")
     }
+  }
+
+  /// The question for a link waiting for the go-ahead.
+  private var linkTitle: LocalizedStringKey {
+    guard let linkRequest, linkRequest.url.isFileURL else { return "Open this link?" }
+    return "Open “\(linkRequest.target)”?"
+  }
+
+  /// Where the link leads in full (a file's path, else the whole URL) and the app that would open it.
+  private var linkMessage: LocalizedStringKey {
+    guard let url = linkRequest?.url else { return "" }
+    let place = url.isFileURL ? url.path : url.absoluteString
+    guard let opener = linkRequest?.opener else { return "\(place) opens in another app." }
+    return "\(place) opens in \(opener)."
   }
 
   /// Back and forward, except on iPhone: its bar is short, so they're in the note's More menu.

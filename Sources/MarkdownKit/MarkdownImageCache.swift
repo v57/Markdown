@@ -11,7 +11,7 @@ import ImageIO
 
 /// Loaded document images, keyed by resolved URL, shared by every editor.
 ///
-/// - Fetches through a `URLSession` with an on-disk `URLCache`, so a README's images are
+/// - Fetches through an ephemeral, cookie-less `URLSession` with an on-disk `URLCache`, so a README's images are
 ///   instant (and available offline) the second time; `file:` URLs read from disk.
 /// - Decodes off the main thread with ImageIO, downsampling large rasters to what a
 ///   screen can show (the natural size is still the source's pixel size: GitHub lays
@@ -60,7 +60,12 @@ public final class MarkdownImageCache: @unchecked Sendable {
   public var maxDecodedPixelSize: Int = 2400
 
   public init(diskCapacity: Int = 256 * 1024 * 1024) {
-    let config = URLSessionConfiguration.default
+    // Ephemeral, with no cookies: one reading can't be linked to the next through the shared cookie store
+    // (security audit M1). The disk cache stays, for images the reader let load.
+    let config = URLSessionConfiguration.ephemeral
+    config.httpCookieAcceptPolicy = .never
+    config.httpShouldSetCookies = false
+    config.httpCookieStorage = nil
     let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
       .appendingPathComponent("MarkdownImages", isDirectory: true)
     config.urlCache = URLCache(

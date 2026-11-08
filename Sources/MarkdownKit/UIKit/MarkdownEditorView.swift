@@ -30,6 +30,9 @@
     public var startsEditing: Bool
     /// Formatting commands from the host (toolbar buttons, a Format menu) go to this editor.
     public var commands: MarkdownEditorCommands?
+    var loadsRemoteImages = false
+    var onRemoteImagesBlocked: (@MainActor (Bool) -> Void)?
+    var confirmLink: (@MainActor (MarkdownLinkRequest) -> Void)?
 
     public init(
       metrics: MarkdownMetrics = .standard,
@@ -53,10 +56,30 @@
       self.commands = commands
     }
 
+    /// Whether images from the web load (security audit M1): off unless the host turns it on, for instance from its
+    /// "Load images" bar. `onBlocked` hears whether the document holds web images that didn't load.
+    public func remoteImages(loads: Bool, onBlocked: (@MainActor (Bool) -> Void)? = nil) -> Self {
+      var copy = self
+      copy.loadsRemoteImages = loads
+      copy.onRemoteImagesBlocked = onBlocked
+      return copy
+    }
+
+    /// Asks the host before a link that needs the reader's go-ahead opens (`MarkdownLinkPolicy`); the host calls the
+    /// request's `open()` on yes. Without it the editor asks with a system alert.
+    public func onConfirmLink(_ action: @escaping @MainActor (MarkdownLinkRequest) -> Void) -> Self {
+      var copy = self
+      copy.confirmLink = action
+      return copy
+    }
+
     /// Applies the non-text configuration (cheap when unchanged).
     @MainActor private func configure(_ textView: EditorTextView, coordinator: Coordinator) {
       textView.onChange = onChange
       textView.onOpenURL = onOpenURL
+      textView.onConfirmLink = confirmLink
+      textView.onRemoteImagesBlocked = onRemoteImagesBlocked
+      if textView.loadsRemoteImages != loadsRemoteImages { textView.loadsRemoteImages = loadsRemoteImages }
       commands?.textView = textView
       if textView.isReadOnly != isReadOnly { textView.isReadOnly = isReadOnly }
       if coordinator.resolvedDocument != resolver.documentURL || !coordinator.hasResolver {
