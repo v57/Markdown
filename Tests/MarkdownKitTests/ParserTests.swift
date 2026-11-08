@@ -620,6 +620,31 @@
       #expect(abs(cbCheckedW - cbUncheckedW) < 0.5)
     }
 
+    // MARK: - Inline ranges on a paragraph's later lines (M-010)
+
+    /// cmark puts an inline node on a lazy continuation line (or a flush line of an indented paragraph) where it would
+    /// be had the line started at the paragraph's first column: `- item` then `**after** list` hid "af" and " l" and
+    /// showed the `**` ("**ter**ist"). Every case's delimiters must be the `**` themselves, and "b" bold.
+    @Test func inlineRangesOnContinuationLines() {
+      let cases = [
+        "- item\n**after** list", "1. item\n**after** list", "1.  item\n**after** list", "> quote\n**after** list",
+        "> quote\n>**after** list", "> - item\n**after** list", "> - item\n> **after** list", "- - item\n**after** list",
+        "  - item\n**after** list", "  para\n**after** list", "para\n   **after** list", "- item\n      **after** list",
+        "- item\n  **after** list", "- item\n\n  more\n**after** list",
+      ]
+      for source in cases {
+        let parsed = MarkdownParser.parse(source)
+        let ns = source as NSString
+        let stars = parsed.syntaxRanges.filter { ns.substring(with: $0).contains("*") }
+        #expect(stars.map { ns.substring(with: $0) } == ["**", "**"], "\(source.debugDescription)")
+        let after = ns.range(of: "after")
+        let font = parsed.attributed.attribute(.font, at: after.location, effectiveRange: nil) as? NSFont
+        #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true, "\(source.debugDescription)")
+        let list = ns.range(of: " list")
+        #expect(!parsed.syntaxRanges.contains { NSIntersectionRange($0, list).length > 0 }, "\(source.debugDescription)")
+      }
+    }
+
     // MARK: - Task 17: smart list continuation (Return keeps/prepends the marker)
 
     @Test func listContinuations() {

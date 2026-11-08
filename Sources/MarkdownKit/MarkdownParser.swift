@@ -188,13 +188,15 @@ extension MarkdownParser {
         idx += 1
       }
     }
-    /// cmark source range (1-based line + byte column) → UTF-16 NSRange.
+    /// cmark's columns for inline nodes on a paragraph's later lines, corrected (`MarkdownInlineColumns`).
+    let inlineColumns = MarkdownInlineColumns(document: doc, lines: lines.map(\.text))
+    /// cmark source range of an inline node (1-based line + byte column) → UTF-16 NSRange.
     func nsRange(_ r: SourceRange?) -> NSRange? {
       guard let r = r else { return nil }
       let l1 = r.lowerBound.line
-      let c1 = r.lowerBound.column
+      let c1 = inlineColumns.column(r.lowerBound.column, line: l1)
       let l2 = r.upperBound.line
-      let c2 = r.upperBound.column
+      let c2 = inlineColumns.column(r.upperBound.column, line: l2)
       guard l1 >= 1, l2 >= 1, l1 <= lines.count, l2 <= lines.count else { return nil }
       let line1 = lines[l1 - 1]
       let line2 = lines[l2 - 1]
