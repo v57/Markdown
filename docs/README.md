@@ -43,6 +43,11 @@ The guide notes where a feature works differently on a platform.
 - **Code:** on the Mac, **Open With** offers Code for a note or a project folder. The projects Code and Git add show in
   Markdown's sidebar. See the [Code guide](https://github.com/v57/Code/blob/main/docs/README.md).
 
+## For developers
+
+The editor is the `MarkdownKit` library, which other apps can embed: see [MarkdownKit](MarkdownKit.md) and the
+[README](../README.md#libraries).
+
 ## Network
 
 Markdown contacts no server on its own. It syncs your notes through iCloud when iCloud is on, and it talks to GitHub

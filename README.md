@@ -16,6 +16,14 @@ repositories it uses (Code, Git, Vault, UpdateKit, Component) come from GitHub's
 them together, clone them next to this one and open `Markdown-Local.xcworkspace` instead of the
 project (or run SwiftPM commands with `V57_LOCAL=1`).
 
+## Libraries
+
+| Library | Purpose | Platforms | Import |
+|---|---|---|---|
+| [MarkdownKit](docs/MarkdownKit.md) | Markdown editor and viewer with live preview (`MarkdownEditorView`), the parser, formatting commands, link and image handling | macOS 14+, iOS 17+; a portable editor on Linux and Windows | `import MarkdownKit` |
+
+MarkdownKit is the package's one product. The app's own package in `App/` (`MarkdownApp`) is not meant for other apps.
+
 Layout
 
   Sources/MarkdownKit/        platform-neutral core
