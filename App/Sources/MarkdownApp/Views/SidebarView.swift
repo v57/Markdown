@@ -181,7 +181,7 @@ struct SidebarView: View {
   }
 
   private var filesSection: some View {
-    KitSection("Files", meta: "opened on their own", systemImage: "doc.on.doc", hue: .gray) {
+    KitSection("Files", meta: String(localized: "opened on their own"), systemImage: "doc.on.doc", hue: .gray) {
       SidebarRow("Opened Files", systemImage: "doc.on.doc") {
         Text("\(openedFiles.count)")
       }
@@ -295,8 +295,8 @@ struct SidebarView: View {
         Task {
           guard
             let folder = await KitDesktop.chooseFolders(
-              prompt: "Use for Notes",
-              message: "Your notes are written to this folder as Markdown files and stay in sync with it.",
+              prompt: String(localized: "Use for Notes"),
+              message: String(localized: "Your notes are written to this folder as Markdown files and stay in sync with it."),
               canCreateDirectories: true
             ).first
           else { return }
@@ -485,7 +485,7 @@ private struct NotesSidebar<Content: View, BottomBar: View>: View {
   }
 
   /// Where the notes are, at the start of the bottom bar.
-  private var storageStatus: String { notes.isICloud ? "iCloud" : "On This \(KitDevice.name)" }
+  private var storageStatus: String { notes.isICloud ? "iCloud" : String(localized: "On This \(KitDevice.name)") }
 
   /// The sidebar's selection is the shown note (not a folder shown by its README), or several notes selected together;
   /// the places are rows that list their notes (`place(_:)`). One row selected shows it; several leave the shown note.
@@ -593,7 +593,7 @@ private struct GitHubSection: View {
     let count = repositories.repositories.count
     KitSection(
       "GitHub",
-      meta: [count == 1 ? "1 repository" : "\(count) repositories", changes == 0 ? "" : "\(changes) to push"],
+      meta: [count == 1 ? String(localized: "1 repository") : String(localized: "\(count) repositories"), changes == 0 ? "" : String(localized: "\(changes) to push")],
       systemImage: "arrow.triangle.branch", hue: .purple,
       status: repositories.activity.isEmpty ? .idle : .working
     ) {

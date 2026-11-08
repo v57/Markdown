@@ -61,7 +61,7 @@ struct FileNode: Identifiable, Hashable {
       let isDirectory = Self.isDirectory(standardized)
       guard isDirectory || Self.isText(standardized) else {
         if started { url.stopAccessingSecurityScopedResource() }
-        lastError = "“\(url.lastPathComponent)” is not a folder or a text file."
+        lastError = String(localized: "“\(url.lastPathComponent)” is not a folder or a text file.")
         continue
       }
       // Anything inside a sidebar folder is shown there, with its folder's access.

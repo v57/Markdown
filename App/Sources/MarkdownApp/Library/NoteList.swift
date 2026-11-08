@@ -101,7 +101,7 @@ extension Date {
   var noteListText: String {
     let calendar = Calendar.current
     if calendar.isDateInToday(self) { return formatted(date: .omitted, time: .shortened) }
-    if calendar.isDateInYesterday(self) { return "Yesterday" }
+    if calendar.isDateInYesterday(self) { return String(localized: "Yesterday") }
     if let days = calendar.dateComponents([.day], from: self, to: .now).day, days < 7 {
       return formatted(.dateTime.weekday(.wide))
     }

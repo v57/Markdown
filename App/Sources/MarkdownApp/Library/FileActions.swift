@@ -162,7 +162,7 @@ import VaultKit
     var name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty, name != url.lastPathComponent else { return }
     guard !name.contains("/"), !name.hasPrefix(".") else {
-      error = "“\(name)” can’t be used as a name."
+      error = String(localized: "“\(name)” can’t be used as a name.")
       return
     }
     if !FolderLibrary.isDirectory(url), FolderLibrary.isMarkdown(url),
@@ -203,7 +203,7 @@ import VaultKit
   private func move(_ url: URL, to target: URL) {
     willChangeFiles()
     guard !FileManager.default.fileExists(atPath: target.path) || Self.sameItem(url, target) else {
-      error = "An item named “\(target.lastPathComponent)” already exists there."
+      error = String(localized: "An item named “\(target.lastPathComponent)” already exists there.")
       return
     }
     do {

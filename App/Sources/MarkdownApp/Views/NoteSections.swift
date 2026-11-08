@@ -136,7 +136,7 @@ struct NoteMenu: View {
 
 /// What Encrypt Note and Decrypt Note do, in the menu's preview panel.
 func encryptionPreview(_ encrypted: Bool) -> String {
-  encrypted ? "Takes the encryption off this note, so it’s saved as plain text." : "Saves this note encrypted."
+  encrypted ? String(localized: "Takes the encryption off this note, so it’s saved as plain text.") : String(localized: "Saves this note encrypted.")
 }
 
 extension KitOpenWithRow {
@@ -193,7 +193,7 @@ struct NotesMenu: View {
     }
   }
 
-  private var count: String { "\(urls.count) Notes" }
+  private var count: String { String(localized: "\(urls.count) Notes") }
 
   private func setEncrypted(_ urls: [URL], _ encrypted: Bool) {
     for url in urls { actions.setEncrypted(url, encrypted) }

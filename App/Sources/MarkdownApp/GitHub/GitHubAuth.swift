@@ -72,7 +72,7 @@ import VaultKit
   /// `error` says why not.
   func canSignIn() -> Bool {
     guard Self.clientID == nil else { return true }
-    error = "GitHub sign-in isn’t set up in this build: it needs an OAuth App client ID (GITHUB_CLIENT_ID)."
+    error = String(localized: "GitHub sign-in isn’t set up in this build: it needs an OAuth App client ID (GITHUB_CLIENT_ID).")
     return false
   }
 
@@ -103,8 +103,8 @@ import VaultKit
 
   private static func describe(_ error: GitHubError) -> String {
     switch error {
-    case .signInDeclined: "GitHub sign-in was cancelled."
-    case .codeExpired: "The code expired. Try again."
+    case .signInDeclined: String(localized: "GitHub sign-in was cancelled.")
+    case .codeExpired: String(localized: "The code expired. Try again.")
     default: error.localizedDescription
     }
   }

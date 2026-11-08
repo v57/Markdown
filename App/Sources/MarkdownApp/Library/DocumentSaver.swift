@@ -82,7 +82,7 @@ import Observation
   private static func message(for error: Error, file: URL, denied: Bool) -> String {
     guard denied else { return error.localizedDescription }
     return
-      "Markdown only has read access to the folder containing “\(file.lastPathComponent)”. Allow editing to save your changes."
+      String(localized: "Markdown only has read access to the folder containing “\(file.lastPathComponent)”. Allow editing to save your changes.")
   }
 
   nonisolated private static func isPermissionDenied(_ error: Error) -> Bool {

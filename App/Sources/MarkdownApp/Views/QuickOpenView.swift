@@ -169,7 +169,7 @@ struct QuickOpenView: View {
   /// "Projects · iCloud" for a recent note.
   private func location(of url: URL) -> String {
     let folder = url.deletingLastPathComponent()
-    if let root = notes.url, folder == root { return notes.isICloud ? "iCloud" : "Notes" }
+    if let root = notes.url, folder == root { return notes.isICloud ? "iCloud" : String(localized: "Notes") }
     if let root = notes.url, folder.path.hasPrefix(root.path + "/") {
       return folder.lastPathComponent + (notes.isICloud ? " · iCloud" : "")
     }

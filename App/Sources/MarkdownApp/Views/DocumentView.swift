@@ -357,7 +357,7 @@ struct DocumentView: View {
     let root = library.root(of: file, roots: roots)
     let place: String
     if let notesRoot = notes.url, root == notesRoot {
-      place = "Notes"
+      place = String(localized: "Notes")
     } else if let root, let repository = repositories.repositories.first(where: { repositories.directory(for: $0) == root }) {
       place = repository.fullName
     } else {
@@ -478,7 +478,7 @@ struct DocumentView: View {
       Task {
         guard
           let granted = await KitDesktop.chooseFolders(
-            prompt: "Allow Editing", message: "Choose “\(root.lastPathComponent)” to let Markdown save changes in it.",
+            prompt: String(localized: "Allow Editing"), message: String(localized: "Choose “\(root.lastPathComponent)” to let Markdown save changes in it."),
             directory: root.deletingLastPathComponent(), name: root.lastPathComponent
           ).first,
           FolderLibrary.canonical(granted) == root
