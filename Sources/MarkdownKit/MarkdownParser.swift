@@ -1195,6 +1195,9 @@ extension MarkdownParser {
 
   // MARK: - Table grid (column alignment; never touches characters)
 
+  /// The space between a table's last header and the grid ⇄ source toggle after it.
+  static let tableToggleGap: CGFloat = 4
+
   /// cmark source range → UTF-16 NSRange against the parser's line table (the same math
   /// as the local `nsRange` in `parse`, exposed for the table pass).
   private static func nsRange(_ r: SourceRange?, lines: [LineInfo]) -> NSRange? {
@@ -1267,8 +1270,24 @@ extension MarkdownParser {
         }
       }
 
+      // The grid ⇄ source toggle sits at the header row's trailing end: the table reaches past the last column far
+      // enough for the toggle to come after its header, so a header as wide as its column no longer runs under the
+      // toggle (M-004). The columns and their alignment stay as they were.
+      var trailing: CGFloat = 0
+      if let last = widths.indices.last, let header = cellWidths.first, last < header.count {
+        let metrics = style.metrics
+        let width = widths[last]
+        let headerEnd: CGFloat =
+          switch last < alignments.count ? alignments[last] : nil {
+          case .right: width
+          case .center: (width + header[last]) / 2
+          default: header[last]
+          }
+        let needed = headerEnd + Self.tableToggleGap + metrics.tableToggleInset + metrics.tableToggleSize
+        trailing = max(0, needed - (width + metrics.tableCellPadding))
+      }
       let model = TableColumnLayout.model(
-        columnContentWidths: widths, padding: style.metrics.tableCellPadding)
+        columnContentWidths: widths, padding: style.metrics.tableCellPadding, trailing: trailing)
       tableWidths[entry.ordinal] = model.tableWidth
 
       // Whole-block range (every line of the table, newlines included) — carries the grid

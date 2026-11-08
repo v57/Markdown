@@ -46,7 +46,8 @@ public enum TableColumnLayout {
   /// Builds the grid: `padding` on both sides of every column, columns as wide as their
   /// widest cell. Pipe characters are NOT accounted for — in grid mode they are made
   /// zero-width (see `nullingKern`), so they contribute no advance.
-  public static func model(columnContentWidths: [CGFloat], padding: CGFloat) -> Model {
+  /// `trailing` widens the table past its last column (room for the header's toggle).
+  public static func model(columnContentWidths: [CGFloat], padding: CGFloat, trailing: CGFloat = 0) -> Model {
     var contentTargets: [CGFloat] = []
     var separatorTargets: [CGFloat] = [0]
     var x: CGFloat = 0
@@ -55,6 +56,10 @@ public enum TableColumnLayout {
       contentTargets.append(x)
       x += width + padding
       separatorTargets.append(x)
+    }
+    if trailing > 0, !columnContentWidths.isEmpty {
+      x += trailing
+      separatorTargets[separatorTargets.count - 1] = x
     }
     return Model(contentTargets: contentTargets, separatorTargets: separatorTargets, tableWidth: x)
   }

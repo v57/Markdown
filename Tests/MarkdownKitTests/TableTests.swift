@@ -109,6 +109,19 @@
       #expect(model.tableWidth == 92)
     }
 
+    /// The grid ⇄ source toggle sits after the last header, not on it: a header as wide as its column ran under the
+    /// toggle's glyph ("Size" on iPhone, M-004).
+    @Test func tableToggleClearsTheLastHeader() {
+      let text = "| Name | Size |\n|---|---|\n| a | 1 |\n\nafter"
+      let s = stack(text)
+      relayout(s.lm, caret: s.storage.length, storage: s.storage)
+      let toggle = s.lm.tableToggles(origin: .zero).first
+      let sizeEnd = (text as NSString).range(of: "Size").location + 4
+      let end = x(of: sizeEnd, lm: s.lm)
+      #expect(toggle != nil && end != nil)
+      if let toggle, let end { #expect(toggle.frame.minX >= end + 2) }
+    }
+
     @Test func kernDeltasAccumulate() {
       let deltas = TableColumnLayout.deltas(anchors: [
         (anchorCharIndex: 3, targetX: 50, naturalEndX: 30),
@@ -229,8 +242,11 @@
       #expect(abs(grid[0]) < 0.01)
       #expect(abs(grid[1] - (MarkdownMetrics.standard.tableCellPadding + 3 * advance
         + MarkdownMetrics.standard.tableCellPadding)) < 0.4)
-      #expect(abs(grid[2] - grid[1] - (3 * advance + 2 * MarkdownMetrics.standard
-        .tableCellPadding)) < 0.4)
+      // The last column ends past its header by the toggle's room (`tableToggleClearsTheLastHeader`).
+      let metrics = MarkdownMetrics.standard
+      let toggleRoom = MarkdownParser.tableToggleGap + metrics.tableToggleInset + metrics.tableToggleSize
+        - metrics.tableCellPadding
+      #expect(abs(grid[2] - grid[1] - (3 * advance + 2 * metrics.tableCellPadding + toggleRoom)) < 0.4)
       #expect(doc.attributed.string == text)
     }
 
