@@ -614,6 +614,7 @@ private struct DocumentTitle: View {
   let saver: DocumentSaver
   let words: WordCounter
   @Environment(NotesLocation.self) private var notes
+  @Environment(\.kitIdiom) private var idiom
 
   var body: some View {
     KitTitle(title, meta: meta, systemImage: "doc.text", hue: .accent, status: status)
@@ -629,7 +630,15 @@ private struct DocumentTitle: View {
       case .failed: "Not saved"
       }
     let count = words.value
-    return place + [state, count == 0 ? "" : count == 1 ? "1 word" : "\(count.formatted()) words"]
+    let length = count == 0 ? "" : count == 1 ? "1 word" : "\(count.formatted()) words"
+    // An iPhone's bar leaves the title about 110 points: the place, then the state, left nothing of the count (M-003).
+    // There it's the state while an edit waits or failed, else the count (the screen under the note's folder says
+    // where it is). On iPad the state and count come first, the place after them while it fits.
+    switch idiom {
+    case .phone: return [saver.state == .saved && !length.isEmpty ? length : state]
+    case .pad: return [state, length].filter { !$0.isEmpty } + place
+    default: return place + [state, length]
+    }
   }
 
   private var status: WorkStatus {
