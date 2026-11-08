@@ -622,7 +622,8 @@ struct FileActionPrompts: ViewModifier {
         isPresented: Binding(
           get: { actions.renaming != nil && !actions.renamesInPlace }, set: { if !$0 { actions.renaming = nil } }),
         text: $actions.newName, message: actions.renaming.map { "“\($0.lastPathComponent)”" },
-        field: KitPromptField("Name", systemImage: "doc.text"), confirm: "Rename"
+        // A name as typed: no capital forced on its first letter, no corrections (M-005).
+        field: KitPromptField("Name", systemImage: "doc.text", content: .verbatim), confirm: "Rename"
       ) { _ in
         actions.commitRename()
       }
