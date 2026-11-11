@@ -621,14 +621,14 @@ struct FileActionPrompts: ViewModifier {
         "Rename",
         isPresented: Binding(
           get: { actions.renaming != nil && !actions.renamesInPlace }, set: { if !$0 { actions.renaming = nil } }),
-        text: $actions.newName, message: actions.renaming.map { "“\($0.lastPathComponent)”" },
+        text: $actions.newName, message: actions.renaming.map { "“\(FileActions.shownName($0))”" },
         // A name as typed: no capital forced on its first letter, no corrections (M-005).
         field: KitPromptField("Name", systemImage: "doc.text", content: .verbatim), confirm: "Rename"
       ) { _ in
         actions.commitRename()
       }
       .kitConfirmation(
-        "Delete “\(actions.deleting.map(Self.shownName) ?? "")”?",
+        "Delete “\(actions.deleting.map(FileActions.shownName) ?? "")”?",
         isPresented: Binding(get: { actions.deleting != nil }, set: { if !$0 { actions.deleting = nil } }),
         message: Self.deleteMessage, systemImage: "trash", confirm: "Delete"
       ) {
@@ -653,13 +653,6 @@ struct FileActionPrompts: ViewModifier {
     static var deleteMessage: LocalizedStringKey { "This can’t be undone." }
     static var deleteSeveralMessage: LocalizedStringKey { "This can’t be undone." }
   #endif
-
-  /// A note by the name the sidebar shows, without its extension ("Untitled", not "Untitled.mdenc", M-007); anything
-  /// else by its file name.
-  static func shownName(_ url: URL) -> String {
-    !FolderLibrary.isDirectory(url) && FolderLibrary.isMarkdown(url)
-      ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
-  }
 }
 
 extension View {

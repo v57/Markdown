@@ -156,27 +156,37 @@ import VaultKit
 
   /// Starts renaming `url`: in its sidebar row with `inPlace` (the row's own menu), else in the Rename prompt.
   func beginRename(_ url: URL, inPlace: Bool = false) {
-    newName = url.lastPathComponent
+    // A note's name without its extension, as the sidebar shows it: the extension isn't the name's to edit (M-015).
+    newName = Self.shownName(url)
     renamesInPlace = inPlace
     renaming = url
   }
 
-  /// Renames the item from `beginRename`. A markdown note keeps its extension when the
-  /// new name leaves it out ("Ideas" → "Ideas.md").
+  /// A note by the name the sidebar shows, without its extension ("Untitled", not "Untitled.mdenc", M-007); anything
+  /// else by its file name.
+  static func shownName(_ url: URL) -> String {
+    !FolderLibrary.isDirectory(url) && FolderLibrary.isMarkdown(url)
+      ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+  }
+
+  /// Renames the item from `beginRename`. A markdown note keeps its extension: the name is edited without it
+  /// ("Ideas" → "Ideas.mdenc"), one typed anyway isn't doubled ("Ideas.mdenc"), and any other ending is part of the
+  /// name ("v1.2" → "v1.2.mdenc"), so a rename never makes an encrypted note a plain one or the other way round (M-015).
   func commitRename() {
     guard let url = renaming else { return }
     renaming = nil
     var name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !name.isEmpty, name != url.lastPathComponent else { return }
+    guard !name.isEmpty else { return }
     guard !name.contains("/"), !name.hasPrefix(".") else {
       error = String(localized: "“\(name)” can’t be used as a name.")
       return
     }
     if !FolderLibrary.isDirectory(url), FolderLibrary.isMarkdown(url),
-      (name as NSString).pathExtension.isEmpty
+      !name.lowercased().hasSuffix("." + url.pathExtension.lowercased())
     {
       name += "." + url.pathExtension
     }
+    guard name != url.lastPathComponent else { return }
     let target = url.deletingLastPathComponent().appendingPathComponent(name)
     move(url, to: target)
   }
