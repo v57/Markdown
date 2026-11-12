@@ -8,6 +8,8 @@ enum QuickOpenCommand: Hashable {
   case newNote(String?)
   case newFolder
   case welcome
+  /// The sample notes, added to the notes folder (`SampleNotes`).
+  case sampleNotes
 }
 
 /// Quick Open (⌘K): one field that finds notes by name, finds text inside notes, and

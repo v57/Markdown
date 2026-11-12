@@ -133,6 +133,12 @@ struct SidebarView: View {
         ForEach(library.children(of: root).filter(\.isDirectory)) { child in
           FileTreeRow(node: child)
         }
+        // With no notes yet (on iPhone the welcome isn't the first screen), something to try right here.
+        if allNotesCount == 0 {
+          Button("Add Sample Notes", systemImage: "text.book.closed") { window.perform?(.sampleNotes) }
+            .buttonStyle(.kitPlain)
+            .padding(.vertical, 4)
+        }
       } else {
         EmptyState(systemImage: "doc.text", title: "Loading Notes", status: .working)
       }
@@ -159,6 +165,7 @@ struct SidebarView: View {
       .kitMenu(isPresented: $showsNotesMenu) {
         Button("New Note", systemImage: "square.and.pencil") { newNote() }
         Button("New Folder", systemImage: "folder.badge.plus") { newFolder() }
+        Button("Add Sample Notes", systemImage: "text.book.closed") { window.perform?(.sampleNotes) }
         Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") { window.isConnectingGitHub = true }
         KitMenuSection("Sort Notes By") {
           KitMenuOptions(selection: $sortsByTitle, options: [("Date Edited", false), ("Title", true)])

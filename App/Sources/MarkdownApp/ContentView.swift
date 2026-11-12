@@ -149,6 +149,11 @@ struct ContentView: View {
       actions.newNote(in: dir, named: name)
     case .newFolder:
       if let dir = newItemDirectory { actions.newFolder(in: dir) }
+    case .sampleNotes:
+      guard let root = notes.url, let note = actions.addSampleNotes(in: root) else { return }
+      navigator.item = .folder(note.deletingLastPathComponent())
+      navigator.open(note)
+      if idiom == .phone { compactColumn = .detail }
     case .welcome:
       // The welcome is the note pane's content while no note is open (on iPhone, pushed over the sidebar).
       navigator.selection = nil

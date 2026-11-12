@@ -72,6 +72,14 @@ import VaultKit
     }
   }
 
+  /// Adds the sample notes (`SampleNotes`) as a new folder in `directory` and returns their start note.
+  func addSampleNotes(in directory: URL) -> URL? {
+    let folder = create(Self.availableURL(for: SampleNotes.folderName, in: directory, isDirectory: true)) {
+      try SampleNotes.write(into: $0)
+    }
+    return folder?.appendingPathComponent(SampleNotes.firstNote)
+  }
+
   /// Creates a folder in `directory`, shows it and asks for its name.
   func newFolder(in directory: URL) {
     let url = create(Self.availableURL(for: "New Folder", in: directory, isDirectory: true)) {

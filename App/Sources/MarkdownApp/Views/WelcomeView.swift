@@ -24,6 +24,11 @@ struct WelcomeView: View {
       WelcomeAction("Quick Open…", detail: "Find a note by its name or by what it says.", systemImage: "magnifyingglass") {
         window.isQuickOpenShown = true
       }
+      WelcomeAction(
+        "Add Sample Notes", detail: "A few notes to read and edit, in a folder of their own.", systemImage: "text.book.closed"
+      ) {
+        window.perform?(.sampleNotes)
+      }
     } recents: {
       ForEach(Array(preferences.existingRecents.prefix(8)), id: \.self) { url in
         RecentItem(
