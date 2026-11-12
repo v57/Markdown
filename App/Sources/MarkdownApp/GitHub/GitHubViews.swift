@@ -202,7 +202,6 @@ struct RepositoryRow: View {
   private var disconnectMessage: LocalizedStringKey {
     switch store.changeCounts[repository.fullName] ?? 0 {
     case 0: "The local copy is removed. The repository on GitHub is not affected."
-    case 1: "1 change hasn’t been pushed and will be lost."
     case let count: "\(count) changes haven’t been pushed and will be lost."
     }
   }

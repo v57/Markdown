@@ -600,7 +600,7 @@ private struct GitHubSection: View {
     let count = repositories.repositories.count
     KitSection(
       "GitHub",
-      meta: [count == 1 ? String(localized: "1 repository") : String(localized: "\(count) repositories"), changes == 0 ? "" : String(localized: "\(changes) to push")],
+      meta: [String(localized: "\(count) repositories"), changes == 0 ? "" : String(localized: "\(changes) to push")],
       systemImage: "arrow.triangle.branch", hue: .purple,
       status: repositories.activity.isEmpty ? .idle : .working
     ) {
