@@ -20,6 +20,26 @@
 				<string>CA92.1</string>
 			</array>
 		</dict>
+		<!-- DDA9.1: the dates beside notes and recent files. C617.1: the notes folder in the app's Documents and VaultKit's store files. 3B52.1: a notes folder the user chose (NotesMirror compares its files' dates). -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>DDA9.1</string>
+				<string>C617.1</string>
+				<string>3B52.1</string>
+			</array>
+		</dict>
+		<!-- systemUptime: the frame of an animated image in the editor. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>
