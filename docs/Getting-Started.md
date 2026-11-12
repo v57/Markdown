@@ -22,6 +22,8 @@ The welcome shows when no note is open. It has:
 
 - **New Note**: makes a note and opens it.
 - **Quick Open…**: finds a note by its name or by what it says.
+- **Add Sample Notes**: adds a folder of example notes to read and edit. See
+  [Try the sample notes](#try-the-sample-notes).
 - A list of up to eight notes you opened recently. With none yet, it says **No Recent Notes**.
 - An option, **Encrypt new notes**, which is on at first. See [Sync and encryption](Sync-and-Encryption.md).
 
@@ -34,9 +36,22 @@ pick **Welcome to Markdown**.
 2. A note named "Untitled" opens with the cursor in it. Start typing.
 3. Markdown saves as you type. You don't need to save.
 
-To give the note a name, choose **Rename…** from the note's **More** menu or from its row in the sidebar.
+The sidebar names a note by its first line, and shows its second line under it. A heading, bullet or quote marker at
+the start of a line is left out. A note whose first line is empty shows its file name. To change the file's name,
+choose **Rename…** from the note's **More** menu or from its row in the sidebar.
 
 A new note that you leave empty is removed when you move on to another note, unless you pinned it.
+
+## Try the sample notes
+
+To see what Markdown does before writing notes of your own, choose **Add Sample Notes**: on the welcome, in the notes
+card's **Add** (+) menu, or in the notes card itself while you have no notes (on iPhone, the sidebar is the first
+screen). Markdown adds a **Sample Notes** folder to your notes folder and opens its **Start Here** note, which lists
+things to try. The folder also holds a trip plan with a table and tasks, a reading list, ideas, meeting notes, and a
+few documentation notes with code and links between them.
+
+They are plain `.md` notes. They sync like any other note when iCloud is on, and you remove them by deleting the
+folder.
 
 ## Where your notes are kept
 

@@ -13,8 +13,11 @@ The sidebar shows your places as cards:
 - **Files**: files you opened on their own, under **Opened Files**.
 - **Search**: results while you search. See [Search and Quick Open](Search-and-Quick-Open.md).
 
-Pick a place to list its notes right under it. Each note shows its name, when it was edited, and its first line. Pinned
-notes come first.
+Pick a place to list its notes right under it. Pinned notes come first.
+
+Each note shows its first line as its name, and its second line under it. A leading heading, bullet or quote marker
+(`#`, `-`, `>`) is left out, and a long first line is cut at 60 characters. A note whose first line is empty shows its
+file name. Encrypted notes show their lines too, read on this device.
 
 The sidebar's status at the bottom says **iCloud** when your notes sync, or **On This Mac** (iPhone, iPad) when they
 stay on this device.
@@ -24,7 +27,7 @@ stay on this device.
 Open the notes card's **Add** (+) menu and choose **Sort Notes By**:
 
 - **Date Edited**: newest first.
-- **Title**: in alphabetical order.
+- **Title**: in alphabetical order of the names the sidebar shows.
 
 Pinned notes stay first either way. Markdown remembers your choice.
 
@@ -37,7 +40,8 @@ Markdown also finds a README in the folder's `.github` or `docs` folder. A folde
 
 - **New Note** and **New Folder** in the sidebar's bottom bar make a note or a folder in the place you're looking at.
   Outside your folders, they use the notes folder.
-- The notes card's **Add** (+) menu has **New Note** and **New Folder** too.
+- The notes card's **Add** (+) menu has **New Note** and **New Folder** too, and **Add Sample Notes** (see
+  [Getting started](Getting-Started.md#try-the-sample-notes)).
 - A folder's menu (right-click on the Mac, touch and hold on iPhone and iPad) has **New Note** and **New Folder** for
   that folder.
 - In an empty folder, tap the **New Note** row.
@@ -54,7 +58,9 @@ project, new notes are plain `.md` files.
 - From a note's or folder's menu in the sidebar, choose **Rename…** and type the new name in the row. Press Return.
 - From the note's **More** menu, choose **Rename…**. A prompt asks for the name.
 
-You don't need to type `.md`: a note keeps its extension. A name with a `/` or one that starts with a `.` can't be
+Rename changes the note's file name. The field holds the name without `.md` or `.mdenc`, and the note keeps its
+extension whatever you type. Leaving the name as it was renames nothing. The sidebar still names a note by its first
+line, unless that line is empty. A name with a `/` or one that starts with a `.` can't be
 used. If the name is taken, Markdown says **An item named “…” already exists there.**
 
 Pins and recent notes follow a renamed note.
