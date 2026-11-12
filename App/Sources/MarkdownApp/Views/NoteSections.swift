@@ -14,7 +14,7 @@ import SwiftUI
 }
 
 /// The notes of the place chosen in the sidebar, right under its row as the tree's next level: pinned first, then
-/// newest first (or by title), each with its time and first line. A place without notes offers a new one where the app
+/// newest first (or by title), each with its first and second line. A place without notes offers a new one where the app
 /// can write. `SidebarView` loads them into the `NoteListModel` in the environment; rows put this after a place's row,
 /// one indent level deeper (`kitRowIndent`).
 struct PlaceNotes: View {
@@ -279,17 +279,13 @@ extension NoteListModel {
   }
 }
 
-/// A note in the sidebar: its name (a pin when pinned), then its date and the start of its text.
+/// A note in the sidebar, as Shell shows one: its first line (a pin when pinned), then its second line.
 private struct NoteRow: View {
   let note: NoteSummary
   let isPinned: Bool
 
   var body: some View {
-    SidebarRow(value: note.url, note.title) { EmptyView() }
-      .subtitle {
-        Text(note.modified.noteListText).foregroundStyle(.kitLabel)
-          + Text("  " + (note.snippet.isEmpty ? "No additional text" : note.snippet))
-      }
+    SidebarRow(value: note.url, note.title, subtitle: note.subtitle) { EmptyView() }
       .titleAccessory {
         if isPinned {
           Image(systemName: "pin.fill")
