@@ -220,7 +220,7 @@ struct NoteSearchSection: View {
   var body: some View {
     if !window.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty, let results = model.results {
       KitSection(
-        "Search", meta: results.isEmpty ? "No results" : results.count == 1 ? "1 result" : "\(results.count) results",
+        "Search", meta: results.isEmpty ? String(localized: "No results") : String(localized: "\(results.count) results"),
         systemImage: "magnifyingglass", status: results.isEmpty ? .failed : .idle
       ) {
         ForEach(results) { result in

@@ -104,8 +104,9 @@ struct QuickOpenView: View {
     }
     for index in sections.indices {
       let count = sections[index].entries.count
-      let noun = sections[index].title == "Commands" ? "command" : "note"
-      sections[index].meta = [count == 1 ? "1 \(noun)" : "\(count) \(noun)s"]
+      sections[index].meta = [
+        sections[index].title == "Commands" ? String(localized: "\(count) commands") : String(localized: "\(count) notes")
+      ]
     }
     return sections
   }

@@ -56,7 +56,7 @@ struct SidebarView: View {
     @Bindable var window = window
     NotesSidebar(columnVisibility: columnVisibility, compactColumn: $compactColumn, isDeletable: isDeletable) {
       // The window's account, while there is more than Personal.
-      VaultAccountPicker(meta: allNotesCount.map { $0 == 1 ? "1 note" : "\($0) notes" })
+      VaultAccountPicker(meta: allNotesCount.map { String(localized: "\($0) notes") })
       // A place with many folders keeps its title in view while they scroll by.
       notesSection.kitSticky()
       if !repositories.repositories.isEmpty { GitHubSection().kitSticky() }
@@ -153,8 +153,8 @@ struct SidebarView: View {
   }
 
   private var notesMeta: [String] {
-    let count = allNotesCount.map { $0 == 1 ? "1 note" : "\($0) notes" }
-    return [count ?? "", notes.isICloud ? "iCloud" : "plain files"]
+    let count = allNotesCount.map { String(localized: "\($0) notes") }
+    return [count ?? "", notes.isICloud ? "iCloud" : String(localized: "plain files")]
   }
 
   /// New notes and folders, how notes are sorted, and (on the Mac) where the notes are as files.

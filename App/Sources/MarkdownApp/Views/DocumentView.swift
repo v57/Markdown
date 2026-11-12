@@ -625,12 +625,12 @@ private struct DocumentTitle: View {
     guard isShowingDocument else { return place }
     let state =
       switch saver.state {
-      case .saved: isInICloud ? "Synced" : "Saved"
-      case .unsaved: "Edited"
-      case .failed: "Not saved"
+      case .saved: isInICloud ? String(localized: "Synced") : String(localized: "Saved")
+      case .unsaved: String(localized: "Edited")
+      case .failed: String(localized: "Not saved")
       }
     let count = words.value
-    let length = count == 0 ? "" : count == 1 ? "1 word" : "\(count.formatted()) words"
+    let length = count == 0 ? "" : String(localized: "\(count) words")
     // An iPhone's bar leaves the title about 110 points: the place, then the state, left nothing of the count (M-003).
     // There it's the state while an edit waits or failed, else the count (the screen under the note's folder says
     // where it is). On iPad the state and count come first, the place after them while it fits.

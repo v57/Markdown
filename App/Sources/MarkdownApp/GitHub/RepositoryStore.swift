@@ -53,7 +53,7 @@ import VaultKit
   func connect(owner: String, name: String, client: GitHubAPI) async -> URL? {
     let fullName = "\(owner)/\(name)"
     guard !repositories.contains(where: { $0.fullName.lowercased() == fullName.lowercased() }) else {
-      message = ("Already Connected", "\(fullName) is already in the sidebar.")
+      message = (String(localized: "Already Connected"), String(localized: "\(fullName) is already in the sidebar."))
       return nil
     }
     activity[fullName] = "Downloading…"
@@ -71,7 +71,7 @@ import VaultKit
       didChangeFiles()
       return dir
     } catch {
-      message = ("Couldn’t Connect \(fullName)", error.localizedDescription)
+      message = (String(localized: "Couldn’t Connect \(fullName)"), error.localizedDescription)
       return nil
     }
   }
@@ -87,11 +87,12 @@ import VaultKit
       } else {
         message = (
           repository.fullName,
-          result.updated == 0 ? "Already up to date." : "Updated \(result.updated) file\(result.updated == 1 ? "" : "s")."
+          result.updated == 0
+            ? String(localized: "Already up to date.") : String(localized: "Updated \(result.updated) files.")
         )
       }
     } catch {
-      message = ("Couldn’t Pull \(repository.fullName)", error.localizedDescription)
+      message = (String(localized: "Couldn’t Pull \(repository.fullName)"), error.localizedDescription)
     }
     refreshChanges()
   }
@@ -102,7 +103,9 @@ import VaultKit
     async
   {
     guard !repository.isAnonymous, client.token != nil else {
-      message = ("Sign In to Push", "Sign in to GitHub to push changes to \(repository.fullName).")
+      message = (
+        String(localized: "Sign In to Push"), String(localized: "Sign in to GitHub to push changes to \(repository.fullName).")
+      )
       return
     }
     willChangeFiles()
@@ -123,10 +126,11 @@ import VaultKit
       try save(pushed)
       message = (
         repository.fullName,
-        count == 0 ? "Nothing to commit." : "Pushed \(count) change\(count == 1 ? "" : "s") to \(pushed.branch)."
+        count == 0
+          ? String(localized: "Nothing to commit.") : String(localized: "Pushed \(count) changes to \(pushed.branch).")
       )
     } catch {
-      message = ("Couldn’t Push \(repository.fullName)", error.localizedDescription)
+      message = (String(localized: "Couldn’t Push \(repository.fullName)"), error.localizedDescription)
     }
     refreshChanges()
   }
@@ -174,9 +178,11 @@ import VaultKit
 
   private func conflictMessage(_ conflicts: [String]) -> (title: String, text: String) {
     (
-      "Changed Here and on GitHub",
-      "Your version is kept and GitHub’s is saved beside it. Merge them, delete the “(GitHub)” copy, then push:\n"
-        + conflicts.joined(separator: "\n")
+      String(localized: "Changed Here and on GitHub"),
+      String(
+        localized:
+          "Your version is kept and GitHub’s is saved beside it. Merge them, delete the “(GitHub)” copy, then push:")
+        + "\n" + conflicts.joined(separator: "\n")
     )
   }
 
