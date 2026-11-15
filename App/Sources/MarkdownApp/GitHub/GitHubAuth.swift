@@ -10,7 +10,7 @@ import VaultKit
 /// needed.
 ///
 /// The OAuth App's client ID comes from the `GITHUB_CLIENT_ID` build setting (Info.plist
-/// key `GitHubClientID`); the app must have Device Flow enabled on GitHub. The token is the
+/// key `GitHubClientID`): Git's "Git" OAuth App, which has Device Flow on, as the token is shared with Git and Dev. The token is the
 /// sign-in the v57 apps share (`KeychainTokenStore.shared`: the shared keychain group, synced
 /// through iCloud Keychain), so signing in here or in Git or Dev signs in all three. Another vault account signs in
 /// on its own (`AccountStorage.gitHubTokens`).
