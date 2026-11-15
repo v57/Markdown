@@ -2,7 +2,7 @@ import Foundation
 
 /// A platform-neutral color: either a fixed sRGB hex value (0xRRGGBB) or a
 /// semantic system role that the platform layer resolves to `NSColor`/`UIColor`.
-public enum MarkdownColor: Equatable, Sendable {
+public enum MarkdownColor: Hashable, Sendable {
   /// Fixed sRGB color, 0xRRGGBB.
   case rgb(UInt32)
   /// Semantic system colors (resolved per-platform; adapt to dark/light mode).
@@ -13,15 +13,15 @@ public enum MarkdownColor: Equatable, Sendable {
 }
 
 /// A platform-neutral font weight.
-public enum MarkdownFontWeight: Equatable, Sendable { case regular, semibold, bold }
+public enum MarkdownFontWeight: Hashable, Sendable { case regular, semibold, bold }
 
 /// A platform-neutral font trait, applied on top of a base font
 /// (e.g. for emphasis: bold and/or italic).
 public enum MarkdownFontTrait: Equatable, Sendable, Hashable { case bold, italic }
 
 /// A platform-neutral font description.
-public struct MarkdownFont: Equatable, Sendable {
-  public enum Kind: Equatable, Sendable {
+public struct MarkdownFont: Hashable, Sendable {
+  public enum Kind: Hashable, Sendable {
     case body, code
     case heading(level: Int)
     case chrome
@@ -61,7 +61,7 @@ extension MarkdownFont {
 }
 
 /// A platform-neutral paragraph style (indents/spacings).
-public struct MarkdownParagraph: Equatable, Sendable {
+public struct MarkdownParagraph: Hashable, Sendable {
   public var lineSpacing: CGFloat
   public var paragraphSpacing: CGFloat
   public var paragraphSpacingBefore: CGFloat
@@ -70,7 +70,7 @@ public struct MarkdownParagraph: Equatable, Sendable {
   /// Horizontal alignment (HTML `align="center"` blocks); natural by default.
   public var alignment: Alignment
 
-  public enum Alignment: Equatable, Sendable { case natural, left, center, right }
+  public enum Alignment: Hashable, Sendable { case natural, left, center, right }
 
   public init(
     lineSpacing: CGFloat = 0, paragraphSpacing: CGFloat = 0, paragraphSpacingBefore: CGFloat = 0,

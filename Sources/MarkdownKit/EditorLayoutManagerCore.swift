@@ -9,6 +9,7 @@ import Foundation
   public typealias PlatformFont = NSFont
   public typealias PlatformColor = NSColor
   public typealias PlatformBezierPath = NSBezierPath
+  public typealias TextStorageEditActions = NSTextStorageEditActions
 #elseif canImport(UIKit)
   import UIKit
   import CoreText
@@ -16,6 +17,7 @@ import Foundation
   public typealias PlatformFont = UIFont
   public typealias PlatformColor = UIColor
   public typealias PlatformBezierPath = UIBezierPath
+  public typealias TextStorageEditActions = NSTextStorage.EditActions
 #endif
 
 /// TextKit 1 layout manager core — platform-neutral glyph/geometry/merge logic.
@@ -109,34 +111,48 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     if copiedBlockRange == blockRange { copiedBlockRange = nil }
   }
 
-  private func isHiddenCharacter(_ charIndex: Int, in storage: NSTextStorage) -> Bool {
-    guard charIndex >= 0, charIndex < storage.length else { return false }
-    var eff = NSRange(location: 0, length: 0)
-    let attrs = storage.attributes(at: charIndex, effectiveRange: &eff)
-    // A drawn image replaces its whole source (alt text included); its first character
-    // carries the image's width as a kern (see `updateImageSlots`).
-    if let spec = attrs[.markdownImageSpec] as? MarkdownImageSpec, renderedImageSize(spec) != nil {
-      return true
-    }
-    guard attrs[.markdownSyntax] != nil else { return false }
-    if attrs[.markdownCheckbox] != nil { return false }  // keep the checkbox slot
-    if attrs[.markdownListMarker] != nil { return false }  // list markers are always shown
-    return !isSyntaxVisible(NSRange(location: charIndex, length: 1), attrs: attrs)
+  /// How `setGlyphs` draws the characters of one attribute run. Worked out once per run, not per glyph: reading a
+  /// character's attributes bridges the whole dictionary to Swift, which made laying out a long document take
+  /// seconds.
+  private struct GlyphRun {
+    var range = NSRange(location: NSNotFound, length: 0)
+    /// Every character is hidden: a drawn image's source (its first character carries the image's width as a kern,
+    /// see `updateImageSlots`), or syntax whose span or context keeps it hidden.
+    var hidden = false
+    /// Hidden unless the caret is on the character's line (a line-level command: heading '#', '>', fences, pipes).
+    var hiddenOffCaretLine = false
+    /// A hidden entity's first character draws the character it stands for.
+    var substitute: UInt16?
+    /// The run's checkbox ("[x]"/"[ ]"), whose middle character gets a fixed-width slot glyph.
+    var checkbox: NSRange?
+    /// The marker of a plain unordered list item, drawn as "•".
+    var bullet = false
   }
 
-  /// True when the char is the middle of a "[x]"/"[ ]" checkbox range (the 'x' or
-  /// the space between the brackets). Its glyph is substituted with a fixed-width
-  /// glyph in setGlyphs so checked and unchecked rows have IDENTICAL slot widths
-  /// (the literal 'x' is wider than a space in most fonts, which made checked rows
-  /// wider than unchecked ones). The literal glyphs are never drawn — the checkbox
-  /// image replaces them — so only the slot width matters.
-  private func isCheckboxMiddle(_ charIndex: Int, in storage: NSTextStorage) -> Bool {
-    guard charIndex >= 0, charIndex < storage.length else { return false }
-    var eff = NSRange(location: 0, length: 0)
-    guard storage.attribute(.markdownCheckbox, at: charIndex, effectiveRange: &eff) != nil else {
-      return false
+  private func glyphRun(at charIndex: Int, in storage: NSTextStorage) -> GlyphRun {
+    var run = GlyphRun()
+    let attrs = storage.attributes(at: charIndex, effectiveRange: &run.range)
+    if run.range.length == 0 { run.range = NSRange(location: charIndex, length: 1) }
+    run.substitute = (attrs[.markdownGlyphSubstitute] as? NSNumber)?.uint16Value
+    if let spec = attrs[.markdownImageSpec] as? MarkdownImageSpec, renderedImageSize(spec) != nil {
+      run.hidden = true
+    } else if attrs[.markdownSyntax] != nil, attrs[.markdownCheckbox] == nil, attrs[.markdownListMarker] == nil {
+      // The checkbox keeps its slot and list markers always show; other syntax shows only while active.
+      if attrs[.markdownLineCommand] != nil {
+        run.hiddenOffCaretLine = true
+      } else if let span = attrs[.markdownCommandSpan] as? NSValue {
+        run.hidden = !spanIsActive(span.rangeValue)
+      } else {
+        run.hidden = true  // syntax with no line/span context — always hidden
+      }
     }
-    return charIndex == eff.location + 1
+    if attrs[.markdownCheckbox] != nil {
+      var checkbox = NSRange(location: 0, length: 0)
+      _ = storage.attribute(.markdownCheckbox, at: charIndex, effectiveRange: &checkbox)
+      run.checkbox = checkbox
+    }
+    run.bullet = attrs[.markdownBullet] != nil
+    return run
   }
 
   /// Whether a syntax character range (within one attribute run) is currently visible.
@@ -189,6 +205,143 @@ open class EditorLayoutManagerCore: NSLayoutManager {
       let v = storage.attribute(.markdownCommandSpan, at: index, effectiveRange: nil) as? NSValue
     else { return nil }
     return v.rangeValue
+  }
+
+  // MARK: - Re-styling (only what changed)
+
+  /// Set while `applyStyles` writes values that only moved with the text: the layout stays valid, so the edit is not
+  /// passed on (see `processEditing`).
+  private var keepsLayout = false
+
+  /// Skips invalidation for `applyStyles`' position-only writes; everything else is laid out again as usual.
+  open override func processEditing(
+    for textStorage: NSTextStorage, edited editMask: TextStorageEditActions, range newCharRange: NSRange,
+    changeInLength delta: Int, invalidatedRange invalidatedCharRange: NSRange
+  ) {
+    if keepsLayout, editMask == .editedAttributes { return }
+    super.processEditing(
+      for: textStorage, edited: editMask, range: newCharRange, changeInLength: delta,
+      invalidatedRange: invalidatedCharRange)
+  }
+
+  /// Attributes whose values hold document positions: after an edit every one of them past the edit differs from the
+  /// re-parse's although nothing on screen changes.
+  private static let positionKeys: [NSAttributedString.Key] = [
+    .markdownCommandSpan, .markdownCodeBlockFill, .markdownImageSpec,
+  ]
+
+  /// Gives the text storage `styled`'s attributes (the same characters, re-parsed), writing only the runs that differ:
+  /// re-styling the whole document after each keystroke made the layout manager lay out and generate glyphs for all of
+  /// it again. A run whose only change is a position that moved with the text (a command span, a code block's fill, an
+  /// image's source) and whose visibility for the current `activeCharacterRange` stays the same is written without
+  /// invalidating layout. Set `activeCharacterRange` first. Returns the range the writes cover, nil when nothing
+  /// changed, or when `styled` holds other characters.
+  @discardableResult
+  public func applyStyles(_ styled: NSAttributedString) -> NSRange? {
+    guard let storage = textStorage else { return nil }
+    let length = storage.length
+    // CF calls hand back NSDictionary without bridging every run's attributes to a Swift dictionary.
+    let new = styled as CFAttributedString
+    let old = storage as CFAttributedString
+    // Styles for other characters (a parse that finished after an edit) are never applied.
+    guard length > 0, styled.length == length,
+      CFEqual(CFAttributedStringGetString(new), CFAttributedStringGetString(old))
+    else { return nil }
+    var relayout: [(range: NSRange, attributes: NSDictionary)] = []
+    var moved: [(range: NSRange, attributes: NSDictionary)] = []
+    var index = 0
+    while index < length {
+      var newRun = CFRange()
+      var oldRun = CFRange()
+      let newAttributes = CFAttributedStringGetAttributes(new, index, &newRun) as NSDictionary
+      var oldAttributes = CFAttributedStringGetAttributes(old, index, &oldRun) as NSDictionary
+      let end = min(newRun.location + newRun.length, oldRun.location + oldRun.length)
+      let piece = NSRange(location: index, length: max(1, end - index))
+      index = NSMaxRange(piece)
+      if newAttributes.isEqual(oldAttributes) { continue }
+      // Where the parse sets no font (a newline) the storage fixed in its default one, which it would add again.
+      if newAttributes[NSAttributedString.Key.font] == nil, oldAttributes[NSAttributedString.Key.font] != nil {
+        let withoutFont = NSMutableDictionary(dictionary: oldAttributes)
+        withoutFont.removeObject(forKey: NSAttributedString.Key.font)
+        oldAttributes = withoutFont
+        if newAttributes.isEqual(oldAttributes) { continue }
+      }
+      var attributes = newAttributes
+      // An image's first character keeps the slot `updateImageSlots` gave it.
+      if newAttributes[NSAttributedString.Key.markdownImageSpec] != nil,
+        newAttributes[NSAttributedString.Key.kern] == nil,
+        let kern = oldAttributes[NSAttributedString.Key.kern]
+      {
+        let withKern = NSMutableDictionary(dictionary: newAttributes)
+        withKern[NSAttributedString.Key.kern] = kern
+        attributes = withKern
+        if attributes.isEqual(oldAttributes) { continue }
+      }
+      if onlyPositionsMoved(from: oldAttributes, to: attributes) {
+        moved.append((piece, attributes))
+      } else {
+        relayout.append((piece, attributes))
+      }
+    }
+    guard !relayout.isEmpty || !moved.isEmpty else { return nil }
+    // Nearby runs share one edit (one invalidation); runs far apart get their own, so restyling a line at the top and
+    // one at the bottom doesn't lay out everything between them.
+    var start = 0
+    while start < relayout.count {
+      var end = start
+      while end + 1 < relayout.count,
+        relayout[end + 1].range.location - NSMaxRange(relayout[end].range) < 256
+      { end += 1 }
+      storage.beginEditing()
+      for edit in relayout[start...end] { setAttributes(edit.attributes, range: edit.range, in: storage) }
+      storage.endEditing()
+      start = end + 1
+    }
+    if !moved.isEmpty {
+      keepsLayout = true
+      storage.beginEditing()
+      for edit in moved { setAttributes(edit.attributes, range: edit.range, in: storage) }
+      storage.endEditing()
+      keepsLayout = false
+    }
+    let first = min(relayout.first?.range.location ?? .max, moved.first?.range.location ?? .max)
+    let last = max(relayout.last.map { NSMaxRange($0.range) } ?? 0, moved.last.map { NSMaxRange($0.range) } ?? 0)
+    return NSRange(location: first, length: last - first)
+  }
+
+  private func setAttributes(_ attributes: NSDictionary, range: NSRange, in storage: NSTextStorage) {
+    CFAttributedStringSetAttributes(
+      storage as CFMutableAttributedString, CFRange(location: range.location, length: range.length),
+      attributes as CFDictionary, true)
+  }
+
+  /// Whether two runs' attributes differ only in positions that moved with the text, with the same visibility.
+  private func onlyPositionsMoved(from old: NSDictionary, to new: NSDictionary) -> Bool {
+    let oldRest = NSMutableDictionary(dictionary: old)
+    let newRest = NSMutableDictionary(dictionary: new)
+    oldRest.removeObjects(forKeys: Self.positionKeys)
+    newRest.removeObjects(forKeys: Self.positionKeys)
+    guard oldRest.isEqual(newRest) else { return false }
+    let oldSpan = (old[NSAttributedString.Key.markdownCommandSpan] as? NSValue)?.rangeValue
+    let newSpan = (new[NSAttributedString.Key.markdownCommandSpan] as? NSValue)?.rangeValue
+    if (oldSpan == nil) != (newSpan == nil) { return false }
+    if let oldSpan, let newSpan, spanIsActive(oldSpan) != spanIsActive(newSpan) { return false }
+    if (old[NSAttributedString.Key.markdownCodeBlockFill] == nil)
+      != (new[NSAttributedString.Key.markdownCodeBlockFill] == nil)
+    {
+      return false
+    }
+    let oldImage = old[NSAttributedString.Key.markdownImageSpec] as? MarkdownImageSpec
+    let newImage = new[NSAttributedString.Key.markdownImageSpec] as? MarkdownImageSpec
+    if (oldImage == nil) != (newImage == nil) { return false }
+    if let oldImage, let newImage {
+      guard oldImage.url == newImage.url, oldImage.width == newImage.width, oldImage.height == newImage.height,
+        oldImage.widthFraction == newImage.widthFraction, oldImage.alt == newImage.alt,
+        oldImage.verticalAlignment == newImage.verticalAlignment, oldImage.range.length == newImage.range.length,
+        imageSourceIsActive(oldImage.range) == imageSourceIsActive(newImage.range)
+      else { return false }
+    }
+    return true
   }
 
   // MARK: - Zero-width glyph substitution for hidden command symbols
@@ -342,12 +495,6 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     return advance.width
   }
 
-  /// True when the char is the actual bullet character of a plain unordered list
-  /// marker ("-", "*", "+"). Its glyph is substituted with "•" in setGlyphs.
-  private func isBulletChar(_ charIndex: Int, in storage: NSTextStorage) -> Bool {
-    guard charIndex >= 0, charIndex < storage.length else { return false }
-    return storage.attribute(.markdownBullet, at: charIndex, effectiveRange: nil) != nil
-  }
   public override func setGlyphs(
     _ glyphs: UnsafePointer<CGGlyph>,
     properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
@@ -367,23 +514,33 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     var slotGlyph: CGGlyph? = nil
     var bulletGlyph: CGGlyph? = nil
     var anyChange = false
+    // The caret's line, where line-level commands show (none in a viewer).
+    var caretLine: NSRange?
+    if revealsSyntax {
+      let ns = storage.string as NSString
+      let caret = min(max(activeCharacterRange.location, 0), ns.length)
+      caretLine = ns.lineRange(for: NSRange(location: caret, length: 0))
+    }
+    let length = storage.length
+    var run = GlyphRun()
     for i in 0..<glyphRange.length {
       let charIndex = charIndexes[i]
-      if isHiddenCharacter(charIndex, in: storage) {
-        // A hidden entity's first character draws the character it stands for.
-        if let unit = storage.attribute(.markdownGlyphSubstitute, at: charIndex, effectiveRange: nil)
-          as? NSNumber, let glyph = Self.glyph(for: unit.uint16Value, in: font)
-        {
+      guard charIndex >= 0, charIndex < length else { continue }
+      if !NSLocationInRange(charIndex, run.range) { run = glyphRun(at: charIndex, in: storage) }
+      let hidden =
+        run.hidden || (run.hiddenOffCaretLine && !(caretLine.map { NSLocationInRange(charIndex, $0) } ?? false))
+      if hidden {
+        if let unit = run.substitute, let glyph = Self.glyph(for: unit, in: font) {
           substitutes[i] = glyph
         } else {
           zeroed[i] = true
         }
         anyChange = true
-      } else if isCheckboxMiddle(charIndex, in: storage) {
+      } else if let checkbox = run.checkbox, charIndex == checkbox.location + 1 {
         middleSlot[i] = true
         if slotGlyph == nil { slotGlyph = Self.checkboxSlotGlyph(for: font) }
         anyChange = true
-      } else if isBulletChar(charIndex, in: storage) {
+      } else if run.bullet {
         bullet[i] = true
         if bulletGlyph == nil { bulletGlyph = Self.bulletGlyph(for: font) }
         anyChange = true

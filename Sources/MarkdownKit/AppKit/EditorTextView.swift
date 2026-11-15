@@ -207,40 +207,102 @@
     /// caret range. setTypingAttributes also lives here: inside didProcessEditing it
     /// crashed (→ updateFontPanel → ensureAttributesAreFixedInRange with the stale
     /// selection, e.g. Select-All → Delete); here the selection is valid.
+    ///
+    /// A long document is parsed in the background instead (`MarkdownRestyler`): the typed text carries the styles
+    /// around it until the parse arrives.
     public func textDidChange(_ notification: Notification) {
-      reapplyMarkdown()
-      typingAttributes = MarkdownStyle(metrics: metrics).typingAttributes
+      if restyler.prefersBackground(length: markdownStorage.length) {
+        restyleInBackground()
+        typingAttributes = MarkdownRestyler.typingAttributes(
+          continuing: markdownStorage, at: selectedRange().location,
+          body: MarkdownStyle(metrics: metrics).typingAttributes)
+      } else {
+        reapplyMarkdown()
+        typingAttributes = MarkdownStyle(metrics: metrics).typingAttributes
+      }
       onChange?(string)
     }
+
+    /// When the text is parsed again after an edit (tests force the background).
+    let restyler = MarkdownRestyler()
+    /// Whether a background parse has yet to restyle the text (tests wait for it).
+    var isRestylePending: Bool { restyler.isPending }
 
     private func reapplyMarkdown() {
       // Parse under THIS view's appearance: the code palette is resolved from the current
       // drawing appearance, which outside a draw pass is the app's — wrong whenever the
       // window or view overrides it (e.g. a light window in dark mode).
-      var parsed: ParsedMarkdown!
-      effectiveAppearance.performAsCurrentDrawingAppearance {
-        parsed = MarkdownParser.parse(
-          string, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables,
-          maxTableWidth: availableTableWidth, resolver: resolver)
+      let parsed = restyler.parseNow {
+        var parsed: ParsedMarkdown!
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+          parsed = MarkdownParser.parse(
+            string, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables,
+            maxTableWidth: availableTableWidth, resolver: resolver)
+        }
+        return parsed
       }
+      apply(parsed)
+    }
+
+    /// Parses on the restyler's queue, under this view's appearance, with this moment's text and settings.
+    private func restyleInBackground() {
+      restyler.parseInBackground(
+        { [unowned self] in
+          let text = string
+          nonisolated(unsafe) let style = MarkdownStyleSpec(metrics: metrics)
+          let tables = sourceModeTables
+          let width = availableTableWidth
+          let resolver = resolver
+          nonisolated(unsafe) let appearance = effectiveAppearance
+          return {
+            var parsed: ParsedMarkdown!
+            appearance.performAsCurrentDrawingAppearance {
+              parsed = MarkdownParser.parse(
+                text, style: style, sourceModeTables: tables, maxTableWidth: width, resolver: resolver)
+            }
+            return parsed
+          }
+        },
+        apply: { [weak self] parsed in
+          guard let self else { return }
+          // The typed line can change height as its styles arrive (a heading grows): keep the caret on screen.
+          let caretWasVisible = isCaretVisible
+          apply(parsed)
+          if caretWasVisible, !isCaretVisible { scrollRangeToVisible(selectedRange()) }
+          updateCaretLine()
+        })
+    }
+
+    /// Whether the caret (an empty selection) is inside the visible rect.
+    private var isCaretVisible: Bool {
+      let selection = selectedRange()
+      guard selection.length == 0, markdownStorage.length > 0 else { return false }
+      let glyphs = markdownLayout.glyphRange(
+        forCharacterRange: NSRange(location: min(selection.location, markdownStorage.length - 1), length: 1),
+        actualCharacterRange: nil)
+      let origin = textContainerOrigin
+      let rect = markdownLayout.boundingRect(forGlyphRange: glyphs, in: markdownContainer)
+        .offsetBy(dx: origin.x, dy: origin.y)
+      return visibleRect.contains(rect)
+    }
+
+    private func apply(_ parsed: ParsedMarkdown) {
       tableWidths = parsed.tableWidths
       overflowingTables = MarkdownParser.overflowingTables(
         tableWidths, availableWidth: availableTableWidth)
       // Apply attributes only (characters are identical — verbatim invariant), so the
-      // storage reports .editedAttributes and the guard above stops the loop.
+      // storage reports .editedAttributes and textDidChange doesn't recurse. Only the runs
+      // that changed are written, so an edit lays out again only what it restyled.
       // NOTE: no explicit invalidateDisplay here — the attribute edits fire their own
       // (safe) layout invalidation. A manual [0, length) invalidation during the edit
       // callback crashes the layout manager (stale selection / end-of-string boundary).
-      markdownStorage.beginEditing()
-      parsed.attributed.enumerateAttributes(
-        in: NSRange(location: 0, length: parsed.attributed.length), options: []
-      ) { attrs, range, _ in markdownStorage.setAttributes(attrs, range: range) }
-      markdownStorage.endEditing()
       // typingAttributes reset lives in textDidChange (same event, safe point):
       // setting it here would crash on the stale selection (Select-All → Delete).
       markdownLayout.activeCharacterRange = selectedRange()
-      markdownLayout.updateImageSlots(in: NSRange(location: 0, length: markdownStorage.length))
-      remoteImagesInDocument = nil
+      if let changed = markdownLayout.applyStyles(parsed.attributed) {
+        markdownLayout.updateImageSlots(in: changed)
+        remoteImagesInDocument = nil
+      }
       loadVisibleImages()
     }
 
@@ -273,8 +335,11 @@
     private func loadVisibleImages() {
       reportRemoteImages()
       guard markdownStorage.length > 0 else { return }
+      // Before the view is on screen its visible rect is empty, or unbounded outside a scroll view: asking the
+      // layout manager about an unbounded rect lays out the whole document (seconds for a long one).
       let visible =
-        visibleRect.isEmpty ? NSRect(x: 0, y: 0, width: frame.width, height: 1200) : visibleRect
+        visibleRect.isEmpty || visibleRect.height > 100_000
+        ? NSRect(x: 0, y: 0, width: frame.width, height: 1200) : visibleRect
       let area = NSRect(
         x: visible.minX, y: visible.minY - visible.height, width: visible.width,
         height: visible.height * 4)

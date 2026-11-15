@@ -216,35 +216,90 @@
     /// manager BEFORE the outer character edit's invalidation, and that
     /// interleaved state corrupts line breaking (same TextKit 1 constraint as
     /// the macOS editor).
+    ///
+    /// A long document is parsed in the background instead (`MarkdownRestyler`): the typed text carries the styles
+    /// around it until the parse arrives.
     public func textViewDidChange(_ textView: UITextView) {
-      reapplyMarkdown()
-      typingAttributes = MarkdownUIKitStyle(metrics: metrics).typingAttributes
+      if restyler.prefersBackground(length: markdownStorage.length) {
+        restyleInBackground()
+        typingAttributes = MarkdownRestyler.typingAttributes(
+          continuing: markdownStorage, at: selectedRange.location,
+          body: MarkdownUIKitStyle(metrics: metrics).typingAttributes)
+      } else {
+        reapplyMarkdown()
+        typingAttributes = MarkdownUIKitStyle(metrics: metrics).typingAttributes
+      }
       onChange?(text)
     }
+
+    /// When the text is parsed again after an edit (tests force the background).
+    let restyler = MarkdownRestyler()
+    /// Whether a background parse has yet to restyle the text (tests wait for it).
+    var isRestylePending: Bool { restyler.isPending }
 
     private func reapplyMarkdown() {
       // Parse under THIS view's traits: the code palette is resolved from
       // `UITraitCollection.current`, which outside a draw pass need not be this view's
       // (e.g. a host forcing light mode inside a dark app).
-      var parsed: ParsedMarkdown!
-      traitCollection.performAsCurrent {
-        parsed = MarkdownParser.parse(
-          text, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables,
-          maxTableWidth: availableTableWidth, resolver: resolver)
+      let parsed = restyler.parseNow {
+        var parsed: ParsedMarkdown!
+        traitCollection.performAsCurrent {
+          parsed = MarkdownParser.parse(
+            text, style: MarkdownStyleSpec(metrics: metrics), sourceModeTables: sourceModeTables,
+            maxTableWidth: availableTableWidth, resolver: resolver)
+        }
+        return parsed
       }
+      apply(parsed)
+    }
+
+    /// Parses on the restyler's queue, under this view's traits, with this moment's text and settings.
+    private func restyleInBackground() {
+      restyler.parseInBackground(
+        { [unowned self] in
+          let text = text ?? ""
+          nonisolated(unsafe) let style = MarkdownStyleSpec(metrics: metrics)
+          let tables = sourceModeTables
+          let width = availableTableWidth
+          let resolver = resolver
+          let traits = traitCollection
+          return {
+            var parsed: ParsedMarkdown!
+            traits.performAsCurrent {
+              parsed = MarkdownParser.parse(
+                text, style: style, sourceModeTables: tables, maxTableWidth: width, resolver: resolver)
+            }
+            return parsed
+          }
+        },
+        apply: { [weak self] parsed in
+          guard let self else { return }
+          // The typed line can change height as its styles arrive (a heading grows): keep the caret on screen.
+          let caretWasVisible = isCaretVisible
+          apply(parsed)
+          if caretWasVisible, !isCaretVisible { scrollRangeToVisible(selectedRange) }
+        })
+    }
+
+    /// Whether the caret (an empty selection) is inside the visible part of the text.
+    private var isCaretVisible: Bool {
+      guard let selection = selectedTextRange, selection.isEmpty else { return false }
+      let visible = CGRect(origin: contentOffset, size: bounds.size).inset(by: adjustedContentInset)
+      return visible.contains(caretRect(for: selection.end))
+    }
+
+    private func apply(_ parsed: ParsedMarkdown) {
       tableWidths = parsed.tableWidths
       overflowingTables = MarkdownParser.overflowingTables(
         tableWidths, availableWidth: availableTableWidth)
       // Apply attributes only (characters are identical — verbatim invariant), so
-      // the storage reports .editedAttributes and textViewDidChange doesn't recurse.
-      markdownStorage.beginEditing()
-      parsed.attributed.enumerateAttributes(
-        in: NSRange(location: 0, length: parsed.attributed.length), options: []
-      ) { attrs, range, _ in markdownStorage.setAttributes(attrs, range: range) }
-      markdownStorage.endEditing()
+      // the storage reports .editedAttributes and textViewDidChange doesn't recurse. Only
+      // the runs that changed are written, so an edit lays out again only what it restyled.
       markdownLayout.activeCharacterRange = selectedRange
-      markdownLayout.updateImageSlots(in: NSRange(location: 0, length: markdownStorage.length))
-      remoteImagesInDocument = nil
+      if let changed = markdownLayout.applyStyles(parsed.attributed) {
+        markdownLayout.updateImageSlots(in: changed)
+        remoteImagesInDocument = nil
+      }
       loadVisibleImages()
     }
 

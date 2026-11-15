@@ -231,13 +231,39 @@ public enum MarkdownRenderer {
     let out = NSMutableAttributedString(attributedString: source)
     out.beginEditing()
     let full = NSRange(location: 0, length: out.length)
+    // A document uses a handful of distinct values over thousands of runs: resolve each once (a font goes through
+    // font descriptors), which also lets runs share the same native objects.
+    var colors: [MarkdownColor: Any] = [:]
+    var fonts: [MarkdownFont: Any] = [:]
+    var paragraphs: [MarkdownParagraph: NSParagraphStyle] = [:]
     out.enumerateAttributes(in: full, options: []) { attrs, range, _ in
       var resolved: [NSAttributedString.Key: Any] = [:]
       for (key, value) in attrs {
         switch value {
-        case let c as MarkdownColor: resolved[key] = resolve(c)
-        case let f as MarkdownFont: resolved[key] = resolve(f)
-        case let p as MarkdownParagraph: resolved[key] = resolve(p)
+        case let c as MarkdownColor:
+          if let known = colors[c] {
+            resolved[key] = known
+          } else {
+            let native = resolve(c)
+            colors[c] = native
+            resolved[key] = native
+          }
+        case let f as MarkdownFont:
+          if let known = fonts[f] {
+            resolved[key] = known
+          } else {
+            let native = resolve(f)
+            fonts[f] = native
+            resolved[key] = native
+          }
+        case let p as MarkdownParagraph:
+          if let known = paragraphs[p] {
+            resolved[key] = known
+          } else {
+            let native = resolve(p)
+            paragraphs[p] = native
+            resolved[key] = native
+          }
         default: resolved[key] = value
         }
       }
