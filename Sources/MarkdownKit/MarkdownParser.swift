@@ -410,21 +410,95 @@ extension MarkdownParser {
       walk(container)
     }
 
+    /// Styles one fenced code span: its block attributes, the fill over its fences, its language and its tokens.
+    func styleCodeSpan(_ span: (language: String, range: NSRange), fill: NSRange?) {
+      // --- Continuous code-block background ---
+      // The WHOLE fence content (every line plus its newline and any interior
+      // blank line) is ONE .markdownCodeBlock run. The layout manager walks
+      // attribute runs, so with per-line markers the separating newlines were
+      // plain runs and each line drew its own small rounded rect. Unioning the
+      // span yields a single contiguous run → one full-height rounded block.
+      out.addAttribute(.markdownCodeBlock, value: true, range: span.range)
+
+      // --- Full-block background (content + ``` fence lines) ---
+      // The background FILL should cover the fence lines too. The enclosing
+      // CodeBlock's AST range spans the opening ``` line through the closing ```
+      // line (line 1..4 of "```swift\nlet a\nlet b\n```"). For each content span,
+      // compute the full block range and attach it as `.markdownCodeBlockFill` over
+      // the WHOLE block (content + fences), so the fill draws over every line.
+      // `.markdownCodeBlock` stays content-only — it drives chrome anchor / language
+      // label / Copy, which must NOT include the fence lines.
+      if let fill { out.addAttribute(.markdownCodeBlockFill, value: NSValue(range: fill), range: fill) }
+
+      // --- Code syntax highlighting (Xcode-style categories, GitHub palette) ---
+      // Lex each fenced-code span with its language; per-token foreground colors
+      // override the uniform code-text color. Unknown languages keep the plain
+      // code style (no tokens). Token colors are applied AFTER the base attrs so
+      // they win; link tokens also get the underline matching GitHub's code themes.
+      guard !span.language.isEmpty else { return }
+      let code = (markdown as NSString).substring(with: span.range)
+      // Language display name for the block's corner label (drawn by the
+      // layout manager; independent of tokenization — even an all-plain
+      // recognized block gets its name).
+      if let spec = CodeHighlighter.spec(forLanguage: span.language) {
+        out.addAttribute(.markdownCodeLanguage, value: spec.name, range: span.range)
+      }
+      let tokens = CodeHighlighter.tokens(in: code, language: span.language)
+      guard !tokens.isEmpty else { return }
+      let scheme = MarkdownRenderer.currentCodeScheme()
+      for t in tokens {
+        let r = NSRange(location: span.range.location + t.range.location, length: t.range.length)
+        out.addAttribute(
+          .foregroundColor, value: MarkdownColor.rgb(scheme.color(for: t.kind)), range: r)
+        if t.kind == .link {
+          out.addAttribute(.underlineStyle, value: 1, range: r)
+          out.addAttribute(.underlineColor, value: MarkdownColor.rgb(scheme.link), range: r)
+        }
+      }
+    }
+    /// The inline pass over one paragraph/heading/cell subtree. Base attrs = the plan of the container's first covered
+    /// line (list item lines carry the item's level/checkbox styling into the emphasis font base).
+    func styleContainer(_ ci: ContainerInfo) {
+      let startIdx = max(0, ci.startLine - 1)
+      guard startIdx < plans.count else { return }
+      let base = plans[startIdx].base
+      guard !base.isEmpty else { return }
+      applyInline(ci.node, base: base)
+    }
+
     // --- Line-by-line emission (every character emitted exactly once) ---
     // Contiguous .code lines (fence content, including blank lines inside the
     // fence) form one highlighted span with the fence's language.
     var codeSpans: [(language: String, range: NSRange)] = []
     var currentCodeSpan: (language: String, range: NSRange)? = nil
+    // A code block's and a paragraph's own styles are added as soon as their lines are written, while they are the
+    // end of `out`: an attribute added in front of a long note's later runs moves all of them, so styling the whole
+    // note afterwards was quadratic (a 350 KB note's parse took seconds). Their ranges never overlap, so the order
+    // they're styled in doesn't change the result.
+    var styledCodeSpans = 0
+    var styledContainers = 0
+    func styleFinishedBlocks(through line: Int) {
+      while styledCodeSpans < codeSpans.count {
+        let span = codeSpans[styledCodeSpans]
+        let fill = fullCodeRange(for: span.range, lines: lines, planner: planner)
+        guard NSMaxRange(fill ?? span.range) <= out.length, NSMaxRange(span.range) <= out.length else { break }
+        styleCodeSpan(span, fill: fill)
+        styledCodeSpans += 1
+      }
+      while styledContainers < planner.containers.count, planner.containers[styledContainers].endLine <= line {
+        styleContainer(planner.containers[styledContainers])
+        styledContainers += 1
+      }
+    }
     for i in 0..<lines.count {
+      defer { styleFinishedBlocks(through: i + 1) }
       let li = lines[i]
       let plan = plans[i]
 
       if plan.role == .code {
         if currentCodeSpan == nil {
           let language: String
-          if let top = planner.topBlocks.first(where: {
-            $0.startLine <= i + 1 && i + 1 <= $0.endLine
-          }), let cb = top.node as? CodeBlock {
+          if let top = planner.topBlock(containing: i + 1), let cb = top.node as? CodeBlock {
             language = cb.language ?? ""
           } else {
             language = ""
@@ -497,68 +571,7 @@ extension MarkdownParser {
       }
     }
     if let c = currentCodeSpan { codeSpans.append(c) }
-
-    // --- Continuous code-block background ---
-    // The WHOLE fence content (every line plus its newline and any interior
-    // blank line) is ONE .markdownCodeBlock run. The layout manager walks
-    // attribute runs, so with per-line markers the separating newlines were
-    // plain runs and each line drew its own small rounded rect. Unioning the
-    // span yields a single contiguous run → one full-height rounded block.
-    for span in codeSpans { out.addAttribute(.markdownCodeBlock, value: true, range: span.range) }
-
-    // --- Full-block background (content + ``` fence lines) ---
-    // The background FILL should cover the fence lines too. The enclosing
-    // CodeBlock's AST range spans the opening ``` line through the closing ```
-    // line (line 1..4 of "```swift\nlet a\nlet b\n```"). For each content span,
-    // compute the full block range and attach it as `.markdownCodeBlockFill` over
-    // the WHOLE block (content + fences), so the fill draws over every line.
-    // `.markdownCodeBlock` stays content-only — it drives chrome anchor / language
-    // label / Copy, which must NOT include the fence lines.
-    for span in codeSpans {
-      guard
-        let fill = fullCodeRange(
-          for: span.range, lines: lines, topBlocks: planner.topBlocks)
-      else { continue }
-      out.addAttribute(.markdownCodeBlockFill, value: NSValue(range: fill), range: fill)
-    }
-
-    // --- Code syntax highlighting (Xcode-style categories, GitHub palette) ---
-    // Lex each fenced-code span with its language; per-token foreground colors
-    // override the uniform code-text color. Unknown languages keep the plain
-    // code style (no tokens). Token colors are applied AFTER the base attrs so
-    // they win; link tokens also get the underline matching GitHub's code themes.
-    for span in codeSpans where !span.language.isEmpty {
-      let code = (markdown as NSString).substring(with: span.range)
-      // Language display name for the block's corner label (drawn by the
-      // layout manager; independent of tokenization — even an all-plain
-      // recognized block gets its name).
-      if let spec = CodeHighlighter.spec(forLanguage: span.language) {
-        out.addAttribute(.markdownCodeLanguage, value: spec.name, range: span.range)
-      }
-      let tokens = CodeHighlighter.tokens(in: code, language: span.language)
-      guard !tokens.isEmpty else { continue }
-      let scheme = MarkdownRenderer.currentCodeScheme()
-      for t in tokens {
-        let r = NSRange(location: span.range.location + t.range.location, length: t.range.length)
-        out.addAttribute(
-          .foregroundColor, value: MarkdownColor.rgb(scheme.color(for: t.kind)), range: r)
-        if t.kind == .link {
-          out.addAttribute(.underlineStyle, value: 1, range: r)
-          out.addAttribute(.underlineColor, value: MarkdownColor.rgb(scheme.link), range: r)
-        }
-      }
-    }
-
-    // --- Inline pass over every paragraph/heading subtree (once per container) ---
-    // Base attrs = the plan of the container's first covered line (list item lines
-    // carry the item's level/checkbox styling into the emphasis font base).
-    for ci in planner.containers {
-      let startIdx = max(0, ci.startLine - 1)
-      guard startIdx < plans.count else { continue }
-      let base = plans[startIdx].base
-      guard !base.isEmpty else { continue }
-      applyInline(ci.node, base: base)
-    }
+    styleFinishedBlocks(through: Int.max)
 
     // --- HTML (blocks + inline) and link reference definitions ---
     applyHTML(
@@ -831,7 +844,11 @@ extension MarkdownParser {
     let lines: [LineInfo]
     let style: any MarkdownStyling
     let topBlocks: [TopBlock]
+    /// Whether `topBlocks`' end lines never go down (the document's order), so a binary search finds a line's block.
+    private let blocksAreOrdered: Bool
     let items: [ItemInfo]
+    /// For each line (1-based), the index in `items` of the innermost item covering it, -1 for none.
+    private let innermostItems: [Int]
     let containers: [ContainerInfo]
     /// Start lines (1-based) of the tables rendered as a GRID.
     let gridTables: Set<Int>
@@ -894,12 +911,43 @@ extension MarkdownParser {
       walk(doc, ordered: false)
       self.items = items
       self.containers = containers
+      blocksAreOrdered = zip(topBlocks, topBlocks.dropFirst()).allSatisfy { $0.endLine <= $1.endLine }
+      // The innermost item per line, as a scan of every item for each line found it (the first of the shortest).
+      // That scan made a long note's parse quadratic: a 3.5 MB note held the main thread for 86 s as it opened.
+      var innermost = [Int](repeating: -1, count: lines.count + 2)
+      for (index, item) in items.enumerated() {
+        let span = item.endLine - item.startLine
+        let first = max(0, item.startLine)
+        let last = min(item.endLine, innermost.count - 1)
+        guard first <= last else { continue }
+        for line in first...last {
+          let current = innermost[line]
+          if current < 0 || span < items[current].endLine - items[current].startLine { innermost[line] = index }
+        }
+      }
+      innermostItems = innermost
+    }
+
+    /// The first top-level block whose lines hold `lineNo` (1-based), by binary search: blocks are in the
+    /// document's order, so the first block ending at or after the line is the only candidate.
+    func topBlock(containing lineNo: Int) -> TopBlock? {
+      guard blocksAreOrdered else {
+        return topBlocks.first { $0.startLine <= lineNo && lineNo <= $0.endLine }
+      }
+      var low = 0
+      var high = topBlocks.count
+      while low < high {
+        let mid = (low + high) / 2
+        if topBlocks[mid].endLine < lineNo { low = mid + 1 } else { high = mid }
+      }
+      guard low < topBlocks.count, topBlocks[low].startLine <= lineNo else { return nil }
+      return topBlocks[low]
     }
 
     func plan(for index: Int) -> LinePlan {
       let lineNo = index + 1
       let li = lines[index]
-      let top = topBlocks.first { $0.startLine <= lineNo && lineNo <= $0.endLine }
+      let top = topBlock(containing: lineNo)
 
       // Code blocks FIRST: blank lines inside a fence stay code.
       if let t = top, let cb = t.node as? CodeBlock {
@@ -1120,13 +1168,8 @@ extension MarkdownParser {
     }
 
     private func innermostItem(covering lineNo: Int) -> ItemInfo? {
-      var best: ItemInfo? = nil
-      for it in items where it.startLine <= lineNo && lineNo <= it.endLine {
-        if best == nil || (it.endLine - it.startLine) < (best!.endLine - best!.startLine) {
-          best = it
-        }
-      }
-      return best
+      guard innermostItems.indices.contains(lineNo), innermostItems[lineNo] >= 0 else { return nil }
+      return items[innermostItems[lineNo]]
     }
 
     /// Marks a list marker at the start of `text` (which begins at document offset
@@ -1535,12 +1578,19 @@ extension MarkdownParser {
   /// is used only to drive the background fill so fence lines get the fill too,
   /// while the content-only `.markdownCodeBlock` span keeps chrome/Copy correct.
   private static func fullCodeRange(
-    for contentRange: NSRange, lines: [LineInfo], topBlocks: [TopBlock]
+    for contentRange: NSRange, lines: [LineInfo], planner: LinePlanner
   ) -> NSRange? {
-    // Which top-level block contains the content span's first line?
-    let startLine = lines.firstIndex { $0.start == contentRange.location }.map { $0 + 1 } ?? 1
+    // Which top-level block contains the content span's first line? Lines are in order: a binary search (a scan
+    // per code block was quadratic in a long note).
+    var low = 0
+    var high = lines.count
+    while low < high {
+      let mid = (low + high) / 2
+      if lines[mid].start < contentRange.location { low = mid + 1 } else { high = mid }
+    }
+    let startLine = low < lines.count && lines[low].start == contentRange.location ? low + 1 : 1
     guard
-      let top = topBlocks.first(where: { $0.startLine <= startLine && startLine <= $0.endLine }),
+      let top = planner.topBlock(containing: startLine),
       top.node is CodeBlock
     else { return contentRange }
     let openLine = top.startLine - 1  // 0-based index of the opening ``` line

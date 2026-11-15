@@ -121,7 +121,9 @@
         size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
       markdownContainer.widthTracksTextView = true
       markdownLayout.addTextContainer(markdownContainer)
-      super.init(frame: .zero, textContainer: markdownContainer)
+      // A provisional width until its scroll view sizes it. At zero width the container fits no text, and the first
+      // display as the view joined its scroll view laid out the whole note (1.2 s for a 350 KB note).
+      super.init(frame: NSRect(x: 0, y: 0, width: Self.provisionalWidth, height: 0), textContainer: markdownContainer)
       configure()
       // Set here, their observers don't run (each would style the text again).
       self.resolver = resolver
@@ -134,6 +136,9 @@
       reapplyMarkdown()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// The width a new editor lays out at until it's placed (any reasonable text width).
+    static let provisionalWidth: CGFloat = 640
 
     private func configure() {
       isRichText = false  // pastes/drops land as plain text
@@ -229,6 +234,7 @@
     var isRestylePending: Bool { restyler.isPending }
 
     private func reapplyMarkdown() {
+      parsedAppearance = Self.styleAppearance(of: effectiveAppearance)
       // Parse under THIS view's appearance: the code palette is resolved from the current
       // drawing appearance, which outside a draw pass is the app's — wrong whenever the
       // window or view overrides it (e.g. a light window in dark mode).
@@ -884,7 +890,20 @@
     /// fenced code restyles immediately instead of waiting for the next edit.
     public override func viewDidChangeEffectiveAppearance() {
       super.viewDidChangeEffectiveAppearance()
+      // Only a change the styles depend on (light or dark, high contrast): joining a window of the same
+      // appearance parsed the whole note a second time as it opened (a second for a 350 KB note).
+      guard Self.styleAppearance(of: effectiveAppearance) != parsedAppearance else { return }
       reapplyMarkdown()
+    }
+
+    /// The appearance the styles were last made under (`reapplyMarkdown`).
+    private var parsedAppearance: NSAppearance.Name?
+
+    /// What the parse's colors depend on: light or dark, and high contrast.
+    private static func styleAppearance(of appearance: NSAppearance) -> NSAppearance.Name? {
+      appearance.bestMatch(from: [
+        .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+      ])
     }
   }
 #endif
