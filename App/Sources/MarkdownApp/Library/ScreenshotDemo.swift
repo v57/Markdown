@@ -79,7 +79,7 @@ enum ScreenshotDemo {
       let found = VaultProjectDiscovery.scan(root)
       // A folder the sandbox hides from the scan is a project itself (`--asks-for-folders`).
       if found.repositories.isEmpty { _ = try? store.addProject(path: root.path) }
-      for repository in found.repositories { _ = try? store.addProject(path: repository.path) }
+      _ = try? store.addProjects(found.repositories.map { VaultProjectFolder(path: $0.path) })
       try? store.arrangeProjects(found.repositories.map(\.path), roots: [root.path])
     }
   }
