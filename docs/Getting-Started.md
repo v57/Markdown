@@ -42,7 +42,7 @@ Markdown has two parts:
 
 <!-- only: mac -->
 
-You can open more windows with **File ▸ New Window**. Each window keeps its own vault account and its own place.
+You can open more windows with **File ▸ New Window** (⌥⌘N). Each window keeps its own vault account and its own place.
 
 <!-- /only -->
 

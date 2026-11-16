@@ -54,21 +54,34 @@ extension FocusedValues {
   }
 }
 
-/// The menu bar: Quick Open and Save in File, Edit/Read and Reload in View, the Format
+/// The menu bar: New Note, New Folder, New Window, Quick Open and Save in File, Edit/Read and Reload in View, the Format
 /// menu, and the welcome window under Window.
 struct MarkdownCommands: Commands {
+  /// The main window group's id, for New Window.
+  static let mainWindow = "main"
+
   @AppStorage(NoteFiles.encryptNewNotesKey) private var encryptsNewNotes = true
   @FocusedValue(\.windowState) private var window
   @FocusedValue(\.documentActions) private var document
   @FocusedValue(\.editorCommands) private var editor
+  @Environment(\.openWindow) private var openWindow
 
   var body: some Commands {
-    CommandGroup(after: .newItem) {
-      Button("Quick Open…") { window?.isQuickOpenShown = true }
-        .keyboardShortcut("k", modifiers: .command)
+    // ⌘N makes a note (as the sidebar's button and Quick Open say); New Window moves to ⌥⌘N. Declared before the
+    // `after: .newItem` group: a replacing group drops the ones declared ahead of it.
+    CommandGroup(replacing: .newItem) {
+      Button("New Note") { window?.perform?(.newNote(nil)) }
+        .keyboardShortcut("n", modifiers: .command)
         .disabled(window == nil)
       Button("New Folder") { window?.perform?(.newFolder) }
         .keyboardShortcut("n", modifiers: [.command, .shift])
+        .disabled(window == nil)
+      Button("New Window") { openWindow(id: Self.mainWindow) }
+        .keyboardShortcut("n", modifiers: [.command, .option])
+    }
+    CommandGroup(after: .newItem) {
+      Button("Quick Open…") { window?.isQuickOpenShown = true }
+        .keyboardShortcut("k", modifiers: .command)
         .disabled(window == nil)
       Divider()
       Toggle("Encrypt New Notes", isOn: $encryptsNewNotes)

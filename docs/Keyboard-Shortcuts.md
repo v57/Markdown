@@ -8,9 +8,10 @@ use Ctrl.
 
 | Shortcut | Does |
 |---|---|
-| ⌘N | **New Window** (Mac) |
-| ⌘K | **Quick Open…** |
+| ⌘N | **New Note**, in the place you're looking at |
 | ⇧⌘N | **New Folder** |
+| ⌥⌘N | **New Window** |
+| ⌘K | **Quick Open…** |
 | ⌘S | **Save** |
 
 **File ▸ Encrypt New Notes** has no shortcut.

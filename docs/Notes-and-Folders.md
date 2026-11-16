@@ -44,7 +44,8 @@ in its `.github` and `docs` folders. A link to a folder that has none shows **No
 ## Create notes and folders
 
 - **New Note** and **New Folder** in the sidebar's bottom bar make a note or a folder in the place you're looking at.
-  Outside your folders, they use the notes folder.
+  Outside your folders, they use the notes folder. From the keyboard: **File ▸ New Note** (⌘N) and **New Folder**
+  (⇧⌘N), Ctrl+N and Ctrl+Shift+N on Linux and Windows.
 - The notes card's **Add** (+) menu has **New Note** and **New Folder** too, and **Add Sample Notes** (see
   [Getting started](Getting-Started.md#try-the-sample-notes)).
 - A folder's menu (right-click on the Mac, touch and hold on iPhone and iPad) has **New Note** and **New Folder** for

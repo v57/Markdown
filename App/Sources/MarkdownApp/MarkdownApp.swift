@@ -62,7 +62,7 @@ public struct MarkdownApp: App {
   }
 
   public var body: some Scene {
-    WindowGroup("Markdown") {
+    WindowGroup("Markdown", id: MarkdownCommands.mainWindow) {
       Group {
         if Self.runsProbes {
           MarkdownEditorView()
