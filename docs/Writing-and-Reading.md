@@ -1,5 +1,9 @@
 # Writing and reading
 
+Markdown shows a note finished while you write it: the Markdown symbols hide on every line except the one you're on.
+This page covers the editor, formatting, tables, code, images and links, switching between Edit and Read, and how
+notes are saved.
+
 ## Live preview
 
 Markdown styles your note as you type. Headings, **bold**, *italic*, ~~strikethrough~~, `code`, links, web addresses
@@ -15,10 +19,18 @@ What Markdown shows:
 - Tables, as aligned grids.
 - Fenced code blocks, with colours for the language.
 - Images, links and horizontal rules.
+- The HTML GitHub READMEs use, like centered images and `<picture>` for light and dark.
 
 The note follows your light or dark appearance.
 
-On Windows and Linux, the editor shows the Markdown source, and **Read** shows the finished note.
+<!-- only: linux windows -->
+
+On Linux and Windows there is no live preview. **Edit** shows the note's Markdown source in a plain text editor, where
+the **Format** menu works. **Read** shows the finished note: headings, lists and task lists, quotes, coloured code,
+tables, images and links. Return doesn't continue a list there, checkboxes can't be ticked by clicking, and code
+blocks have no copy button.
+
+<!-- /only -->
 
 ## Lists, quotes and checkboxes
 
@@ -38,47 +50,12 @@ language Markdown doesn't know stays plain.
 
 Each code block has a copy button. It copies exactly the block's code and shows that it copied.
 
-## Format text
-
-**On the Mac**, use the **Format** menu. It has:
-
-- **Title**, **Heading**, **Subheading**
-- **Bold**, **Italic**, **Strikethrough**, **Code**, **Add Link**
-- **Checklist**, **Bulleted List**, **Numbered List**, **Block Quote**
-- **Code Block**, **Table**
-- **Toggle List**, **Toggle Checkbox**, **Toggle Checked Checkbox**, **Toggle Code**, **Toggle Note**, **Toggle
-  Numbered List**
-
-The toggles also sit in a bar under the editor while you edit. A toggle adds the mark to the selected lines, and
-removes it when it's already there. **Toggle Note** makes a quote.
-
-**On iPhone and iPad**, a formatting bar floats above the keyboard while you edit:
-
-- **Text Style** (Aa) has **Title**, **Heading**, **Subheading**, **Bold**, **Italic**, **Strikethrough**, **Table**,
-  **Code Block** and **Link**.
-- The toggles for lists, checkboxes, code, quotes and numbered lists.
-- **Hide Keyboard** puts the keyboard away.
-
-The formatting works on the selected text or the lines it touches. See [Keyboard shortcuts](Keyboard-Shortcuts.md) for
-the Format menu's shortcuts.
-
-## Undo
-
-Use **Edit ▸ Undo** (⌘Z) on the Mac. On iPhone and iPad, shake the device, swipe left with three fingers, or press ⌘Z
-on a keyboard.
-
 ## Edit and Read
 
 A note opens in **Edit**, where the line you're on shows its Markdown. **Read** hides every symbol, and a click or tap on
-a link follows it.
-
-- **On the Mac and iPad**, use the **Edit** / **Read** switch in the toolbar, or press ⇧⌘E. On the Mac, the **View**
-  menu has **Edit Note** or **Read Note**.
-- **On iPhone**, tap the eye button to read and the pencil button to edit.
+a link follows it. In **Read**, checkboxes and tables don't change, and code blocks still copy.
 
 Markdown remembers your choice for other notes and the next launch.
-
-In **Read**, checkboxes and tables don't change, and code blocks still copy.
 
 ## Links
 
@@ -86,14 +63,8 @@ In **Read**, checkboxes and tables don't change, and code blocks still copy.
 - A link to a heading (`[Setup](#setup)`, or `Other.md#setup`) scrolls to it.
 - A link to a folder opens the folder's README.
 - Web links (`http`, `https`) open in your browser. `mailto` links open a new mail.
-- Any other link asks first. See [Privacy and security](Privacy-and-Security.md#links).
-
-### Back and forward
-
-After you follow links, go back and forward:
-
-- **On the Mac and iPad**, use the ‹ and › buttons in the toolbar, or ⌘[ and ⌘].
-- **On iPhone**, the note's **More** menu has **Back** and **Forward**.
+- Any other link asks first. See [Privacy and security](Privacy-and-Security.md#links). On Linux and Windows, such a
+  link doesn't open.
 
 ## Images
 
@@ -115,11 +86,10 @@ The line under the note's title shows:
 - **Edited** while a change waits to be saved, then **Saved**, or **Synced** when the note syncs through iCloud,
 - how many words the note has.
 
-To save at once, choose **Save Now** from the **More** menu, or **File ▸ Save** (⌘S) on the Mac.
+To save at once, choose **Save Now** from the **More** menu.
 
 If a change can't be saved (for example, a file you may only read), a red **Not Saved** button appears. Click it to see
-why. On the Mac, when a folder was opened read-only, **Allow Editing…** lets you choose the folder again so Markdown can
-save.
+why: Markdown says **Couldn’t Save** with the reason.
 
 If a note can't be opened, Markdown says **Couldn’t Open “…”** with the reason.
 
@@ -130,8 +100,84 @@ The **More** (…) button in the note's toolbar has:
 - **Pin Note** or **Unpin Note**
 - **Rename…**
 - **Encrypt Note** or **Decrypt Note**
-- **Open With** (Mac): Code or Finder
-- **Open Project “…”…** (Mac, for a file inside a project you haven't opened)
+- **Open With** (Mac and Windows): Code or Finder (Explorer on Windows)
+- **Open Project “…”…** (Mac and Windows, for a file inside a project you haven't opened)
 - **Save Now**
 - **Reload**: reads the folders and the note from disk again
 - **Back** and **Forward** (iPhone)
+
+## On the Mac
+
+### Format text
+
+Use the **Format** menu. It has:
+
+- **Title**, **Heading**, **Subheading**
+- **Bold**, **Italic**, **Strikethrough**, **Code**, **Add Link**
+- **Checklist**, **Bulleted List**, **Numbered List**, **Block Quote**
+- **Code Block**, **Table**
+- **Toggle List**, **Toggle Checkbox**, **Toggle Checked Checkbox**, **Toggle Code**, **Toggle Note**, **Toggle
+  Numbered List**
+
+A toggle adds the mark to the selected lines, and removes it when it's already there. **Toggle Note** makes a quote.
+The formatting works on the selected text or the lines it touches. See [Keyboard shortcuts](Keyboard-Shortcuts.md) for
+the Format menu's shortcuts.
+
+The toggles also sit in a bar under the editor while you edit.
+
+<!-- only: linux windows -->
+
+On Linux and Windows, the toggles are in the **Format** menu only.
+
+<!-- /only -->
+
+### Undo
+
+Use **Edit ▸ Undo** (⌘Z).
+
+### Switch between Edit and Read
+
+Use the **Edit** / **Read** switch in the toolbar, or press ⇧⌘E. The **View** menu has **Edit Note** or **Read Note**.
+
+### Back and forward
+
+After you follow links, use the ‹ and › buttons in the toolbar, or ⌘[ and ⌘], to go back and forward.
+
+### Save now
+
+**File ▸ Save** (⌘S) saves at once.
+
+<!-- only: mac -->
+
+When a folder was opened read-only, the **Couldn’t Save** message offers **Allow Editing…**, which lets you choose the
+folder again so Markdown can save.
+
+<!-- /only -->
+
+## On iPhone and iPad
+
+### Format text
+
+A formatting bar floats above the keyboard while you edit:
+
+- **Text Style** (Aa) has **Title**, **Heading**, **Subheading**, **Bold**, **Italic**, **Strikethrough**, **Table**,
+  **Code Block** and **Link**.
+- The toggles for lists, checkboxes, checked checkboxes, code, quotes and numbered lists. A toggle adds the mark to the
+  selected lines, and removes it when it's already there.
+- **Hide Keyboard** puts the keyboard away.
+
+With a keyboard on iPad, the **Format** menu's shortcuts work too. See [Keyboard shortcuts](Keyboard-Shortcuts.md).
+
+### Undo
+
+Shake the device, swipe left with three fingers, or press ⌘Z on a keyboard.
+
+### Switch between Edit and Read
+
+- **On iPad**, use the **Edit** / **Read** switch in the toolbar, or press ⇧⌘E on a keyboard.
+- **On iPhone**, tap the eye button to read and the pencil button to edit.
+
+### Back and forward
+
+- **On iPad**, use the ‹ and › buttons in the toolbar, or ⌘[ and ⌘] on a keyboard.
+- **On iPhone**, the note's **More** menu has **Back** and **Forward**.

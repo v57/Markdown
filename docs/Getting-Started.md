@@ -1,20 +1,114 @@
 # Getting started
 
-## The window
+Install Markdown, write your first note and find your way around. Your notes are plain Markdown files in a folder on
+your device, and the sidebar shows where they are.
+
+## On the Mac
+
+### Install
+
+<!-- only: mac -->
+
+Download **Markdown.dmg** or **Markdown.zip** from
+[Markdown's releases on GitHub](https://github.com/v57/Markdown/releases) and move **Markdown** to your Applications
+folder. It needs macOS 14 or later on a Mac with Apple silicon.
+
+<!-- /only -->
+
+<!-- only: linux -->
+
+On Linux, download **Markdown-Linux-x64.tar.gz** or **Markdown-Linux-arm64.tar.gz**, whichever matches your computer,
+from [Markdown's releases on GitHub](https://github.com/v57/Markdown/releases). It holds the app's folder, with a
+`.desktop` file and its icon, made to go in `/opt/Markdown`.
+
+<!-- /only -->
+
+<!-- only: windows -->
+
+On Windows, download **Markdown-Windows-x64.zip** or **Markdown-Windows-arm64.zip** from
+[Markdown's releases on GitHub](https://github.com/v57/Markdown/releases), unzip it and open **Markdown** from the
+folder.
+
+<!-- /only -->
+
+### The window
 
 Markdown has two parts:
 
 - **The sidebar** lists where your notes live: **All Notes**, your notes folder and its folders, connected GitHub
-  repositories, files you opened on their own, and on the Mac the projects the v57 apps share. Right under the place you
-  picked, it lists that place's notes.
+  repositories, files you opened on their own, and the projects the v57 apps share. Right under the place you picked,
+  it lists that place's notes.
 - **The note pane** shows the note you picked. With no note picked, it shows the folder's README, or the welcome.
 
-On iPhone, a note opens over the sidebar. Tap Back to return to the sidebar.
+<!-- only: mac -->
+
+You can open more windows with **File ▸ New Window**. Each window keeps its own vault account and its own place.
+
+<!-- /only -->
+
+<!-- only: linux windows -->
+
+On Linux and Windows, the shortcuts written with ⌘ in this guide use Ctrl: Ctrl+K for Quick Open, Ctrl+Shift+N for
+New Folder. Markdown has no Settings window there, and the sidebar lists shared projects on Windows only.
+
+<!-- /only -->
+
+### Where your notes are kept
+
+Your notes are files in a folder on your computer. The sidebar's first card is that folder, **On My Mac**. Its line
+says how many notes there are and whether they sync through **iCloud** or stay as **plain files** on this computer.
+
+<!-- only: mac windows -->
+
+Open the card's **Add** (+) menu and choose **Show Notes Folder in Finder** (**in Explorer** on Windows) to see the
+files. To keep your notes somewhere else, choose **Choose Notes Folder…** and pick a folder. Markdown writes your notes
+there and keeps them in sync with it. The old folder keeps its files.
+
+<!-- /only -->
+
+<!-- only: linux windows -->
+
+On Linux and Windows, iCloud isn't there: the card says **plain files**, and your notes stay on this computer. On
+Linux, the notes folder stays where Markdown keeps it; the card's menu has no command to show or change it.
+
+<!-- /only -->
+
+### Open a Markdown file from elsewhere
+
+Drag any Markdown or plain-text file onto the sidebar to open it. On the Mac you can also open it from Finder with
+**Open With ▸ Markdown**. Markdown edits the file where it is. A file inside one of the sidebar's folders shows in its folder. Any other file is listed
+under **Files ▸ Opened Files**. See [Notes and folders](Notes-and-Folders.md).
+
+## On iPhone and iPad
+
+### The window
+
+Markdown has two parts:
+
+- **The sidebar** lists where your notes live: **All Notes**, your notes folder and its folders, connected GitHub
+  repositories and files you opened on their own. Right under the place you picked, it lists that place's notes.
+- **The note pane** shows the note you picked. With no note picked, it shows the folder's README, or the welcome.
+
+On iPhone, a note opens over the sidebar. Tap **Back** to return to the sidebar.
 
 On iPad, the sidebar and the note sit side by side. Use the sidebar toggle in the sidebar's bottom bar to hide or show
 the sidebar.
 
-On the Mac, you can open more windows. Each window keeps its own vault account and its own place.
+### Where your notes are kept
+
+Your notes are files in a folder on your device. The sidebar's first card is that folder, **On My iPhone** or **On My
+iPad**. Its line says how many notes there are and whether they sync through **iCloud** or stay as **plain files** on
+this device.
+
+The notes folder is in the Files app at **On My iPhone ▸ Markdown** (or **On My iPad ▸ Markdown**). Notes you add or
+change there show up in Markdown.
+
+### Open a Markdown file from elsewhere
+
+Open any Markdown or plain-text file from the Files app with **Share ▸ Markdown** or **Open With**. On iPad you can also
+drag it from Files onto the sidebar or the welcome. Markdown edits the file where it is. A file inside one of the
+sidebar's folders shows in its folder. Any other file is listed under **Files ▸ Opened Files**. See
+[Notes and folders](Notes-and-Folders.md).
 
 ## The welcome
 
@@ -27,8 +121,7 @@ The welcome shows when no note is open. It has:
 - A list of up to eight notes you opened recently. With none yet, it says **No Recent Notes**.
 - An option, **Encrypt new notes**, which is on at first. See [Sync and encryption](Sync-and-Encryption.md).
 
-On the Mac, choose **Window ▸ Welcome to Markdown** (⇧⌘1) to show it again. On iPhone and iPad, open Quick Open and
-pick **Welcome to Markdown**.
+To show it again, choose **Window ▸ Welcome to Markdown** (⇧⌘1), or open Quick Open and pick **Welcome to Markdown**.
 
 ## Write your first note
 
@@ -53,34 +146,13 @@ few documentation notes with code and links between them.
 They are plain `.md` notes. They sync like any other note when iCloud is on, and you remove them by deleting the
 folder.
 
-## Where your notes are kept
+## Plain files
 
-Your notes are files in a folder on your device. The sidebar's first card is that folder: **On My Mac**, **On My
-iPhone** or **On My iPad**. Its line says how many notes there are and whether they sync through **iCloud** or stay as
-**plain files** on this device.
-
-- **On iPhone and iPad**, the notes folder is in the Files app at **On My iPhone ▸ Markdown** (or **On My iPad ▸
-  Markdown**). Notes you add or change there show up in Markdown.
-- **On the Mac**, open the card's **Add** (+) menu and choose **Show Notes Folder in Finder** to see the files. To keep
-  your notes somewhere else, choose **Choose Notes Folder…** and pick a folder. Markdown writes your notes there and
-  keeps them in sync with it. The old folder keeps its files.
-
-Because notes are plain files, other editors, Finder, Files and git can work on them too. Markdown notices changes made
-outside the app and updates the sidebar and the open note.
+Because notes are plain files, other editors, your file manager and git can work on them too. Markdown notices changes
+made outside the app and updates the sidebar and the open note.
 
 Encrypted notes (`.mdenc`) are the exception: other apps see only scrambled text. See
 [Sync and encryption](Sync-and-Encryption.md).
-
-## Open a Markdown file from elsewhere
-
-You can open any Markdown or plain-text file with Markdown:
-
-- **On the Mac**, open it from Finder with **Open With ▸ Markdown**, or drag it onto the sidebar.
-- **On iPhone and iPad**, open it from the Files app with **Share ▸ Markdown** or **Open With**. On iPad you can also
-  drag it from Files onto the sidebar or the welcome.
-
-Markdown edits the file where it is. A file inside one of the sidebar's folders shows in its folder. Any other file is
-listed under **Files ▸ Opened Files**. See [Notes and folders](Notes-and-Folders.md).
 
 ## Next
 

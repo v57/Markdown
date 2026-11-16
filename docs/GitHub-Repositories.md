@@ -3,8 +3,9 @@
 Connect a GitHub repository to edit its Markdown files in Markdown and push your changes back. You don't need git
 installed.
 
-Markdown downloads only a repository's Markdown files and their images. It keeps them on this device, in Markdown's
-own data, not in your notes folder. Connect the repository on each device where you want it.
+Markdown downloads only a repository's Markdown files and images (PNG, JPEG, GIF, SVG, WebP and HEIC), each up to
+10 MB. It keeps them on this device, in Markdown's own data, not in your notes folder. Connect the repository on each
+device where you want it.
 
 ## Open Connect GitHub
 
@@ -21,7 +22,8 @@ Signing in lets you edit your repositories, private ones included, and push chan
 1. Click **Sign In with GitHub…**. The **Sign in to GitHub** sheet lists what Markdown asks GitHub for.
 2. Click **Continue on GitHub**. Markdown shows a code, copies it, and opens GitHub's device page in your browser.
 3. Paste the code there and approve Markdown. If you closed the page, use **Open GitHub Again**.
-4. When GitHub confirms, the sheet says **Connected as …**, and the **Account** card shows your GitHub name.
+4. When GitHub confirms, the sheet says **Connected as …**, and the **Account** card shows your GitHub name
+   (`@name`).
 
 The sign-in is shared with Git and Dev. If you already signed in in one of them with the same iCloud Keychain, Markdown
 is signed in too. If another of your vault accounts is signed in, the sheet offers **Use @name** so you don't have to
@@ -40,7 +42,11 @@ Click a repository. Markdown shows **Downloading…**, closes the sheet, and add
 ## Add a public repository without signing in
 
 In **Any Public Repository**, type `owner/repository` or a github.com address, and click **Add**. Markdown adds the
-repository to read and edit here. To push changes, you need to sign in, and push access to the repository.
+repository to read and edit here.
+
+A repository added while you're signed out stays read-only for pushing: **Commit and Push…** says **Sign In to Push**,
+even after you sign in. To push, sign in, disconnect the repository and connect it again. You also need push access to
+the repository on GitHub.
 
 If the repository is already connected, Markdown says **Already Connected**. If it can't be reached, it says
 **Couldn’t Connect …** with the reason.
@@ -65,12 +71,13 @@ GitHub's is saved next to it as "Name (GitHub).md". Merge them, delete the "(Git
 ## Commit and push
 
 1. Choose **Commit and Push…** from the repository's menu.
-2. The prompt lists your changes (added, changed and deleted files). Type a message, or keep the one Markdown suggests,
-   like "Update Ideas.md".
+2. The prompt lists your changes (added, changed and deleted files). Type a message, or keep the one Markdown suggests:
+   "Update Ideas.md" for one changed file, "Update notes" for several.
 3. Click **Push**.
 
 Markdown pulls first, then writes one commit and moves the branch forward. It never forces a push. It says **Pushed 3
-changes to main.**, or **Nothing to commit.**
+changes to main.**, or **Nothing to commit.** If the pull finds a file changed both here and on GitHub, nothing is
+pushed: merge the files first, as under [Pull](#pull).
 
 Without a sign-in, Markdown says **Sign In to Push**.
 

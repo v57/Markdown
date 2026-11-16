@@ -6,21 +6,23 @@ iCloud, encrypted. You can also connect a GitHub repository and edit its Markdow
 
 ## Platforms
 
-- **Mac:** the full app, with a menu bar, a Settings window and keyboard shortcuts.
+- **Mac:** the full app, with a menu bar, a Settings window and keyboard shortcuts. The version downloaded from GitHub
+  updates itself.
 - **iPhone:** the same notes, places and editor. Notes open over the sidebar, and a formatting bar sits above the
   keyboard.
 - **iPad:** the sidebar and the note side by side. With a hardware keyboard, the Mac's shortcuts work too.
-- **Windows and Linux:** Markdown also builds there. The editor shows the Markdown source with the same formatting
-  commands, and **Read** shows the finished note. The live preview is on Mac, iPhone and iPad only. iCloud sync is only
-  on Apple devices.
+- **Windows and Linux:** the same window and menus. **Edit** shows the Markdown source with the same **Format** menu,
+  and **Read** shows the finished note: the live preview is on Mac, iPhone and iPad only. Notes don't sync, since
+  iCloud is only on Apple devices, and there is no Settings window. Windows also lists the shared projects and updates
+  itself; Linux does neither.
 
 The guide notes where a feature works differently on a platform.
 
 ## Pages
 
-- [Getting started](Getting-Started.md): the window, your first note, and where notes are kept.
+- [Getting started](Getting-Started.md): installing, the window, your first note, and where notes are kept.
 - [Notes and folders](Notes-and-Folders.md): the sidebar, creating, renaming, pinning, moving and deleting notes, files
-  opened on their own, and shared projects on the Mac.
+  opened on their own, and shared projects.
 - [Writing and reading](Writing-and-Reading.md): the editor, formatting, tables, code, images, links, Edit and Read,
   and saving.
 - [Search and Quick Open](Search-and-Quick-Open.md): finding notes by name or by what they say.
@@ -29,7 +31,7 @@ The guide notes where a feature works differently on a platform.
 - [Accounts and settings](Accounts-and-Settings.md): vault accounts, Settings, languages and updates.
 - [Privacy and security](Privacy-and-Security.md): what Markdown sends over the network, web images, links and
   encrypted notes.
-- [Keyboard shortcuts](Keyboard-Shortcuts.md): every shortcut on the Mac and on an iPad keyboard.
+- [Keyboard shortcuts](Keyboard-Shortcuts.md): every shortcut on the Mac, an iPad keyboard, Linux and Windows.
 
 ## Works with other v57 apps
 
@@ -40,8 +42,8 @@ The guide notes where a feature works differently on a platform.
   [Shell guide](https://github.com/v57/Shell/blob/main/Docs/README.md).
 - **Git:** Markdown uses the same GitHub sign-in as Git (and Dev). Sign in once in either app. See the
   [Git guide](https://github.com/v57/Git/blob/main/docs/README.md).
-- **Code:** on the Mac, **Open With** offers Code for a note or a project folder. The projects Code and Git add show in
-  Markdown's sidebar. See the [Code guide](https://github.com/v57/Code/blob/main/docs/README.md).
+- **Code:** on the Mac and Windows, **Open With** offers Code for a note or a project folder. The projects Code and Git
+  add show in Markdown's sidebar. See the [Code guide](https://github.com/v57/Code/blob/main/docs/README.md).
 
 ## For developers
 
