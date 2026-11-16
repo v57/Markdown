@@ -4,12 +4,28 @@
 
 MarkdownKit is a Markdown editor and viewer with live preview, in the style of Obsidian: syntax symbols are hidden on
 lines you aren't editing and appear on the line you are. It is built on TextKit 1, with an AppKit front end on the Mac
-and a UIKit one on iPhone and iPad, and one SwiftUI view, `MarkdownEditorView`, for both. The same view in read-only
+and a UIKit one on iPhone and iPad, and one SwiftUI view, `MarkdownEditorView`, for both (and a portable version
+of it on Linux and Windows). The same view in read-only
 mode is a document viewer: the Markdown app's Read mode, Shell's Markdown files and Agentus's Docs pane use it.
 
 The editor keeps the source text exactly as typed. The parser only adds attributes on top of it, so what you save is
 what the user wrote. MarkdownKit edits text, not files: loading, saving, folders and sync belong to the app. It is
 not a general Markdown-to-HTML converter.
+
+## Platforms
+
+<!-- platforms: macos ios linux=partial windows=partial -->
+
+- **macOS** (14 and later): the live-preview editor on TextKit 1 and AppKit (`Sources/MarkdownKit/AppKit/`).
+- **iOS and iPadOS** (17 and later): the same editor on UIKit (`Sources/MarkdownKit/UIKit/`). Links can be tapped in
+  read-only mode.
+- **Linux and Windows:** built and tested on Linux, runs on Windows, on v57/SwiftUI. TextKit isn't there, so
+  `MarkdownEditorView` is a portable SwiftUI view (`Sources/MarkdownKit/Portable/`) with the same initializer: it
+  edits the source in a plain text editor (the formatting commands work) and, read-only, draws the document with
+  SwiftUI from swift-markdown's tree (headings, inline styles, links, lists and task lists, quotes, highlighted code,
+  tables, images). There is no live preview, no copy button on code blocks and no clickable checkbox.
+  `MarkdownParser.parse`, `MarkdownRenderer`, `MarkdownImageCache` and the list and quote continuations are
+  Apple-only. `onConfirmLink` does nothing there: a link the policy would ask about doesn't open.
 
 ## Getting started
 
@@ -24,8 +40,9 @@ targets: [
 ```
 
 MarkdownKit depends on [swift-markdown](https://github.com/swiftlang/swift-markdown) (the `Markdown` module, which is
-why the library is `MarkdownKit`) and on Code's `CodeHighlighting` (`https://github.com/v57/Code.git`). To build
-against a Code checkout next to this one, open `Markdown-Local.xcworkspace`, or run SwiftPM with `V57_LOCAL=1`.
+why the library is `MarkdownKit`) and on Code's `CodeHighlighting` (`https://github.com/v57/Code.git`). On Linux and
+Windows it also depends on v57's SwiftUI (`https://github.com/v57/SwiftUI.git`). To build against checkouts next to
+this one, open `Markdown-Local.xcworkspace`, or run SwiftPM with `V57_LOCAL=1`.
 
 An editor for a note on disk, with a Bold button:
 
@@ -104,7 +121,11 @@ is room. Light and dark follow the view's own appearance.
 - `MarkdownFormatting.edit(applying:to:selection:)`: the same edit as a `MarkdownEdit` (range, replacement, new
   selection), without a text view. Use it to format text in your own editor or in tests.
 
-### Parsing (Mac, iPhone and iPad)
+### Parsing
+
+<!-- platforms: macos ios -->
+
+The parser and renderer exist where TextKit does; the helpers in the last item work everywhere.
 
 - `MarkdownParser.parse(_:style:sourceModeTables:maxTableWidth:resolver:)` returns a `ParsedMarkdown`: `attributed`
   (a native `NSAttributedString` whose string is the source, unchanged), `syntaxRanges`, `blocks` (a simple
@@ -151,26 +172,14 @@ info string and names it in the block's corner. Colors follow `CodeColorScheme.s
 
 ### Images
 
-- `MarkdownImageCache.shared` loads, decodes and caches images by resolved URL for every editor. It fetches through
-  an ephemeral session without cookies and with a disk cache, decodes off the main thread, downsamples large images
-  (`maxDecodedPixelSize`), animates GIF, APNG and WebP, and draws SVG (rasterized through WebKit on iOS).
+- On the Mac, iPhone and iPad, `MarkdownImageCache.shared` loads, decodes and caches images by resolved URL for every
+  editor. It fetches through an ephemeral session without cookies and with a disk cache, decodes off the main thread,
+  downsamples large images (`maxDecodedPixelSize`), animates GIF, APNG and WebP, and draws SVG (rasterized through
+  WebKit on iOS).
 - Web images don't load by default, so opening a document contacts no server. Files and `data:` images always load.
   `remoteImages(loads:onBlocked:)` turns web images on, and `onBlocked` tells you whether the document has web images
   that didn't load, to show a "Load images" bar.
 - `MarkdownImageSpec` describes one image's size, alignment and alt text, for hosts that draw their own.
-
-## Platform notes
-
-- **macOS** (14 and later): the AppKit editor (`Sources/MarkdownKit/AppKit/`).
-- **iOS and iPadOS** (17 and later): the UIKit editor (`Sources/MarkdownKit/UIKit/`). Links can be tapped in
-  read-only mode.
-- **Linux and Windows:** built and tested on Linux, runs on Windows, on v57/SwiftUI. TextKit isn't there, so
-  `MarkdownEditorView` is a portable SwiftUI view (`Sources/MarkdownKit/Portable/`) with the same initializer: it
-  edits the source in a plain text editor (the formatting commands work) and, read-only, draws the document with
-  SwiftUI from swift-markdown's tree (headings, inline styles, links, lists and task lists, quotes, highlighted code,
-  tables, images). `MarkdownParser.parse`, `MarkdownRenderer` and `MarkdownImageCache` are Apple-only.
-  `onConfirmLink` does nothing there: a link the policy would ask about doesn't open.
-- **Android:** not yet.
 
 ## Testing
 
@@ -193,5 +202,9 @@ UIKit stacks are.
 For your own tests, `MarkdownFormatting.edit(applying:to:selection:)` and `MarkdownParser.parse(_:)` need no view, and
 `SampleDocument.text` exercises every feature.
 
-See also: the user guide's [Writing and Reading](Writing-and-Reading.md) and
-[Privacy and Security](Privacy-and-Security.md) (web images and links), and the [index](README.md).
+## Related
+
+- [CodeHighlighting](https://github.com/v57/Code/blob/main/docs/CodeHighlighting.md): colors the fenced code blocks.
+- [swift-markdown](https://github.com/swiftlang/swift-markdown): the parser underneath (the `Markdown` module).
+- The user guide's [Writing and reading](Writing-and-Reading.md) and [Privacy and security](Privacy-and-Security.md)
+  (web images and links), and the [index](README.md).
