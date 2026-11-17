@@ -236,8 +236,11 @@ open class EditorLayoutManagerCore: NSLayoutManager {
   /// image's source) and whose visibility for the current `activeCharacterRange` stays the same is written without
   /// invalidating layout. Set `activeCharacterRange` first. Returns the range the writes cover, nil when nothing
   /// changed, or when `styled` holds other characters.
+  ///
+  /// `replacingAll` writes every run without comparing (the first styling of a note loaded in the body style, where
+  /// every run differs: comparing them took most of a long note's 1.7 s styling).
   @discardableResult
-  public func applyStyles(_ styled: NSAttributedString) -> NSRange? {
+  public func applyStyles(_ styled: NSAttributedString, replacingAll: Bool = false) -> NSRange? {
     guard let storage = textStorage else { return nil }
     let length = storage.length
     // CF calls hand back NSDictionary without bridging every run's attributes to a Swift dictionary.
@@ -247,6 +250,18 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     guard length > 0, styled.length == length,
       CFEqual(CFAttributedStringGetString(new), CFAttributedStringGetString(old))
     else { return nil }
+    if replacingAll {
+      storage.beginEditing()
+      var index = 0
+      while index < length {
+        var run = CFRange()
+        let attributes = CFAttributedStringGetAttributes(new, index, &run)
+        CFAttributedStringSetAttributes(storage as CFMutableAttributedString, run, attributes, true)
+        index = run.location + run.length
+      }
+      storage.endEditing()
+      return NSRange(location: 0, length: length)
+    }
     var relayout: [(range: NSRange, attributes: NSDictionary)] = []
     var moved: [(range: NSRange, attributes: NSDictionary)] = []
     var index = 0
@@ -307,6 +322,19 @@ open class EditorLayoutManagerCore: NSLayoutManager {
     let first = min(relayout.first?.range.location ?? .max, moved.first?.range.location ?? .max)
     let last = max(relayout.last.map { NSMaxRange($0.range) } ?? 0, moved.last.map { NSMaxRange($0.range) } ?? 0)
     return NSRange(location: first, length: last - first)
+  }
+
+  /// From the first image to the last in `styled` (a parse), nil without images: where `updateImageSlots` has work
+  /// after a whole note was styled. Read from the parse, the storage isn't made to fix every attribute of a long note.
+  public static func imageRange(in styled: NSAttributedString) -> NSRange? {
+    var first: Int?
+    var last = 0
+    styled.enumerateAttribute(.markdownImageSpec, in: NSRange(location: 0, length: styled.length)) { value, range, _ in
+      guard value != nil else { return }
+      if first == nil { first = range.location }
+      last = NSMaxRange(range)
+    }
+    return first.map { NSRange(location: $0, length: last - $0) }
   }
 
   private func setAttributes(_ attributes: NSDictionary, range: NSRange, in storage: NSTextStorage) {

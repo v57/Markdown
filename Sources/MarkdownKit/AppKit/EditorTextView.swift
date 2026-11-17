@@ -116,6 +116,9 @@
       markdownStorage = NSTextStorage()
       markdownLayout = EditorLayoutManager()
       markdownLayout.metrics = metrics
+      // Lays out what's shown, not everything before it: with contiguous layout, showing the top of a long note laid
+      // out all of it (1.5 s for 1 MB) as the view joined its scroll view.
+      markdownLayout.allowsNonContiguousLayout = true
       markdownStorage.addLayoutManager(markdownLayout)
       markdownContainer = NSTextContainer(
         size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -130,10 +133,10 @@
       self.isReadOnly = isReadOnly
       isEditable = !isReadOnly
       markdownLayout.revealsSyntax = !isReadOnly
-      markdownStorage.setAttributedString(NSAttributedString(string: text))
-      // textDidChange only fires for user edits, not for this initial load — style
-      // the text once here (identical to the per-edit reapply path).
-      reapplyMarkdown()
+      loadText {
+        markdownStorage.setAttributedString(
+          NSAttributedString(string: text, attributes: MarkdownStyle(metrics: metrics).typingAttributes))
+      }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -184,10 +187,37 @@
     /// wants to observe edits still gets them via the normal edit path). Used by
     /// hosts that inflate the editor with existing content (e.g. a note editor).
     public func setText(_ newText: String) {
-      self.string = newText
       sourceModeTables.removeAll()
-      reapplyMarkdown()
+      loadText {
+        self.string = newText
+        markdownStorage.setAttributes(
+          MarkdownStyle(metrics: metrics).typingAttributes, range: NSRange(location: 0, length: markdownStorage.length))
+      }
+    }
+
+    /// Whether the text is being replaced (`loadText`): the selection moves meanwhile, and following it would read
+    /// every attribute between the old caret and the new one, which made AppKit fix the fonts of the whole note
+    /// (0.8 s for 1 MB) before it showed.
+    private var isLoadingText = false
+    /// Set while loaded text shows in the body style: its first styles are written whole, not compared.
+    private var stylesReplaceAll = false
+
+    /// Replaces the text with `load`, puts the caret at the start and styles it: in the same event, or for a long note
+    /// (`MarkdownRestyler.backgroundOpenLength`) from a background parse, the text showing in the body style until then.
+    /// `textDidChange` only fires for user edits, so loads style here (the same parse as the per-edit path).
+    private func loadText(_ load: () -> Void) {
+      isLoadingText = true
+      load()
       setSelectedRange(NSRange(location: 0, length: 0))
+      markdownLayout.activeCharacterRange = NSRange(location: 0, length: 0)
+      isLoadingText = false
+      stylesReplaceAll = true
+      if markdownStorage.length >= MarkdownRestyler.backgroundOpenLength {
+        parsedAppearance = Self.styleAppearance(of: effectiveAppearance)
+        restyleInBackground()
+      } else {
+        reapplyMarkdown()
+      }
     }
 
     // MARK: - Derived styling (re-parse on every character edit)
@@ -305,8 +335,15 @@
       // typingAttributes reset lives in textDidChange (same event, safe point):
       // setting it here would crash on the stale selection (Select-All → Delete).
       markdownLayout.activeCharacterRange = selectedRange()
-      if let changed = markdownLayout.applyStyles(parsed.attributed) {
-        markdownLayout.updateImageSlots(in: changed)
+      if let changed = markdownLayout.applyStyles(parsed.attributed, replacingAll: stylesReplaceAll) {
+        if stylesReplaceAll {
+          stylesReplaceAll = false
+          if let images = EditorLayoutManagerCore.imageRange(in: parsed.attributed) {
+            markdownLayout.updateImageSlots(in: images)
+          }
+        } else {
+          markdownLayout.updateImageSlots(in: changed)
+        }
         remoteImagesInDocument = nil
       }
       loadVisibleImages()
@@ -511,6 +548,7 @@
     }
 
     public func textViewDidChangeSelection(_ notification: Notification) {
+      guard !isLoadingText else { return }
       updateCaretLine()
       // Again once the marks shown or hidden below have been laid out (a heading's line changes height).
       DispatchQueue.main.async { [weak self] in self?.updateCaretLine() }

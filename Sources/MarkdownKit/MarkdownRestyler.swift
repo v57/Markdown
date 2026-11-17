@@ -13,6 +13,10 @@ final class MarkdownRestyler {
   /// Shorter documents are always re-styled in the edit's own event, however long one parse took (the first one, with
   /// cold caches, can be slow even for a short note).
   var backgroundMinimumLength = 8_000
+  /// A document this long (UTF-16 units) opens unstyled and is styled when its background parse arrives: parsing
+  /// takes about 5 µs a character on the main thread, so a 350 KB note held the window for 1.7 s and a 3.5 MB one for
+  /// 18 s. Shorter ones (under ~150 ms) open styled in the same event.
+  static let backgroundOpenLength = 30_000
 
   private static let queue = DispatchQueue(label: "dev.v57.MarkdownKit.parse", qos: .userInitiated)
 

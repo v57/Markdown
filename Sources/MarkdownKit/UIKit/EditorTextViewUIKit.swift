@@ -138,10 +138,10 @@
       self.isReadOnly = isReadOnly
       isEditable = !isReadOnly
       markdownLayout.revealsSyntax = !isReadOnly
-      markdownStorage.setAttributedString(NSAttributedString(string: text))
-      // textViewDidChange only fires for user edits, not for this initial load —
-      // style the text once here (identical to the per-edit reapply path).
-      reapplyMarkdown()
+      loadText {
+        markdownStorage.setAttributedString(
+          NSAttributedString(string: text, attributes: MarkdownUIKitStyle(metrics: metrics).typingAttributes))
+      }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -199,10 +199,36 @@
     /// that wants to observe edits still gets them via the normal edit path). Used
     /// by hosts that inflate the editor with existing content (e.g. a note editor).
     public func setText(_ newText: String) {
-      text = newText
       sourceModeTables.removeAll()
-      reapplyMarkdown()
+      loadText {
+        text = newText
+        markdownStorage.setAttributes(
+          MarkdownUIKitStyle(metrics: metrics).typingAttributes,
+          range: NSRange(location: 0, length: markdownStorage.length))
+      }
+    }
+
+    /// Whether the text is being replaced (`loadText`): following the selection meanwhile would read every attribute
+    /// between the old caret and the new one, fixing the fonts of the whole note before it shows.
+    private var isLoadingText = false
+    /// Set while loaded text shows in the body style: its first styles are written whole, not compared.
+    private var stylesReplaceAll = false
+
+    /// Replaces the text with `load`, puts the caret at the start and styles it: in the same event, or for a long note
+    /// (`MarkdownRestyler.backgroundOpenLength`) from a background parse, the text showing in the body style until then.
+    /// `textViewDidChange` only fires for user edits, so loads style here (the same parse as the per-edit path).
+    private func loadText(_ load: () -> Void) {
+      isLoadingText = true
+      load()
       selectedRange = NSRange(location: 0, length: 0)
+      markdownLayout.activeCharacterRange = NSRange(location: 0, length: 0)
+      isLoadingText = false
+      stylesReplaceAll = true
+      if markdownStorage.length >= MarkdownRestyler.backgroundOpenLength {
+        restyleInBackground()
+      } else {
+        reapplyMarkdown()
+      }
     }
 
     // MARK: - Derived styling (re-parse on every character edit)
@@ -296,8 +322,15 @@
       // the storage reports .editedAttributes and textViewDidChange doesn't recurse. Only
       // the runs that changed are written, so an edit lays out again only what it restyled.
       markdownLayout.activeCharacterRange = selectedRange
-      if let changed = markdownLayout.applyStyles(parsed.attributed) {
-        markdownLayout.updateImageSlots(in: changed)
+      if let changed = markdownLayout.applyStyles(parsed.attributed, replacingAll: stylesReplaceAll) {
+        if stylesReplaceAll {
+          stylesReplaceAll = false
+          if let images = EditorLayoutManagerCore.imageRange(in: parsed.attributed) {
+            markdownLayout.updateImageSlots(in: images)
+          }
+        } else {
+          markdownLayout.updateImageSlots(in: changed)
+        }
         remoteImagesInDocument = nil
       }
       loadVisibleImages()
@@ -432,6 +465,7 @@
     // MARK: - Selection / active line (drives syntax show/hide)
 
     public func textViewDidChangeSelection(_ textView: UITextView) {
+      guard !isLoadingText else { return }
       guard let lm = layoutManager as? EditorLayoutManager else { return }
       let newSelection = selectedRange
       guard newSelection != lm.activeCharacterRange else { return }

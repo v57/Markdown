@@ -227,6 +227,10 @@ public enum MarkdownRenderer {
   ///
   /// Values that are already native (NSValue-wrapped NSRange for command spans,
   /// Bool, URL, Int for strikethrough/underline, String) pass through unchanged.
+  /// What TextKit shows text without a font in (Helvetica 12): a blank line's height comes from it.
+  nonisolated(unsafe) static let missingFont: PlatformFont =
+    PlatformFont(name: "Helvetica", size: 12) ?? .systemFont(ofSize: 12)
+
   public static func render(_ source: NSAttributedString) -> NSAttributedString {
     let out = NSMutableAttributedString(attributedString: source)
     out.beginEditing()
@@ -267,6 +271,9 @@ public enum MarkdownRenderer {
         default: resolved[key] = value
         }
       }
+      // A run without a font (a newline) gets the one a text storage fixes in, so the storage has nothing to fix: it
+      // added them one at a time, moving the rest of its runs each time (0.9 s of a 1 MB note's styling).
+      if resolved[.font] == nil { resolved[.font] = missingFont }
       out.setAttributes(resolved, range: range)
     }
     out.endEditing()
