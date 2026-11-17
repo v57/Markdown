@@ -33,6 +33,7 @@
     var loadsRemoteImages = false
     var onRemoteImagesBlocked: (@MainActor (Bool) -> Void)?
     var confirmLink: (@MainActor (MarkdownLinkRequest) -> Void)?
+    var barInsets: EdgeInsets?
 
     public init(
       metrics: MarkdownMetrics = .standard,
@@ -62,6 +63,20 @@
       var copy = self
       copy.loadsRemoteImages = loads
       copy.onRemoteImagesBlocked = onBlocked
+      return copy
+    }
+
+    /// Runs the text under the host's bars: `insets` are their heights (a GeometryReader's `safeAreaInsets` around an
+    /// editor that ignores the safe area). The text starts and ends inside them and scrolls under them; UIKit doesn't
+    /// see SwiftUI's bars, so the host passes them.
+    ///
+    /// ```swift
+    /// GeometryReader { proxy in MarkdownEditorView(text: text).underBars(proxy.safeAreaInsets) }
+    ///   .ignoresSafeArea(.container, edges: .vertical)
+    /// ```
+    public func underBars(_ insets: EdgeInsets) -> Self {
+      var copy = self
+      copy.barInsets = insets
       return copy
     }
 
@@ -105,6 +120,7 @@
       context.coordinator.hasResolver = true
       context.coordinator.resolvedDocument = resolver.documentURL
       configure(textView, coordinator: context.coordinator)
+      if let barInsets { controller.setBarInsets(top: barInsets.top, bottom: barInsets.bottom) }
       textView.selectedRange = NSRange(location: 0, length: 0)
       context.coordinator.appliedText = text
       scrollToAnchorIfNeeded(controller.textView, coordinator: context.coordinator)
@@ -124,6 +140,7 @@
     ) {
       let textView = uiViewController.textView
       configure(textView, coordinator: context.coordinator)
+      if let barInsets { uiViewController.setBarInsets(top: barInsets.top, bottom: barInsets.bottom) }
       defer { scrollToAnchorIfNeeded(textView, coordinator: context.coordinator) }
       guard text != context.coordinator.appliedText else { return }
       context.coordinator.appliedText = text

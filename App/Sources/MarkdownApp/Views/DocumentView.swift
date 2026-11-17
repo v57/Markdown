@@ -188,21 +188,20 @@ struct DocumentView: View {
           }
           .padding(8)
         }
-        MarkdownEditorView(
-          text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
-          isReadOnly: !isEditing, anchor: navigator.anchor,
-          onChange: { [saver, words] text in
-            saver.edited(text)
-            words.count(text)
-          },
-          onOpenURL: { open($0) },
-          startsEditing: navigator.startsEditing && isEditing,
-          commands: commands
-        )
-        .remoteImages(loads: imagesAllowed.contains(file)) { hasBlockedImages = $0 }
-        .onConfirmLink { linkRequest = $0 }
-        .id(file)
-        .onAppear { words.count(text, now: true) }
+        #if os(iOS)
+          // Under the page's bars: the text scrolls under them, inset by them.
+          GeometryReader { proxy in
+            editor(file: file, text: text)
+              .underBars(proxy.safeAreaInsets)
+              .ignoresSafeArea(.container, edges: .vertical)
+          }
+          .id(file)
+          .onAppear { words.count(text, now: true) }
+        #else
+          editor(file: file, text: text)
+            .id(file)
+            .onAppear { words.count(text, now: true) }
+        #endif
       }
     case .noReadme(let folder):
       EmptyState(
@@ -231,6 +230,23 @@ struct DocumentView: View {
   }
 
   /// A file's path from the folder in the sidebar that holds it, that folder's name first; its name alone outside them.
+  /// The open note's editor.
+  private func editor(file: URL, text: String) -> MarkdownEditorView {
+    MarkdownEditorView(
+      text: text, resolver: .relative(to: file, root: library.root(of: file, roots: roots)),
+      isReadOnly: !isEditing, anchor: navigator.anchor,
+      onChange: { [saver, words] text in
+        saver.edited(text)
+        words.count(text)
+      },
+      onOpenURL: { open($0) },
+      startsEditing: navigator.startsEditing && isEditing,
+      commands: commands
+    )
+    .remoteImages(loads: imagesAllowed.contains(file)) { hasBlockedImages = $0 }
+    .onConfirmLink { linkRequest = $0 }
+  }
+
   private func placeInLibrary(_ url: URL) -> String {
     let file = FolderLibrary.canonical(url)
     guard let root = library.root(of: file, roots: roots) else { return file.lastPathComponent }
