@@ -256,7 +256,8 @@ struct SidebarView: View {
   /// Scans folders that aren't projects (inside their drop's access) and offers what the vault lacks; with nothing
   /// to offer, says why the folder isn't listed.
   private func offer(_ folders: [URL]) {
-    guard !folders.isEmpty else { return }
+    // The screenshot demo's folders are made up, never the user's to add (on an iPad, Atlas Docs isn't a project).
+    guard !folders.isEmpty, !ScreenshotDemo.isOn else { return }
     let store = (windowVault ?? .shared).store
     Task {
       let started = folders.map { $0.startAccessingSecurityScopedResource() }
