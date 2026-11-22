@@ -126,5 +126,11 @@
 	<!-- Animations and scrolling at up to 120 fps on an iPhone with ProMotion; without it they stop at 60. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- ComponentKit's QR scanner is linked even where no screen shows it, and App Store Connect rejects a build that
+	     references the camera without a reason (ITMS-90683). -->
+	<key>NSCameraUsageDescription</key>
+	<string>Markdown uses the camera only when you choose to scan a QR code.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Confirms it's you before this device's key unlocks your vault or signs in to a server.</string>
 </dict>
 </plist>
