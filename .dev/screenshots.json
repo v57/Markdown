@@ -13,13 +13,13 @@
     {
       "id": "02-docs",
       "arguments": ["--screenshot-demo", "--open", "Atlas Docs/README.md"],
-      "platforms": ["mac", "ipad"],
+      "platforms": ["mac", "ipad", "iphone"],
       "caption": "Code, tables and links, rendered in place"
     },
     {
       "id": "03-quick-open",
       "arguments": ["--screenshot-demo", "--open", "Notes/Meetings/Design review.md", "--quick-open"],
-      "platforms": ["mac", "ipad"],
+      "platforms": ["mac", "ipad", "iphone"],
       "caption": "Jump to any note with Quick Open"
     },
     {
