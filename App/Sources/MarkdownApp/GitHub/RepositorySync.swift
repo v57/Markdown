@@ -160,6 +160,20 @@ nonisolated enum RepositorySync {
     return ext.isEmpty ? "\(stem) (GitHub)" : "\(stem) (GitHub).\(ext)"
   }
 
+  /// The conflict copies a pull left among `changes`: new files named "… (GitHub)" beside the note they belong to.
+  static func conflictCopies(among changes: [Change], of state: RepositoryState) -> [String] {
+    let changed = Set(changes.filter { $0.kind != .deleted }.map(\.path))
+    return changes.filter { change in
+      guard change.kind == .added else { return false }
+      let ns = change.path as NSString
+      let stem = ns.deletingPathExtension
+      guard stem.hasSuffix(" (GitHub)") else { return false }
+      let own = String(stem.dropLast(" (GitHub)".count))
+      let original = ns.pathExtension.isEmpty ? own : "\(own).\(ns.pathExtension)"
+      return state.files[original] != nil || changed.contains(original)
+    }.map(\.path)
+  }
+
   // MARK: - Push
 
   /// Commits the local changes as one commit and moves the branch to it. GitHub must

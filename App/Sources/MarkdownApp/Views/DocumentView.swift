@@ -691,10 +691,18 @@ private struct SaveFollower: ViewModifier {
   let allowEditing: (() -> Void)?
   @Environment(RepositoryStore.self) private var repositories
   @Environment(FolderLibrary.self) private var library
+  @Environment(WindowState.self) private var window
 
   func body(content: Content) -> some View {
     content
       .onChange(of: saver.state) { _, state in
+        // The sidebar's activity card names the note while its edit isn't on disk.
+        if case .failed(let message, _) = state, let file = saver.file {
+          window.saveFailure = .init(file: file, message: message)
+        } else if state == .saved, window.saveFailure != nil {
+          // Not on `.unsaved`: typing on after a failure would take the line away until the next try fails.
+          window.saveFailure = nil
+        }
         guard state == .saved else { return }
         library.noteSaved()
         if let file = saver.file, repositories.repository(containing: file) != nil {

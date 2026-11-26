@@ -57,6 +57,7 @@ struct SidebarView: View {
     NotesSidebar(columnVisibility: columnVisibility, compactColumn: $compactColumn, isDeletable: isDeletable) {
       // The window's account, while there is more than Personal.
       VaultAccountPicker(meta: allNotesCount.map { String(localized: "\($0) notes") })
+      RecentNotesSection()
       // A place with many folders keeps its title in view while they scroll by.
       notesSection.kitSticky()
       if !repositories.repositories.isEmpty { GitHubSection().kitSticky() }
@@ -135,15 +136,24 @@ struct SidebarView: View {
         }
         // With no notes yet (on iPhone the welcome isn't the first screen), something to try right here.
         if allNotesCount == 0 {
-          Button("Add Sample Notes", systemImage: "text.book.closed") { window.perform?(.sampleNotes) }
-            .buttonStyle(.kitPlain)
-            .padding(.vertical, 4)
+          SectionEmptyActions("Each note is a Markdown file. Start with a few to read and edit.") {
+            Button("Add Sample Notes", systemImage: "text.book.closed") { window.perform?(.sampleNotes) }
+            Button("Connect GitHub Repository…", systemImage: "arrow.triangle.branch") {
+              window.isConnectingGitHub = true
+            }
+          }
         }
       } else {
         EmptyState(systemImage: "doc.text", title: "Loading Notes", status: .working)
       }
     } accessory: {
-      notesMenu
+      HStack(spacing: 2) {
+        // The bottom bar is full on a narrow sidebar (search, where the notes are, New Note, New Folder, the toggle).
+        Button("Quick Open…", systemImage: "text.magnifyingglass") { window.isQuickOpenShown = true }
+          .labelStyle(.iconOnly)
+          .kitHelp("Quick Open…", shortcut: "⌘K", meta: "Find a note by its name or by what it says")
+        notesMenu
+      }
     }
     .headerHelp(
       storageName,
@@ -456,6 +466,8 @@ private struct NotesSidebar<Content: View, BottomBar: View>: View {
   @Environment(NotesLocation.self) private var notes
   @Environment(FileActions.self) private var actions
   @Environment(WindowState.self) private var window
+  @Environment(RepositoryStore.self) private var repositories
+  @Environment(\.modelContext) private var context
   /// The notes selected together (⌘-click, ⇧-click, ⇧↑↓) while more than one is; the shown note stays as it was.
   @State private var selectedNotes: Set<URL> = []
 
@@ -482,6 +494,7 @@ private struct NotesSidebar<Content: View, BottomBar: View>: View {
     }
     .selectionContextMenu { (urls: Set<URL>) in noteMenu(urls) }
     .status { Label(storageStatus, systemImage: notes.isICloud ? "icloud" : KitDevice.systemImage).labelStyle(.titleOnly) }
+    .activity(activities)
     #if os(macOS) || os(Windows)
       .onDeleteCommand {
         let urls = noteSelection.wrappedValue.filter(isDeletable)
@@ -494,6 +507,63 @@ private struct NotesSidebar<Content: View, BottomBar: View>: View {
 
   /// Where the notes are, at the start of the bottom bar.
   private var storageStatus: String { notes.isICloud ? "iCloud" : String(localized: "On This \(KitDevice.name)") }
+
+  /// What the app is doing now, above the bottom bar: a note whose edit isn't on disk, notes changed here and on
+  /// GitHub that wait to be merged, a repository pulling or pushing, and changes not pushed yet. All from what the
+  /// window already knows (`WindowState.saveFailure`, `RepositoryStore`); nothing here contacts GitHub.
+  private var activities: [SidebarActivity] {
+    var lines: [SidebarActivity] = []
+    if let failure = window.saveFailure {
+      lines.append(
+        SidebarActivity(
+          id: "save", String(localized: "Couldn’t Save"), detail: FileActions.shownName(failure.file),
+          systemImage: "doc.text", hue: .red, status: .failed(failure.message)
+        ) { show(failure.file) })
+    }
+    for repository in repositories.repositories {
+      let directory = repositories.directory(for: repository)
+      for path in repositories.conflictCopies[repository.fullName] ?? [] {
+        let copy = directory.appendingPathComponent(path)
+        lines.append(
+          SidebarActivity(
+            id: "conflict:\(copy.path)", FileActions.shownName(copy),
+            detail: String(localized: "Changed here and on GitHub"), systemImage: "arrow.triangle.merge", hue: .yellow,
+            status: .failed(nil)
+          ) { show(copy) })
+      }
+    }
+    // A repository being connected isn't in the list yet: its line has nowhere to go.
+    for (name, activity) in repositories.activity.sorted(by: { $0.key < $1.key }) {
+      let repository = repositories.repositories.first { $0.fullName == name }
+      lines.append(
+        SidebarActivity(
+          id: "sync:\(name)", String(localized: String.LocalizationValue(activity)), detail: name,
+          systemImage: "arrow.triangle.branch", hue: .purple, status: .working,
+          action: repository.map { repository in { list(repository) } }))
+    }
+    for repository in repositories.repositories where repositories.activity[repository.fullName] == nil {
+      guard let count = repositories.changeCounts[repository.fullName], count > 0 else { continue }
+      lines.append(
+        SidebarActivity(
+          id: "changes:\(repository.fullName)", String(localized: "\(count) changes to push"),
+          detail: repository.fullName, systemImage: "arrow.up", hue: .purple, status: .paused()
+        ) { list(repository) })
+    }
+    return lines
+  }
+
+  /// Shows a note the card names (on iPhone, its column).
+  private func show(_ url: URL) {
+    navigator.open(url)
+    compactColumn = .detail
+  }
+
+  /// Lists a repository's notes, as a tap on its row does.
+  private func list(_ repository: RepositoryState) {
+    let openedFiles = context.sidebarFolders().filter(\.isFile).map(\.path)
+    navigator.choose(
+      .folder(repositories.directory(for: repository)), notesFolder: notes.url, openedFiles: Set(openedFiles))
+  }
 
   /// The sidebar's selection is the shown note (not a folder shown by its README), or several notes selected together;
   /// the places are rows that list their notes (`place(_:)`). One row selected shows it; several leave the shown note.
@@ -595,6 +665,8 @@ private struct NoteSearchLoader: ViewModifier {
 private struct GitHubSection: View {
   @Environment(RepositoryStore.self) private var repositories
   @Environment(WindowState.self) private var window
+  @Environment(GitHubAuth.self) private var auth
+  @Environment(Navigator.self) private var navigator
 
   var body: some View {
     let changes = repositories.changeCounts.values.reduce(0, +)
@@ -609,9 +681,61 @@ private struct GitHubSection: View {
         RepositoryRow(repository: repository)
       }
     } accessory: {
-      Button("Connect GitHub Repository…", systemImage: "plus") { window.isConnectingGitHub = true }
-        .labelStyle(.iconOnly)
-        .kitHelp("Connect GitHub Repository…")
+      HStack(spacing: 2) {
+        // The repository's own Pull (its row's menu), in reach without a long press. It contacts GitHub, so only on a tap.
+        if let repository = listedRepository {
+          Button("Pull \(repository.fullName)", systemImage: "arrow.down") {
+            Task { await repositories.pull(repository, client: auth.api) }
+          }
+          .labelStyle(.iconOnly)
+          .disabled(repositories.activity[repository.fullName] != nil)
+          .kitHelp("Pull \(repository.fullName)", meta: "Gets GitHub’s latest")
+        }
+        Button("Connect GitHub Repository…", systemImage: "plus") { window.isConnectingGitHub = true }
+          .labelStyle(.iconOnly)
+          .kitHelp("Connect GitHub Repository…")
+      }
+    }
+  }
+
+  /// The repository whose notes are listed or shown, or the only one connected.
+  private var listedRepository: RepositoryState? {
+    if case .folder(let folder) = navigator.item, let repository = repositories.repository(containing: folder) {
+      return repository
+    }
+    if let note = navigator.selection, let repository = repositories.repository(containing: note) { return repository }
+    return repositories.repositories.count == 1 ? repositories.repositories.first : nil
+  }
+}
+
+/// The notes opened last, at the top of the sidebar: the welcome's list (`NotePreferences.recents`, which follows
+/// renames and leaves out notes that are gone), so there is one list of them. Hidden while there are none. A view of its
+/// own: opening a note updates only it.
+private struct RecentNotesSection: View {
+  @Environment(NotePreferences.self) private var preferences
+  @Environment(Navigator.self) private var navigator
+  @Environment(FolderLibrary.self) private var library
+  @Environment(WindowState.self) private var window
+
+  var body: some View {
+    // `generation` drops a note deleted or moved away since.
+    let _ = library.generation
+    let recents = Array(preferences.existingRecents.prefix(5))
+    if !recents.isEmpty, window.searchQuery.isEmpty {
+      KitSection("Recent", systemImage: "clock", hue: .gray) {
+        ForEach(recents, id: \.self) { url in
+          // Names as they are: a note's and its folder's.
+          SidebarRow(
+            FileActions.shownName(url), subtitle: url.deletingLastPathComponent().lastPathComponent,
+            systemImage: "doc.text"
+          )
+          .isCurrent(navigator.selection == url)
+          .action {
+            library.reveal(url, roots: library.builtInRoots)
+            navigator.open(url)
+          }
+        }
+      }
     }
   }
 }

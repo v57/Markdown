@@ -13,6 +13,9 @@ import VaultKit
   private(set) var activity: [String: String] = [:]
   /// Local changes per repository (full name → count), refreshed by `refreshChanges()`.
   private(set) var changeCounts: [String: Int] = [:]
+  /// GitHub's versions a pull saved beside the reader's own ("Name (GitHub).md"), still waiting to be merged, per
+  /// repository (full name → paths in it): found in the same pass as the counts.
+  private(set) var conflictCopies: [String: [String]] = [:]
   /// The outcome of the last operation, for an alert.
   var message: (title: String, text: String)?
   /// Runs before a pull rewrites files: the open note's pending edits must be on disk,
@@ -144,18 +147,25 @@ import VaultKit
     try? FileManager.default.removeItem(at: stateURL(for: repository))
     repositories.removeAll { $0.fullName == repository.fullName }
     changeCounts[repository.fullName] = nil
+    conflictCopies[repository.fullName] = nil
     didChangeFiles()
   }
 
-  /// Recounts local changes (off the main thread).
+  /// Recounts local changes, and finds the conflict copies among them (off the main thread).
   func refreshChanges() {
     let jobs = repositories.map { ($0, directory(for: $0)) }
     Task {
-      let counts = await Task.detached(priority: .utility) {
-        Dictionary(
-          uniqueKeysWithValues: jobs.map { ($0.0.fullName, RepositorySync.changes($0.0, in: $0.1).count) })
+      let found = await Task.detached(priority: .utility) {
+        jobs.map { state, directory -> (name: String, count: Int, copies: [String]) in
+          let changes = RepositorySync.changes(state, in: directory)
+          return (state.fullName, changes.count, RepositorySync.conflictCopies(among: changes, of: state))
+        }
       }.value
-      changeCounts = counts
+      let counts = Dictionary(uniqueKeysWithValues: found.map { ($0.name, $0.count) })
+      let copies = Dictionary(uniqueKeysWithValues: found.filter { !$0.copies.isEmpty }.map { ($0.name, $0.copies) })
+      // Set only when they differ: this runs after every save, and each set updates the sidebar's views that read them.
+      if changeCounts != counts { changeCounts = counts }
+      if conflictCopies != copies { conflictCopies = copies }
     }
   }
 

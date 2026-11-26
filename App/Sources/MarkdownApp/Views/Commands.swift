@@ -8,6 +8,13 @@ import SwiftUI
   var isConnectingGitHub = false
   /// What the sidebar's search line holds: the note list shows the notes that match.
   var searchQuery = ""
+  /// The note whose last edit couldn't be written, and why, while that is so: the sidebar's activity card says it.
+  var saveFailure: SaveFailure?
+
+  struct SaveFailure: Equatable {
+    var file: URL
+    var message: String
+  }
   /// Runs one of Quick Open's commands in this window (the menu bar's New Folder).
   @ObservationIgnored var perform: ((QuickOpenCommand) -> Void)?
 
